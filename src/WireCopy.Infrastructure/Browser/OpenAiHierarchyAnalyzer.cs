@@ -1999,6 +1999,37 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         // durability; only a genuine overlap with no fresh story is removed.
         sections = DropSubsumedSections(sections, contentLinks);
 
+        // workspace-v2m8.5: an exclude rule that hides a high-importance,
+        // non-sponsored link the config's OWN sections render is
+        // self-contradictory — wrong by construction. Exclude patterns match by
+        // SUBSTRING over the full URL, so a model-emitted hub segment such as
+        // a bare technology path silently erased cross-domain stories whose
+        // article URL contains the same segment, while slipping under the
+        // proportional guard's floor of 2; on the 2026-07-07 techmeme run
+        // thirteen such patterns helped collapse coverage to 31 of 122.
+        // User-labeled rules already get story protection in LabelDerivation's
+        // DeriveExcludeFor; this is the model-rule counterpart. Rails stay
+        // excludable: demoted podcast and sponsor identifiers match links that
+        // no kept section claims.
+        if (highScore.Count > 0 && sections.Count > 0)
+        {
+            var renderedStories = highScore
+                .Where(l => sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)))
+                .ToList();
+            if (renderedStories.Count > 0)
+            {
+                var beforeContradiction = excludeSelectors.Count + excludeUrlPatterns.Count;
+                excludeSelectors = excludeSelectors
+                    .Where(sel => !renderedStories.Any(l => !string.IsNullOrEmpty(l.ParentSelector)
+                        && l.ParentSelector.Contains(sel, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                excludeUrlPatterns = excludeUrlPatterns
+                    .Where(pat => !renderedStories.Any(l => l.Url.Contains(pat, StringComparison.OrdinalIgnoreCase)))
+                    .ToList();
+                droppedExcludeRules += beforeContradiction - (excludeSelectors.Count + excludeUrlPatterns.Count);
+            }
+        }
+
         var domain = SafeHost(pageUrl);
         var config = new SiteHierarchyConfig
         {

@@ -1020,18 +1020,25 @@ internal static class StrategyChooserHandler
         int choice;
         try
         {
+            // workspace-v2m8.4: hand-labeling is offered HERE, one Enter from
+            // g l — it used to hide three levels deep (Refine → preview →
+            // Space → "Fix links by hand"), so users concluded there was no way
+            // to mark ads/menus at all. The cursor also defaults to it: on a
+            // configured site the user opened this card to FIX something (Esc
+            // remains the no-op exit).
             var card = new UI.Components.SetupWizardOverlay.WizardCard
             {
                 Title = "Layout",
                 Prompt = ChooserEntry.DescribeConfig(config),
                 Options =
                 {
-                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Refine the layout with AI (keeps your fixes)" },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = ChooserEntry.RefineOptionLabel(config) },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Fix links by hand — mark articles, ads, menu links" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Reset to document order" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Compare all strategies…" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Close" },
                 },
-                Cursor = ConfigMigration.NeedsReanalysis(config) ? 0 : 3,
+                Cursor = ConfigMigration.NeedsReanalysis(config) ? 0 : 1,
                 Hint = "↑/↓ choose · Enter select · Esc close",
             };
             choice = await RunEntryCardAsync(ctx, overlay, card, options, ct).ConfigureAwait(false);
@@ -1047,6 +1054,9 @@ internal static class StrategyChooserHandler
                 await RunAiSetupAndApplyAsync(ctx, scope, page, options, ct).ConfigureAwait(false);
                 break;
             case 1:
+                await RunAiSetupAndApplyAsync(ctx, scope, page, options, ct, startWithLabelMode: true).ConfigureAwait(false);
+                break;
+            case 2:
                 var configStore = scope.ServiceProvider.GetService<IHierarchyConfigStore>();
                 if (configStore != null)
                 {
@@ -1055,7 +1065,7 @@ internal static class StrategyChooserHandler
 
                 await RunStrategyAndApplyAsync(ctx, scope, page, ScrapingStrategies.DocumentOrderStrategy.StrategyId, options, ct).ConfigureAwait(false);
                 break;
-            case 2:
+            case 3:
                 await RunCompareModeAsync(ctx, options, ct).ConfigureAwait(false);
                 break;
             default:
@@ -1076,7 +1086,10 @@ internal static class StrategyChooserHandler
         var wizardResult = await RunSetupWizardAsync(ctx, scope, page, options, ct, startWithLabelMode).ConfigureAwait(false);
         if (wizardResult.Cancelled)
         {
-            ctx.NavigationService.SetStatusMessage("Cancelled — site not configured");
+            // workspace-v2m8.4: also the back-out path from the configured-site
+            // "Fix links by hand" entry — the site may well STAY configured, so
+            // the honest claim is that nothing changed.
+            ctx.NavigationService.SetStatusMessage("Cancelled — layout unchanged");
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }

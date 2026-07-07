@@ -161,12 +161,12 @@ def main():
             after = re.search(r"(\d+) of (\d+) story links covered", screen)
             after_n = int(after.group(1)) if after else -1
             dropped = after_n >= 0 and after_n < before_n
-            # A story that shares its only identifier with others is correctly REFUSED
-            # — 'x' must then explain why, never no-op silently.
-            refused = "can't drop" in screen.lower() or "press x to drop" in screen.lower()
-            print(f"x-exclude: coverage {before_n} -> {after_n} · dropped={dropped} refused={refused}")
-            if not (dropped or refused):
-                failures.append(f"'x' produced no visible effect (coverage {before_n} -> {after_n}, no refusal notice)")
+            # workspace-v2m8.1: 'x' now records an ad label and must ALWAYS hide
+            # the row (exact-URL fallback when nothing generalizes) — the old
+            # shares-its-identifier refusal is no longer an acceptable outcome.
+            print(f"x-exclude: coverage {before_n} -> {after_n} · dropped={dropped}")
+            if not dropped:
+                failures.append(f"'x' did not drop the focused row (coverage {before_n} -> {after_n})")
     finally:
         srv.shutdown()
         xvfb.terminate()

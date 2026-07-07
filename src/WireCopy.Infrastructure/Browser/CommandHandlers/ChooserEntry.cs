@@ -51,4 +51,22 @@ internal static class ChooserEntry
             ? $"Current: {kind} — legacy snapshot, press r to re-run AI setup"
             : $"Current: {kind}";
     }
+
+    /// <summary>
+    /// workspace-v2m8.3: the summary card's Refine option label. It claims to
+    /// keep the user's fixes ONLY when fixes exist (labels or applied
+    /// instructions) — the unconditional "(keeps your fixes)" read as nonsense
+    /// on a site the user had never corrected.
+    /// </summary>
+    public static string RefineOptionLabel(SiteHierarchyConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var fixes = config.UserLabels.Count + config.UserInstructions.Count;
+        return fixes switch
+        {
+            0 => "Refine the layout with AI",
+            1 => "Refine the layout with AI (keeps your 1 fix)",
+            _ => $"Refine the layout with AI (keeps your {fixes} fixes)",
+        };
+    }
 }

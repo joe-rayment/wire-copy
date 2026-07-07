@@ -190,6 +190,41 @@ public class OpenAiHierarchyAnalyzerTests
     }
 
     [Fact]
+    public void ParsePatternFromAnswers_ExcludeHittingRenderedStory_DroppedEvenUnderProportionalFloor()
+    {
+        // workspace-v2m8.5: exclude patterns match by SUBSTRING over the full
+        // URL. A model-emitted hub segment ('/technology/') hides a cross-domain
+        // story the config's OWN section renders — self-contradictory — yet it
+        // slipped under the proportional guard's floor of 2 (thirteen such
+        // patterns helped collapse the 2026-07-07 techmeme run to 31/122
+        // coverage). A rail pattern hitting no section-rendered story survives.
+        var links = StoryLinks(6, score: 90, parent: "div.river > div.item");
+        links[0] = links[0] with { Url = "https://nytimes.com/technology/some-real-story" };
+        links.Add(new LinkInfo
+        {
+            Url = "https://x.com/r2/podcast-episode",
+            DisplayText = "Podcast episode",
+            Type = LinkType.Content,
+            ImportanceScore = 85,
+            ParentSelector = "div.rail > div.pod",
+        });
+        var json =
+            "{\"sections\":[{\"name\":\"Feed\",\"parent_selectors\":[\"div.river\"],\"url_patterns\":[]," +
+            "\"story_indices\":[0,1,2,3,4,5],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[\"/technology/\",\"/r2/\"]," +
+            "\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.ExcludeUrlPatterns.Should().NotContain("/technology/",
+            "it hides a high-importance story the Feed section renders");
+        result.Config.ExcludeUrlPatterns.Should().Contain("/r2/",
+            "the podcast rail is matched by no kept section — still excludable");
+        result.Config.DroppedExcludeRuleCount.Should().BeGreaterThanOrEqualTo(1,
+            "the veto is surfaced on the preview footnote, not silent");
+    }
+
+    [Fact]
     public void ParsePatternFromAnswers_BroadLead_KeepsSiblings_NotPinnedToOne()
     {
         // workspace-5vqk.2: a pick teaches a REPEATING pattern, so the first section

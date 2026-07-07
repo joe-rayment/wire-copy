@@ -52,8 +52,25 @@ internal static class SetupWizard
     /// <summary>Card-loop sentinel: 'z' (Undo) on the preview — revert the last refine.</summary>
     private const int UndoChoice = -3;
 
-    /// <summary>workspace-5vqk.4: card-loop sentinel: 'x' on the preview — exclude the focused item.</summary>
-    private const int ExcludeChoice = -4;
+    /// <summary>
+    /// workspace-v2m8.1: card-loop sentinels for the marking keys — the preview
+    /// speaks the SAME label grammar as label mode ('x' = ad since 5vqk.4's
+    /// bare drop-item; 'a'/'m'/'i'/'u' joined in v2m8.1). Every mark lands in
+    /// the UserLabels ledger, so later model rounds re-enforce it.
+    /// </summary>
+    private const int MarkAdChoice = -4;
+
+    /// <summary>workspace-v2m8.1: card-loop sentinel: 'a' — rank the focused row as an article.</summary>
+    private const int MarkArticleChoice = -5;
+
+    /// <summary>workspace-v2m8.1: card-loop sentinel: 'm' — route the focused row under the More menu.</summary>
+    private const int MarkMenuChoice = -6;
+
+    /// <summary>workspace-v2m8.1: card-loop sentinel: 'i' — hide the focused row.</summary>
+    private const int MarkHideChoice = -7;
+
+    /// <summary>workspace-v2m8.1: card-loop sentinel: 'u' — clear the focused row's label.</summary>
+    private const int MarkClearChoice = -8;
 
     /// <summary>
     /// Runs the wizard. Dependencies are injected (not pulled from CommandContext)
@@ -684,8 +701,8 @@ internal static class SetupWizard
             Options = options,
             Footnote = footnote,
             Hint = canUndo
-                ? "↑/↓ browse · Enter save · Space refine · x drop item · z undo · Esc discard"
-                : "↑/↓ browse · Enter save · Space adjust · x drop item · Esc discard",
+                ? "a article · x ad · m menu · i hide · u clear · Enter save · Space refine · z undo · Esc back"
+                : "a article · x ad · m menu · i hide · u clear · Enter save · Space refine · Esc back",
         };
     }
 
@@ -701,6 +718,21 @@ internal static class SetupWizard
         ArgumentNullException.ThrowIfNull(config);
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
         var rows = new List<PreviewRow>();
+
+        // workspace-v2m8.1: ledger labels badge their rows — a ranked article
+        // shows [ N]; an ad/menu/hide label whose rule could NOT remove the row
+        // (a derivation miss) stays visible WITH its badge, so a mark that
+        // didn't fully take is never silently indistinguishable from unmarked.
+        var labelByKey = new Dictionary<string, UserLinkLabel>(StringComparer.Ordinal);
+        foreach (var label in config.UserLabels)
+        {
+            labelByKey.TryAdd(NormalizeUrl(label.Url), label);
+        }
+
+        string Badge(LinkInfo link) =>
+            labelByKey.TryGetValue(NormalizeUrl(link.Url), out var label)
+                ? LabelBadge(label, hidden: false, menuRouted: false)
+                : string.Empty;
 
         // workspace-cn2g.1: the never-block fallback. A DocumentOrder config is the
         // flat ordered article list — render EVERY story-shaped, non-excluded content
@@ -727,7 +759,7 @@ internal static class SetupWizard
                 rows.Add(new PreviewRow(
                     new SetupWizardOverlay.CardOption
                     {
-                        Label = $"   • {Truncate(CollapseWhitespace(link.DisplayText), 72)}",
+                        Label = $"   {Badge(link)}• {Truncate(CollapseWhitespace(link.DisplayText), 72)}",
                         HighlightSelector = CssForLink(link),
                     },
                     link));
@@ -778,7 +810,7 @@ internal static class SetupWizard
                 rows.Add(new PreviewRow(
                     new SetupWizardOverlay.CardOption
                     {
-                        Label = $"   • {Truncate(CollapseWhitespace(link.DisplayText), 72)}",
+                        Label = $"   {Badge(link)}• {Truncate(CollapseWhitespace(link.DisplayText), 72)}",
                         HighlightSelector = CssForLink(link),
                     },
                     link));
@@ -932,7 +964,8 @@ internal static class SetupWizard
         SiteHierarchyConfig currentConfig,
         Lens? lens,
         CancellationToken ct,
-        bool startInAllLinks = false)
+        bool startInAllLinks = false,
+        string? startFocusUrl = null)
     {
         ArgumentNullException.ThrowIfNull(input);
         ArgumentNullException.ThrowIfNull(overlay);
@@ -952,6 +985,18 @@ internal static class SetupWizard
         if (rows.Count > 1 && rows[0].Link == null)
         {
             cursor = 1; // land on the first link row, not the header
+        }
+
+        // workspace-v2m8.2: entered from the preview — resume on the row the
+        // user was focused on there, not back at the top of the list.
+        if (!string.IsNullOrEmpty(startFocusUrl))
+        {
+            var focusKey = NormalizeUrl(startFocusUrl);
+            var focusRow = rows.FindIndex(r => r.Link != null && NormalizeUrl(r.Link.Url) == focusKey);
+            if (focusRow >= 0)
+            {
+                cursor = focusRow;
+            }
         }
 
         while (!ct.IsCancellationRequested)
@@ -1093,20 +1138,6 @@ internal static class SetupWizard
             && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength
             && !NavigationTreeBuilder.IsExcluded(l, config)
             && !config.Sections.Any(sec => NavigationTreeBuilder.MatchesSection(l, sec)));
-
-    /// <summary>
-    /// workspace-5vqk.4: deterministically excludes ONE previewed item (an 'x' on a
-    /// row) and its token-siblings, WITHOUT a model round-trip. Derives distinctive
-    /// exclude tokens from the item's parent selector, keeping only tokens that match
-    /// NO other kept story (the <see cref="LeadOverrideDerivation"/> guard, so a real
-    /// story is never erased); falls back to a distinctive URL segment when no token
-    /// qualifies. Honors the 25% high-importance cap via
-    /// <see cref="NavigationTreeBuilder.GuardExcludeRules"/>. Returns null (REFUSED)
-    /// when the item can't be excluded without also hiding a real story, or when the
-    /// exclusion would be a net no-op.
-    /// </summary>
-    internal static SiteHierarchyConfig? ExcludeItem(SiteHierarchyConfig config, LinkInfo item, List<LinkInfo> links)
-        => LabelDerivation.DeriveExcludeFor(config, item, links, allowSectionTitle: true);
 
     /// <summary>workspace-5vqk.3: highlights ONE specific link on the lens by an href substring.</summary>
     internal static string CssForLink(LinkInfo link)
@@ -1330,6 +1361,24 @@ internal static class SetupWizard
         // almost-perfect version (or starting the whole wizard over).
         SiteHierarchyConfig? undoConfig = null;
 
+        // workspace-v2m8.1: marks re-derive from a STABLE base — the config as
+        // of loop entry / the last accepted model round — with the FULL pending
+        // label set each press. Deriving from the previous derivation instead
+        // would stack rivers ("Stories 2", "Stories 3"…) and re-suffix
+        // ModelVersion on every keystroke; from the base it is idempotent.
+        // The pending labels themselves need no separate state: DeriveConfig
+        // merges them into config.UserLabels, so each press re-seeds from there
+        // (which also makes 'z' restore labels for free).
+        var markBase = config;
+
+        // workspace-v2m8.2: the focused row survives every card rebuild. Marks
+        // restore BY INDEX (the row that visually replaces the marked one —
+        // where the user's eyes are); round-trips (adjust / confirm / undo)
+        // restore BY URL first (the exact link they were on), then index.
+        string? focusUrl = null;
+        var focusIndex = 0;
+        var focusByUrl = false;
+
         // workspace-r8on: a one-render notice (e.g. an 'x' that was refused because
         // the item shares its only identifier with real stories) so a no-op key
         // press is never silent — the user gets a reason instead of nothing.
@@ -1355,6 +1404,7 @@ internal static class SetupWizard
                         Sections = new List<HierarchySection>(),
                         AiResult = null,
                     };
+                    markBase = config;
                     continue; // IsDegenerate(DocumentOrder w/ articles) == false → previews the flat list
                 }
 
@@ -1385,6 +1435,7 @@ internal static class SetupWizard
                 }
 
                 config = LabelDerivation.CarryAndEnforce(repaired.Config, config, links);
+                markBase = config;
                 confirmQuestion = repaired.ConfirmQuestion;
                 continue;
             }
@@ -1403,11 +1454,25 @@ internal static class SetupWizard
             var preview = BuildPreviewCard(config, links, previousCovered, askable, canUndo: undoConfig != null, notice: notice);
             notice = null; // transient — shown for exactly one render
             previousCovered = CoveredCount(config, links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList());
+
+            // workspace-v2m8.2: restore the focused row across the rebuild —
+            // BuildPreviewCard returns a fresh card whose Cursor would otherwise
+            // reset to the top on EVERY mark (even a refused one), which made
+            // iterative fixing on a 30-row techmeme list miserable.
+            var previewRows = BuildPreviewRows(config, links);
+            preview.Cursor = RestoreCursorIndex(previewRows, preview.Options.Count, focusUrl, focusIndex, focusByUrl);
+
             var choice = await RunCardAsync(input, render, overlay, preview, lens, ct, adjustable: true).ConfigureAwait(false);
             if (lens != null)
             {
                 await lens.ClearAsync(ct).ConfigureAwait(false);
             }
+
+            focusIndex = Math.Clamp(preview.Cursor, 0, Math.Max(0, preview.Options.Count - 1));
+            focusUrl = preview.Cursor >= 0 && preview.Cursor < previewRows.Count
+                ? previewRows[preview.Cursor].Link?.Url
+                : null;
+            focusByUrl = false;
 
             // workspace-5vqk.3: the layout now renders section headers AND their
             // headline rows, so the confirm-question rows are the LAST
@@ -1444,54 +1509,83 @@ internal static class SetupWizard
                         render,
                         ct).ConfigureAwait(false);
                     config = LabelDerivation.CarryAndEnforce(inferred.Config, undoConfig, links);
+                    markBase = config;
                     confirmQuestion = inferred.ConfirmQuestion;
                 }
 
+                focusByUrl = true;
                 continue;
             }
 
             switch (choice)
             {
                 case >= 0: // Enter — save exactly what is previewed
-                    return new Result { Config = config };
+                    return new Result { Config = PruneSubsumedSections(config, links) };
                 case CancelChoice:
                     return new Result { Cancelled = true };
                 case UndoChoice:
                     if (undoConfig != null)
                     {
                         config = undoConfig;
+                        markBase = config;
                         undoConfig = null;
                         confirmQuestion = null;
                         previousCovered = null;
+                        focusByUrl = true;
                     }
 
                     continue;
-                case ExcludeChoice:
-                    // workspace-5vqk.4: 'x' on a headline row drops that item and its
-                    // token-siblings deterministically — NO model call, NO budget.
-                    // workspace-r8on: a header/confirm row or a REFUSED exclusion is a
-                    // no-op, but now says WHY instead of silently doing nothing.
-                    var rows = BuildPreviewRows(config, links);
-                    if (preview.Cursor >= 0 && preview.Cursor < rows.Count && rows[preview.Cursor].Link is { } item)
+                case MarkAdChoice or MarkArticleChoice or MarkMenuChoice or MarkHideChoice or MarkClearChoice:
+                    // workspace-v2m8.1: the label grammar, applied to the focused
+                    // preview row — deterministic, budget-free, recorded in the
+                    // UserLabels ledger so every later model round re-enforces it.
+                    // The old 'x drop item' wrote bare exclude rules (which a
+                    // refine could silently resurrect) and REFUSED whenever
+                    // nothing distinctive separated the row — on techmeme's
+                    // uniform river that was EVERY row, reading as a dead key.
+                    // The ledger path never dead-ends: heading → token → segment
+                    // → exact-URL fallback, exactly like label mode.
+                    if (preview.Cursor < 0 || preview.Cursor >= previewRows.Count
+                        || previewRows[preview.Cursor].Link is not { } marked)
                     {
-                        var pruned = ExcludeItem(config, item, links);
-                        if (pruned != null)
-                        {
-                            undoConfig = config; // 'z' restores the item
-                            config = pruned;
-                            confirmQuestion = null;
-                        }
-                        else
-                        {
-                            notice = $"Can't drop \"{Truncate(CollapseWhitespace(item.DisplayText), 44)}\" on its own — it shares " +
-                                     "its only identifier with real stories. Use Space → \"Tell the AI what to change…\" instead.";
-                        }
-                    }
-                    else
-                    {
-                        notice = "Move to a story row (not a section header), then press x to drop it.";
+                        notice = "Move to a story row to mark it — headers can't be marked.";
+                        continue;
                     }
 
+                    var markKey = choice switch
+                    {
+                        MarkArticleChoice => 'a',
+                        MarkMenuChoice => 'm',
+                        MarkHideChoice => 'i',
+                        MarkClearChoice => 'u',
+                        _ => 'x',
+                    };
+                    var pending = new Dictionary<string, UserLinkLabel>(StringComparer.Ordinal);
+                    foreach (var saved in config.UserLabels)
+                    {
+                        pending.TryAdd(NormalizeUrl(saved.Url), saved);
+                    }
+
+                    ApplyLabelKey(pending, marked, markKey);
+                    var orderedLabels = pending.Values
+                        .OrderBy(l => l.Kind == LinkLabelKind.Article ? 0 : 1)
+                        .ThenBy(l => l.Rank ?? int.MaxValue)
+                        .ToList();
+                    var seenNow = links
+                        .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader)
+                        .Take(NavigationTreeBuilder.MaxContentLinks)
+                        .Select(l => l.Url)
+                        .ToList();
+                    var markDerived = LabelDerivation.DeriveConfig(markBase, orderedLabels, seenNow, links);
+                    var next = markDerived == null ? markBase : PruneSubsumedSections(markDerived, links);
+                    if (!ReferenceEquals(next, config))
+                    {
+                        undoConfig = config; // 'z' restores the pre-mark layout (labels included)
+                        config = next;
+                        confirmQuestion = null;
+                    }
+
+                    notice = MarkOutcomeNotice(config, pending, marked, markKey, links);
                     continue;
                 case AdjustChoice:
                     var before = config;
@@ -1512,19 +1606,77 @@ internal static class SetupWizard
                         lens,
                         ct,
                         shape: null,
-                        promptLeadUrl: promptLeadUrl).ConfigureAwait(false);
+                        promptLeadUrl: promptLeadUrl,
+                        focusUrl: focusUrl).ConfigureAwait(false);
                     if (adjusted != null)
                     {
                         undoConfig = before; // remember the pre-refine layout for 'z'
                         config = LabelDerivation.CarryAndEnforce(adjusted.Config, before, links);
+                        markBase = config;
                         confirmQuestion = adjusted.ConfirmQuestion;
                     }
 
+                    focusByUrl = true;
                     continue;
             }
         }
 
         return new Result { Cancelled = true };
+    }
+
+    /// <summary>
+    /// workspace-v2m8.2: where the cursor lands after a card rebuild. By-URL
+    /// restore follows the exact link across arbitrary row changes (adjust /
+    /// confirm / undo round-trips); the index fallback keeps the eye position
+    /// when the link is gone or by-URL was not requested (marks — the row that
+    /// visually replaces the marked one).
+    /// </summary>
+#pragma warning disable SA1202 // helper kept adjacent to its sole caller (the preview loop above)
+    internal static int RestoreCursorIndex(
+        List<PreviewRow> rows, int optionCount, string? focusUrl, int focusIndex, bool byUrl)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        if (optionCount <= 0)
+        {
+            return 0;
+        }
+
+        if (byUrl && !string.IsNullOrEmpty(focusUrl))
+        {
+            var key = NormalizeUrl(focusUrl);
+            var idx = rows.FindIndex(r => r.Link != null && NormalizeUrl(r.Link.Url) == key);
+            if (idx >= 0)
+            {
+                return idx;
+            }
+        }
+
+        return Math.Clamp(focusIndex, 0, optionCount - 1);
+    }
+#pragma warning restore SA1202
+
+    /// <summary>
+    /// workspace-v2m8.1: the honest per-mark outcome line. Null (no notice) when
+    /// the mark took; otherwise the label self-test's reason the row still
+    /// renders wrong (e.g. an exact-URL rule refused over a prefix collision),
+    /// pointing at the tool that CAN generalize — never a silent no-op.
+    /// </summary>
+    private static string? MarkOutcomeNotice(
+        SiteHierarchyConfig config,
+        Dictionary<string, UserLinkLabel> pending,
+        LinkInfo marked,
+        char markKey,
+        List<LinkInfo> links)
+    {
+        if (markKey == 'u' || !pending.TryGetValue(NormalizeUrl(marked.Url), out var label))
+        {
+            return null; // a clear (or an 'a' toggle-off) has no outcome to verify
+        }
+
+        var failure = LabelDerivation.LabelsReproducedFailures(config, new[] { label }, links).FirstOrDefault();
+        return failure == null
+            ? null
+            : $"{failure} — Space → \"Fix links by hand\" can generalize it with AI.";
     }
 
     /// <summary>
@@ -1552,7 +1704,8 @@ internal static class SetupWizard
         Lens? lens,
         CancellationToken ct,
         AdjustCardShape? shape = null,
-        Func<CancellationToken, Task<string?>>? promptLeadUrl = null)
+        Func<CancellationToken, Task<string?>>? promptLeadUrl = null,
+        string? focusUrl = null)
     {
         // workspace-romy.7: an exhausted budget gets an honest card instead of
         // options that would silently no-op after selection. workspace-t1ok.5:
@@ -1575,7 +1728,7 @@ internal static class SetupWizard
             if (deadEndChoice == 0)
             {
                 return await RunLabelAdjustAsync(
-                    analyzer, input, render, overlay, links, pageUrl, screenshot, currentConfig, budget, lens, ct)
+                    analyzer, input, render, overlay, links, pageUrl, screenshot, currentConfig, budget, lens, ct, focusUrl)
                     .ConfigureAwait(false);
             }
 
@@ -1658,7 +1811,7 @@ internal static class SetupWizard
         if (choice == labelIndex)
         {
             return await RunLabelAdjustAsync(
-                analyzer, input, render, overlay, links, pageUrl, screenshot, currentConfig, budget, lens, ct)
+                analyzer, input, render, overlay, links, pageUrl, screenshot, currentConfig, budget, lens, ct, focusUrl)
                 .ConfigureAwait(false);
         }
 
@@ -1787,9 +1940,11 @@ internal static class SetupWizard
         SiteHierarchyConfig currentConfig,
         ModelRoundTripBudget budget,
         Lens? lens,
-        CancellationToken ct)
+        CancellationToken ct,
+        string? focusUrl = null)
     {
-        var outcome = await RunLabelModeAsync(input, render, overlay, links, currentConfig, lens, ct)
+        var outcome = await RunLabelModeAsync(
+                input, render, overlay, links, currentConfig, lens, ct, startFocusUrl: focusUrl)
             .ConfigureAwait(false);
         if (outcome == null)
         {
@@ -1801,6 +1956,10 @@ internal static class SetupWizard
         {
             return null;
         }
+
+        // workspace-v2m8.6: the deterministic path prunes like every model path —
+        // a river that subsumes an old section must not save the dead husk too.
+        derived = PruneSubsumedSections(derived, links);
 
         var failures = LabelDerivation.LabelsReproducedFailures(derived, outcome.Labels, links);
         if (failures.Count == 0 || !budget.TrySpend())
@@ -1943,30 +2102,66 @@ internal static class SetupWizard
     }
 
     /// <summary>
-    /// workspace-zd96: drops any section that matches no Content link on the page,
-    /// so a model refine can never surface a "Top Story — 0 links" row. A config
-    /// where EVERY section is empty is left intact for the degenerate gate to
-    /// handle honestly. Null passes through.
+    /// workspace-zd96 / v2m8.6: drops sections that would RENDER no row on this
+    /// page — mirroring <see cref="BuildPreviewRows"/>'s first-match-wins,
+    /// exclude/More-aware assignment exactly, so the sections that save are the
+    /// sections the preview showed. The old matches-nothing test kept a section
+    /// whose every match was excluded or claimed by an earlier section (the
+    /// techmeme label run saved a dead "Lead" beside the new "Stories" river),
+    /// dead weight that inflated section counts and confused refine prompts.
+    /// A config where EVERY section is empty is left intact for the degenerate
+    /// gate to handle honestly.
     /// </summary>
-    private static InferredPattern? PruneEmptySections(InferredPattern? pattern, List<LinkInfo> links)
+#pragma warning disable SA1202 // helper kept adjacent to its callers (the prune/adjust cluster)
+    internal static SiteHierarchyConfig PruneSubsumedSections(SiteHierarchyConfig config, List<LinkInfo> links)
     {
-        if (pattern is null)
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(links);
+        if (config.Sections.Count == 0)
         {
-            return null;
+            return config;
         }
 
         var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
-        var nonEmpty = pattern.Config.Sections
-            .Where(sec => contentLinks.Any(l => NavigationTreeBuilder.MatchesSection(l, sec)))
-            .ToList();
-
-        if (nonEmpty.Count == pattern.Config.Sections.Count || nonEmpty.Count == 0)
+        var claimed = new HashSet<LinkInfo>();
+        var rendering = new List<HierarchySection>();
+        foreach (var section in config.Sections)
         {
-            return pattern;
+            var matched = contentLinks
+                .Where(l => !NavigationTreeBuilder.IsExcluded(l, config)
+                    && !NavigationTreeBuilder.MatchesMore(l, config)
+                    && !claimed.Contains(l)
+                    && NavigationTreeBuilder.MatchesSection(l, section))
+                .ToList();
+            if (matched.Count == 0)
+            {
+                continue;
+            }
+
+            foreach (var l in matched)
+            {
+                claimed.Add(l);
+            }
+
+            rendering.Add(section);
         }
 
-        return pattern with { Config = pattern.Config with { Sections = nonEmpty } };
+        if (rendering.Count == 0 || rendering.Count == config.Sections.Count)
+        {
+            return config;
+        }
+
+        for (var i = 0; i < rendering.Count; i++)
+        {
+            rendering[i] = rendering[i] with { SortOrder = i };
+        }
+
+        return config with { Sections = rendering };
     }
+#pragma warning restore SA1202
+
+    private static InferredPattern? PruneEmptySections(InferredPattern? pattern, List<LinkInfo> links) =>
+        pattern is null ? null : pattern with { Config = PruneSubsumedSections(pattern.Config, links) };
 
     private static string EscapeAttrValue(string value) =>
         value.Replace("\\", "\\\\", StringComparison.Ordinal).Replace("\"", "\\\"", StringComparison.Ordinal);
@@ -2015,11 +2210,24 @@ internal static class SetupWizard
         {
             var command = await input.WaitForInputAsync(ct).ConfigureAwait(false);
 
-            // workspace-5vqk.4: 'x' on the preview drops the focused item. It has no
-            // dedicated CommandType, so match the raw key (as the schedule picker does).
-            if (adjustable && command.RawKeyChar is 'x' or 'X')
+            // workspace-v2m8.1: the preview speaks the SAME marking grammar as label
+            // mode — one vocabulary on both surfaces. The raw-char match wins over
+            // the global bindings, exactly like RunLabelModeAsync's intercept.
+            if (adjustable && command.RawKeyChar is { } raw)
             {
-                return ExcludeChoice;
+                var mark = char.ToLowerInvariant(raw) switch
+                {
+                    'x' => MarkAdChoice,
+                    'a' => MarkArticleChoice,
+                    'm' => MarkMenuChoice,
+                    'i' => MarkHideChoice,
+                    'u' => MarkClearChoice,
+                    _ => 0,
+                };
+                if (mark != 0)
+                {
+                    return mark;
+                }
             }
 
             switch (command.Type)

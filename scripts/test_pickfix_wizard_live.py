@@ -35,7 +35,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from termtest import TermTest  # noqa: E402
-from keys import choose_layout  # noqa: E402
+from keys import choose_layout, summary_refine  # noqa: E402
 
 DISPLAY = ":97"
 SCREEN_W, SCREEN_H = 1600, 900
@@ -137,8 +137,7 @@ def main():
             # --- g l on a CONFIGURED site -> summary -> Reconfigure with AI ---
             choose_layout(t)
             t.wait_for("Refine the layout with AI", timeout=25)
-            t.send_keys("Up", "Up", "Up")  # cursor starts on "Close"
-            t.send_keys("Enter")
+            summary_refine(t)  # navigate by screen state, not blind Up-counts
 
             # Seeded preview — no model call.
             t.wait_for("Your new layout", timeout=45)

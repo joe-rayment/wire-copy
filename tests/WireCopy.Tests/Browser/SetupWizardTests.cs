@@ -967,7 +967,7 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public void ExcludeItem_DropsSponsorRowAndTokenSiblings_KeepsEveryStory()
+    public void DeriveExcludeFor_DropsSponsorRowAndTokenSiblings_KeepsEveryStory()
     {
         var links = new List<LinkInfo>
         {
@@ -978,7 +978,7 @@ public class SetupWizardTests
         };
         var config = ConfigOf(Sec("Stories", "section.river"), Sec("Promos", "div.promo", 1));
 
-        var result = SetupWizard.ExcludeItem(config, links[2], links);
+        var result = LabelDerivation.DeriveExcludeFor(config, links[2], links, allowSectionTitle: true);
 
         result.Should().NotBeNull("a sponsor row is safely excludable");
         result!.ExcludeSelectors.Should().Contain("div.promo");
@@ -1039,7 +1039,7 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public void ExcludeItem_AdUnderSponsorHeading_ExcludesTheWholeHeading_Durably()
+    public void DeriveExcludeFor_AdUnderSponsorHeading_ExcludesTheWholeHeading_Durably()
     {
         // workspace-rpop.4: the DURABLE "remove one ad, extrapolate to the rest"
         // path — when the item sits under a recognized ad heading, hide the whole
@@ -1059,7 +1059,7 @@ public class SetupWizardTests
         };
         var config = ConfigOf(Sec("Stories", "div.ii"));
 
-        var result = SetupWizard.ExcludeItem(config, links[1], links);
+        var result = LabelDerivation.DeriveExcludeFor(config, links[1], links, allowSectionTitle: true);
 
         result.Should().NotBeNull();
         result!.ExcludeSectionTitles.Should().Contain("Sponsor Posts");
@@ -1071,7 +1071,7 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public void ExcludeItem_CamouflagedAd_ExtrapolatesToTheAdClass_KeepsNewsAndUncoveredRails()
+    public void DeriveExcludeFor_CamouflagedAd_ExtrapolatesToTheAdClass_KeepsNewsAndUncoveredRails()
     {
         // workspace-r8on — the core "remove an ad, extrapolate to other ads" flow,
         // mirroring techmeme: sponsor posts sit INSIDE the news markup (div.ii) in a
@@ -1091,7 +1091,7 @@ public class SetupWizardTests
         var config = ConfigOf(Sec("Stories", "div.ii")); // covers the news AND the camouflaged ad
         var ad = links[4];
 
-        var result = SetupWizard.ExcludeItem(config, ad, links);
+        var result = LabelDerivation.DeriveExcludeFor(config, ad, links, allowSectionTitle: true);
 
         result.Should().NotBeNull();
         result!.ExcludeSelectors.Should().Contain("div#sponsorblk");
@@ -1107,7 +1107,7 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public void ExcludeItem_RefusedWhenEveryDistinctiveTokenAlsoMatchesAKeptStory()
+    public void DeriveExcludeFor_RefusedWhenEveryDistinctiveTokenAlsoMatchesAKeptStory()
     {
         // Two stories share the ONLY discriminating token AND their URL segments —
         // excluding one would erase the other, so the river is protected: REFUSED.
@@ -1118,7 +1118,7 @@ public class SetupWizardTests
         };
         var config = ConfigOf(Sec("Stories", "div.ii"));
 
-        SetupWizard.ExcludeItem(config, links[0], links)
+        LabelDerivation.DeriveExcludeFor(config, links[0], links, allowSectionTitle: true)
             .Should().BeNull("no token/pattern separates the item from the other kept story");
     }
 
@@ -1170,50 +1170,230 @@ public class SetupWizardTests
         return input;
     }
 
-    [Fact]
-    public async Task Preview_ExcludeKey_Refused_ShowsAReasonNotSilentNoOp()
-    {
-        // Two stories share their ONLY identifier (div.ii + /news/ segment), so 'x'
-        // on one is REFUSED (can't erase it without the other). The user must see a
-        // reason, not a dead key — assert the rendered card explains the refusal.
-        var links = new List<LinkInfo>
-        {
-            Story("https://x.com/news/2026/01/01", "First river story headline text", "div.col > div.ii"),
-            Story("https://x.com/news/2026/01/02", "Second river story headline text", "div.col > div.ii"),
-        };
-        var config = ConfigOf(Sec("Stories", "div.ii"));
+    // ---- workspace-v2m8.1/.2: the preview speaks the full label grammar ----
 
-        var footnotes = new List<string>();
+    private static List<LinkInfo> RiverOf3() => new()
+    {
+        Story("https://x.com/news/alpha", "Alpha river story headline text", "div.col > div.river a"),
+        Story("https://x.com/news/beta", "Beta river story headline text", "div.col > div.river a"),
+        Story("https://x.com/news/gamma", "Gamma river story headline text", "div.col > div.river a"),
+    };
+
+    private static NavigationCommand Down() => new() { Type = CommandType.MoveDown };
+
+    private static NavigationCommand Raw(char c, CommandType type = CommandType.NoOp) =>
+        new() { Type = type, RawKeyChar = c };
+
+    private static async Task<(SetupWizard.Result Result, List<string> Focus, List<string> Footnotes)> RunPreview(
+        SiteHierarchyConfig config, List<LinkInfo> links, params NavigationCommand[] commands)
+    {
         var overlay = new SetupWizardOverlay.State();
+        var focus = new List<string>();
+        var footnotes = new List<string>();
         Task Render(CancellationToken _)
         {
-            if (overlay.Card is { } c && overlay.Mode == SetupWizardOverlay.Mode.Card && c.Footnote != null)
+            if (overlay.Card is { } c && overlay.Mode == SetupWizardOverlay.Mode.Card && c.Options.Count > 0)
             {
-                footnotes.Add(c.Footnote);
+                focus.Add(c.Options[Math.Clamp(c.Cursor, 0, c.Options.Count - 1)].Label);
+                if (!string.IsNullOrEmpty(c.Footnote))
+                {
+                    footnotes.Add(c.Footnote);
+                }
             }
 
             return Task.CompletedTask;
         }
 
-        // Rows: [0]=Stories header, [1]=story1, [2]=story2. Down to story1, 'x' (refused), Enter.
-        var input = InputCommands(
-            new NavigationCommand { Type = CommandType.MoveDown },
-            new NavigationCommand { Type = CommandType.CancelRun, RawKeyChar = 'x' },
-            new NavigationCommand { Type = CommandType.ActivateLink });
-
         var result = await SetupWizard.RunAsync(
-            Substitute.For<IHierarchyAnalyzer>(), input, Render, overlay, links, "https://x.com/",
-            null, new ModelRoundTripBudget(),
+            Substitute.For<IHierarchyAnalyzer>(), InputCommands(commands), Render, overlay,
+            links, "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: null, applyPreview: null, lens: null,
             CancellationToken.None, existingConfig: config);
+        return (result, focus, footnotes);
+    }
+
+    [Fact]
+    public async Task Preview_MarkAd_SharedIdentifierRow_HidesViaExactRule_NeverRefuses()
+    {
+        // workspace-v2m8.1: on a uniform river (every row shares its identifier —
+        // live techmeme) the old 'x' REFUSED on every story. The ledger path falls
+        // back to an exact-URL rule: the marked row hides, its siblings survive.
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var (result, _, _) = await RunPreview(
+            config, links, Down(), Raw('x', CommandType.CancelRun), new NavigationCommand { Type = CommandType.ActivateLink });
 
         result.Config.Should().NotBeNull();
-        footnotes.Should().Contain(f => f.Contains("Can't drop", StringComparison.Ordinal),
-            "a refused 'x' must explain why instead of doing nothing");
-        // Both stories survived (nothing was actually excluded).
-        NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeFalse();
+        NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeTrue("the exact-URL fallback hides the marked row");
         NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeFalse();
+        NavigationTreeBuilder.IsExcluded(links[2], result.Config!).Should().BeFalse();
+        result.Config!.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Ad && l.Url == links[0].Url);
+    }
+
+    [Fact]
+    public async Task Preview_MarkAd_PrefixCollision_KeepsLedger_AndSaysStillVisible()
+    {
+        // The one case no deterministic rule can hide: the row's URL PREFIXES a
+        // sibling's (an exact rule would nuke both). The mark still records the
+        // intent in the ledger, and the footnote says the row still shows —
+        // pointing at label mode's AI generalization, never a silent no-op.
+        var links = new List<LinkInfo>
+        {
+            Story("https://x.com/news", "Prefix-colliding story headline text", "div.col > div.ii"),
+            Story("https://x.com/news/alpha-longer-story", "Longer sibling story headline text", "div.col > div.ii"),
+        };
+        var config = ConfigOf(Sec("Stories", "div.ii"));
+
+        var (result, _, footnotes) = await RunPreview(
+            config, links, Down(), Raw('x', CommandType.CancelRun), new NavigationCommand { Type = CommandType.ActivateLink });
+
+        NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeFalse("no safe rule exists");
+        footnotes.Should().Contain(f => f.Contains("still visible", StringComparison.Ordinal)
+            && f.Contains("Fix links by hand", StringComparison.Ordinal));
+        result.Config!.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Ad,
+            "the intent is recorded even when today's derivation can't enforce it");
+    }
+
+    [Fact]
+    public async Task Preview_MarkArticle_RanksReordersAndBadges()
+    {
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        // Rows: [0]=header, [1..3]=stories. Rank Gamma (row 3) as article #1.
+        var (result, _, _) = await RunPreview(
+            config, links, Down(), Down(), Down(), Raw('a', CommandType.AddBookmark),
+            new NavigationCommand { Type = CommandType.ActivateLink });
+
+        result.Config!.UserLabels.Should().ContainSingle(l =>
+            l.Kind == LinkLabelKind.Article && l.Rank == 1 && l.Url == links[2].Url);
+        var rows = SetupWizard.BuildPreviewRows(result.Config!, links);
+        rows[1].Link!.Url.Should().Be(links[2].Url, "the rank-1 article leads the story order");
+        rows[1].Option.Label.Should().Contain("[ 1]", "the rank badge renders on the preview row");
+    }
+
+    [Fact]
+    public async Task Preview_MarkMenu_RoutesUnderMore()
+    {
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var (result, _, _) = await RunPreview(
+            config, links, Down(), Down(), Raw('m'), new NavigationCommand { Type = CommandType.ActivateLink });
+
+        NavigationTreeBuilder.MatchesMore(links[1], result.Config!).Should().BeTrue("the 'm' mark routes the row under More");
+        NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeFalse();
+        result.Config!.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Menu && l.Url == links[1].Url);
+    }
+
+    [Fact]
+    public async Task Preview_MarkHide_HidesRow()
+    {
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var (result, _, _) = await RunPreview(
+            config, links, Down(), Down(), Raw('i'), new NavigationCommand { Type = CommandType.ActivateLink });
+
+        NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeTrue();
+        result.Config!.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Ignore && l.Url == links[1].Url);
+    }
+
+    [Fact]
+    public async Task Preview_MarkClear_RemovesLabelAndRestoresOrder()
+    {
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river")) with
+        {
+            UserLabels = new List<UserLinkLabel>
+            {
+                new()
+                {
+                    Url = links[1].Url, Text = links[1].DisplayText, ParentSelector = links[1].ParentSelector,
+                    Kind = LinkLabelKind.Article, Rank = 1, LabeledAt = DateTime.UtcNow,
+                },
+            },
+        };
+
+        // Beta is rank-1, so it leads: rows [0]=header, [1]=Beta. Clear it.
+        var (result, _, _) = await RunPreview(
+            config, links, Down(), Raw('u'), new NavigationCommand { Type = CommandType.ActivateLink });
+
+        result.Config!.UserLabels.Should().BeEmpty("'u' cleared the only label");
+        var rows = SetupWizard.BuildPreviewRows(result.Config!, links);
+        rows[1].Link!.Url.Should().Be(links[0].Url, "document order returns once the rank is cleared");
+    }
+
+    [Fact]
+    public async Task Preview_Cursor_StaysOnSuccessor_AfterMark_NotTop()
+    {
+        // workspace-v2m8.2: every mark used to rebuild the card with Cursor=0 —
+        // back to the top of a 30-row list after each fix. The cursor must land
+        // on the row that visually replaces the marked one.
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var (_, focus, _) = await RunPreview(
+            config, links, Down(), Down(), Raw('x', CommandType.CancelRun),
+            new NavigationCommand { Type = CommandType.ActivateLink });
+
+        // Rows were [header, Alpha, Beta, Gamma]; 'x' on Beta leaves [header,
+        // Alpha, Gamma] — the re-rendered cursor sits on Gamma (Beta's successor).
+        focus.Last().Should().Contain("Gamma", "the cursor stays where the user's eyes are, not the top");
+    }
+
+    [Fact]
+    public async Task Preview_Cursor_FollowsLink_AfterUndo()
+    {
+        // 'z' restores the pre-mark layout (ledger included) and the cursor
+        // FOLLOWS the focused link to its restored position (by URL, not index).
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var (result, focus, _) = await RunPreview(
+            config, links, Down(), Down(), Raw('x', CommandType.CancelRun),
+            Raw('z', CommandType.Undo),
+            new NavigationCommand { Type = CommandType.ActivateLink });
+
+        result.Config!.UserLabels.Should().BeEmpty("undo reverts the mark's ledger entry too");
+        NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeFalse("undo restored the marked row");
+
+        // After the x the cursor sat on Gamma (index 2 of the pruned rows); the
+        // undo re-inserts Beta at that index — by-URL restore keeps Gamma focused.
+        focus.Last().Should().Contain("Gamma");
+    }
+
+    [Fact]
+    public void PruneSubsumedSections_DropsSectionRenderingNoRow()
+    {
+        // workspace-v2m8.6: the techmeme label run saved a dead "Lead" beside the
+        // new "Stories" river — its every match was claimed first or excluded.
+        var links = RiverOf3();
+        links.Add(Story("https://x.com/rail/promo-hub-link-text", "Rail promo hub link text here", "div.rail > div.item"));
+        var config = ConfigOf(Sec("Stories", "div.river"), Sec("Lead", "div.river", 1) with
+        {
+            ParentSelectors = new List<string> { "div.river", "div.item" },
+        }) with
+        {
+            ExcludeSelectors = new List<string> { "div.rail" },
+        };
+
+        var pruned = SetupWizard.PruneSubsumedSections(config, links);
+
+        pruned.Sections.Should().ContainSingle(s => s.Name == "Stories",
+            "the Lead section renders no row (river claimed first, rail excluded) — dead weight");
+    }
+
+    [Fact]
+    public void PruneSubsumedSections_AllEmpty_LeftIntactForDegenerateGate()
+    {
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Nope", "div.doesnotmatch"));
+
+        SetupWizard.PruneSubsumedSections(config, links).Sections
+            .Should().HaveCount(1, "an all-empty config stays intact for the degenerate gate to handle honestly");
     }
 
     // ---- workspace-5vqk.5: gate the vision lead-tiebreak on a GENUINE contest ----

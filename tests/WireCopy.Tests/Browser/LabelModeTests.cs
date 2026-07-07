@@ -144,6 +144,27 @@ public class LabelModeTests
     }
 
     [Fact]
+    public async Task StartFocusUrl_ResumesOnThatRow()
+    {
+        // workspace-v2m8.2: entered from the preview, label mode resumes on the
+        // row the user was focused on there — pressing 'a' immediately labels
+        // GAMMA, not the top row.
+        var outcome = await SetupWizard.RunLabelModeAsync(
+            Input(Key('a'), Cmd(CommandType.ActivateLink)),
+            _ => Task.CompletedTask,
+            new SetupWizardOverlay.State(),
+            FourStories(),
+            ConfigWith(),
+            lens: null,
+            CancellationToken.None,
+            startFocusUrl: "https://x.com/story/gamma");
+
+        outcome.Should().NotBeNull();
+        outcome!.Labels.Should().ContainSingle(l =>
+            l.Kind == LinkLabelKind.Article && l.Url == "https://x.com/story/gamma");
+    }
+
+    [Fact]
     public async Task Escape_ReturnsNull()
     {
         var outcome = await RunLabelMode(ConfigWith(), FourStories(), null, Cmd(CommandType.GoBack));

@@ -41,7 +41,7 @@ import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from termtest import TermTest  # noqa: E402
-from keys import choose_layout, LABEL_ARTICLE, LABEL_AD  # noqa: E402
+from keys import choose_layout, LABEL_ARTICLE, LABEL_AD, summary_refine  # noqa: E402
 
 DISPLAY = ":92"
 SCREEN_W, SCREEN_H = 1600, 900
@@ -187,7 +187,7 @@ def main():
             time.sleep(6)
             choose_layout(t)
             t.wait_for("Refine the layout with AI", timeout=25)
-            t.send_keys("Up", "Up", "Up", "Enter")
+            summary_refine(t)
             t.wait_for("Your new layout", timeout=45)
             t.send_keys("Space")
             t.wait_for("Fix links by hand", timeout=20)

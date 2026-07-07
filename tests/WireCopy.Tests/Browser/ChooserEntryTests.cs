@@ -59,4 +59,41 @@ public class ChooserEntryTests
     [Fact]
     public void DescribeConfig_DocumentOrder_SaysDocumentOrder()
         => ChooserEntry.DescribeConfig(Config(kind: LayoutKind.DocumentOrder, sections: 0)).Should().Contain("Document order");
+
+    // ---- workspace-v2m8.3: the Refine label claims fix-keeping only when true ----
+
+    [Fact]
+    public void RefineOptionLabel_NoFixes_MakesNoKeepClaim()
+        => ChooserEntry.RefineOptionLabel(Config())
+            .Should().Be("Refine the layout with AI", "there are no fixes to keep");
+
+    [Fact]
+    public void RefineOptionLabel_OneLabel_SaysOneFix()
+    {
+        var config = Config() with
+        {
+            UserLabels = new List<UserLinkLabel>
+            {
+                new() { Url = "https://x.com/a", Text = "t", Kind = LinkLabelKind.Ad, LabeledAt = DateTime.UtcNow },
+            },
+        };
+
+        ChooserEntry.RefineOptionLabel(config).Should().Contain("keeps your 1 fix").And.NotContain("fixes");
+    }
+
+    [Fact]
+    public void RefineOptionLabel_LabelsPlusInstructions_CountsBoth()
+    {
+        var config = Config() with
+        {
+            UserLabels = new List<UserLinkLabel>
+            {
+                new() { Url = "https://x.com/a", Text = "t", Kind = LinkLabelKind.Ad, LabeledAt = DateTime.UtcNow },
+                new() { Url = "https://x.com/b", Text = "t", Kind = LinkLabelKind.Menu, LabeledAt = DateTime.UtcNow },
+            },
+            UserInstructions = new List<string> { "hide the podcasts" },
+        };
+
+        ChooserEntry.RefineOptionLabel(config).Should().Contain("keeps your 3 fixes");
+    }
 }

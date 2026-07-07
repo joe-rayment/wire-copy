@@ -46,3 +46,34 @@ INTERACTIVE_REFRESH = "I"  # InteractiveRefresh (Shift+I)
 def choose_layout(t, delay: float = 0.15):
     """Drive the 'g l' AI-layout-wizard chord on TermTest ``t``."""
     t.send_keys(*CHOOSE_LAYOUT, delay=delay)
+
+
+def summary_select(t, label_fragment: str, attempts: int = 8, delay: float = 0.35):
+    """On the configured-site Layout summary card, walk the ▸ cursor to the
+    option containing ``label_fragment`` and press Enter.
+
+    Cursor-position-independent on purpose: the card's option list and default
+    cursor have changed before (workspace-v2m8.4 added 'Fix links by hand' and
+    moved the default off Close), and blind Up-times-N navigation silently
+    selects the wrong row when that happens — navigate by what the screen SHOWS.
+    """
+    import time
+
+    for _ in range(attempts):
+        line = next((l for l in t.capture().splitlines() if "▸" in l), "")
+        if label_fragment in line:
+            t.send_keys("Enter")
+            return
+        t.send_keys("Up")
+        time.sleep(delay)
+    raise AssertionError(f"summary card cursor never reached {label_fragment!r}")
+
+
+def summary_refine(t):
+    """Select 'Refine the layout with AI' on the configured-site summary card."""
+    summary_select(t, "Refine the layout")
+
+
+def summary_fix_links(t):
+    """Select 'Fix links by hand' on the configured-site summary card (workspace-v2m8.4)."""
+    summary_select(t, "Fix links by hand")
