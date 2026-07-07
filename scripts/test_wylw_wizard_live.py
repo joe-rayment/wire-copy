@@ -171,7 +171,7 @@ def main():
             choose_layout(t)  # g l = AI layout wizard
             t.wait_for("How should WireCopy read this site?", timeout=20)
             transcript(t, log, "2. Ctrl+L entry card (AI-first)")
-            t.send_keys("Enter")  # ✨ Let AI find the stories
+            t.send_keys("Enter")  # ✨ Let AI figure out this site's layout
 
             # --- Round 1 (real model) → clarifying questions (if any) →
             # round 2 → the live PREVIEW. workspace-6yb7: there is no overview
@@ -253,7 +253,7 @@ def main():
             choose_layout(t2)  # g l = AI layout wizard
             t2.wait_for("Layout", timeout=20)
             screen = transcript(t2, log, "9. Ctrl+L on revisit — configured summary (not setup)")
-            if "Reconfigure with AI" not in screen:
+            if "Refine the layout with AI" not in screen:
                 failures.append("revisit Ctrl+L did not open the configured summary")
             t2.send_keys("Escape")
     finally:

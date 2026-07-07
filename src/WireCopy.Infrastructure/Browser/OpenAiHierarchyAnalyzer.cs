@@ -1166,23 +1166,35 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         var sb = new StringBuilder();
         sb.Append(BuildCuratedUserPrompt(contentLinks, pageUrl));
         sb.AppendLine();
-        sb.AppendLine("Your proposed pattern was:");
-        if (proposal.ProposedPattern.TopStory is { } top)
+
+        // workspace-t1ok.7: the first shot now runs with an EMPTY proposal (the
+        // question round is gone) — only emit the proposal block when there is
+        // actually a prior pattern to recall, so the model isn't shown a
+        // dangling empty header.
+        var hasProposal = proposal.ProposedPattern.TopStory != null
+            || proposal.ProposedPattern.Tiers.Count > 0
+            || proposal.ProposedPattern.Exclude.Count > 0;
+        if (hasProposal)
         {
-            sb.AppendLine($"  top_story: {DescribeOption(top)}");
+            sb.AppendLine("Your proposed pattern was:");
+            if (proposal.ProposedPattern.TopStory is { } top)
+            {
+                sb.AppendLine($"  top_story: {DescribeOption(top)}");
+            }
+
+            foreach (var tier in proposal.ProposedPattern.Tiers)
+            {
+                sb.AppendLine($"  tier: {DescribeOption(tier)}");
+            }
+
+            foreach (var ex in proposal.ProposedPattern.Exclude)
+            {
+                sb.AppendLine($"  exclude: {DescribeOption(ex)}");
+            }
+
+            sb.AppendLine();
         }
 
-        foreach (var tier in proposal.ProposedPattern.Tiers)
-        {
-            sb.AppendLine($"  tier: {DescribeOption(tier)}");
-        }
-
-        foreach (var ex in proposal.ProposedPattern.Exclude)
-        {
-            sb.AppendLine($"  exclude: {DescribeOption(ex)}");
-        }
-
-        sb.AppendLine();
         var byId = proposal.Questions.ToDictionary(q => q.Id, q => q, StringComparer.Ordinal);
         var qaAnswers = answers.Where(a => !string.Equals(a.QuestionId, "adjustment", StringComparison.Ordinal)).ToList();
         var userInstructions = answers
@@ -1290,6 +1302,42 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         if (excludedIndices.Count > 0)
         {
             sb.AppendLine($"  excluded links [{string.Join(", ", excludedIndices)}]");
+        }
+
+        // workspace-t1ok.8: the user's hand labels and previously applied
+        // instructions are standing constraints — a NEW change must never undo
+        // them. (The app also re-applies the label rules in code after the
+        // parse; this block keeps the model from fighting that enforcement.)
+        if (currentConfig.UserLabels.Count > 0)
+        {
+            var indexByKey = new Dictionary<string, int>(StringComparer.Ordinal);
+            for (int i = 0; i < contentLinks.Count; i++)
+            {
+                indexByKey.TryAdd(LabelDerivation.NormalizeUrl(contentLinks[i].Url), i);
+            }
+
+            List<int> IndicesOf(LinkLabelKind kind) => currentConfig.UserLabels
+                .Where(l => l.Kind == kind)
+                .OrderBy(l => l.Rank ?? int.MaxValue)
+                .Select(l => indexByKey.TryGetValue(LabelDerivation.NormalizeUrl(l.Url), out var idx) ? idx : -1)
+                .Where(idx => idx >= 0)
+                .ToList();
+
+            sb.AppendLine();
+            sb.AppendLine("USER-LABELED GROUND TRUTH — NEVER violate these regardless of the change below:");
+            sb.AppendLine($"  articles, in required order: [{string.Join(", ", IndicesOf(LinkLabelKind.Article))}]");
+            sb.AppendLine($"  ads/hidden — keep excluded: [{string.Join(", ", IndicesOf(LinkLabelKind.Ad).Concat(IndicesOf(LinkLabelKind.Ignore)))}]");
+            sb.AppendLine($"  menu links — keep out of sections AND out of exclude_indices: [{string.Join(", ", IndicesOf(LinkLabelKind.Menu))}]");
+        }
+
+        if (currentConfig.UserInstructions.Count > 0)
+        {
+            sb.AppendLine();
+            sb.AppendLine("EARLIER USER INSTRUCTIONS (already applied — still in force):");
+            foreach (var earlier in currentConfig.UserInstructions)
+            {
+                sb.AppendLine($"  • {earlier}");
+            }
         }
 
         sb.AppendLine();

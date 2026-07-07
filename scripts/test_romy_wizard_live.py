@@ -92,7 +92,7 @@ def drive_to_preview(t, gate):
     # chooser; the pre-flight phase also captures a screenshot first.
     t.wait_for("How should WireCopy read this site?", timeout=60)
     gate.shot(t, "entry card")
-    t.send_keys("Enter")  # ✨ Let AI find the stories
+    t.send_keys("Enter")  # ✨ Let AI figure out this site's layout
 
     deadline = time.time() + 360
     seen_q = 0
@@ -120,10 +120,14 @@ def adjust_round(t, gate, text, label):
         gate.fail(f"{label}: adjust card did not open")
         return None
 
-    # The free-text option is the LAST row; 'Point at the main story' may
-    # or may not be present above it.
-    if "Point at the main story" in screen:
+    # workspace-t1ok.7: options shifted (label mode is option 0) — walk the
+    # cursor to the free-text row instead of assuming positions.
+    for _ in range(6):
+        cursor_line = next((l for l in t.capture().splitlines() if "▸" in l), "")
+        if "Tell the AI" in cursor_line:
+            break
         t.send_keys("Down")
+        time.sleep(0.3)
     t.send_keys("Enter")
     try:
         t.wait_for("Tell the AI what to change", timeout=15)

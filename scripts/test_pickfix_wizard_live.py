@@ -136,7 +136,7 @@ def main():
 
             # --- g l on a CONFIGURED site -> summary -> Reconfigure with AI ---
             choose_layout(t)
-            t.wait_for("Reconfigure with AI", timeout=25)
+            t.wait_for("Refine the layout with AI", timeout=25)
             t.send_keys("Up", "Up", "Up")  # cursor starts on "Close"
             t.send_keys("Enter")
 
@@ -146,7 +146,8 @@ def main():
 
             # --- Space -> adjust card -> pick option (index 0) ---
             t.send_keys("Space")
-            t.wait_for_any("Pick a story", "Pick another story", timeout=20)
+            t.wait_for_any("Point at the top story", "Point at another story", timeout=20)
+            t.send_keys("Down")  # past "Fix links by hand" (option 0) to the pick option
             t.send_keys("Enter")
 
             # Pick mode: card cleared, pick hint pinned. (Tolerate the pre-fix

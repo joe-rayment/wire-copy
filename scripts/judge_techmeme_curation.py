@@ -143,7 +143,7 @@ def main():
                 choose_layout(t)  # g l = AI layout wizard
                 t.wait_for("How should WireCopy read this site?", timeout=25)
                 cap(t, "01. Ctrl+L entry card", "01a-entry.txt")
-                t.send_keys("Enter")  # Let AI find the stories
+                t.send_keys("Enter")  # ✨ Let AI figure out this site's layout
 
                 # round 1 → question cards → round 2 → preview
                 deadline = time.time() + 360
@@ -219,8 +219,14 @@ def adjust_round(t, text, out, log):
         print("  adjust card did not open")
         return False
     log.append(f"\n===== adjust card =====\n{screen}")
-    if "Point at the main story" in screen:
+    # workspace-t1ok.7: options shifted (label mode is option 0) — walk the
+    # cursor to the free-text row instead of assuming positions.
+    for _ in range(6):
+        cursor_line = next((l for l in t.capture().splitlines() if "▸" in l), "")
+        if "Tell the AI" in cursor_line:
+            break
         t.send_keys("Down")
+        time.sleep(0.3)
     t.send_keys("Enter")
     try:
         t.wait_for("Tell the AI what to change", timeout=15)

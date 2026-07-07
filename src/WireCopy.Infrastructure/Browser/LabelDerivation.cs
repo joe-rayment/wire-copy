@@ -169,6 +169,45 @@ internal static class LabelDerivation
     }
 
     /// <summary>
+    /// workspace-t1ok.8: the standard treatment for EVERY accepted model round —
+    /// carry the user's durable state onto the fresh config, then re-apply the
+    /// ledger's rule labels in code. Prompting the model to honor the labels
+    /// (which the refine/label prompts do) is advisory; this is the enforcement:
+    /// a disobedient response cannot resurrect a labeled ad, strand a menu link
+    /// in the story flow, or hide a labeled article.
+    /// </summary>
+    internal static SiteHierarchyConfig CarryAndEnforce(
+        SiteHierarchyConfig fresh,
+        SiteHierarchyConfig? prior,
+        List<LinkInfo> links)
+    {
+        var carried = CarryUserState(fresh, prior);
+        return carried.UserLabels.Count == 0 ? carried : ApplyRuleLabels(carried, carried.UserLabels, links);
+    }
+
+    /// <summary>
+    /// workspace-t1ok.8: records a plain-English instruction as APPLIED on the
+    /// config it produced (oldest first, capped) — later refine prompts carry
+    /// the log so a new tweak can't silently undo an earlier one.
+    /// </summary>
+    internal static SiteHierarchyConfig AppendInstruction(SiteHierarchyConfig config, string instruction)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        if (string.IsNullOrWhiteSpace(instruction))
+        {
+            return config;
+        }
+
+        var log = config.UserInstructions.Append(instruction.Trim()).ToList();
+        if (log.Count > SiteHierarchyConfig.MaxUserInstructions)
+        {
+            log = log.Skip(log.Count - SiteHierarchyConfig.MaxUserInstructions).ToList();
+        }
+
+        return config with { UserInstructions = log };
+    }
+
+    /// <summary>
     /// workspace-t1ok.5/.6: applies the RULE labels (ads, ignores, menus) plus
     /// the article-protection pass to a config — used by
     /// <see cref="DeriveConfig"/> AND re-applied in code on top of every model

@@ -264,7 +264,7 @@ internal static class StrategyChooserHandler
         var field = new UI.Components.FormFieldConfig
         {
             Label = "Paste a story's URL",
-            Subtitle = "Any story teaches the repeating layout — copy it from the browser or the list",
+            Subtitle = "Paste any story's link — WireCopy finds the other stories shaped like it",
             Placeholder = "https://…  ·  Enter to set · Esc to go back",
         };
 
@@ -466,7 +466,8 @@ internal static class StrategyChooserHandler
         IServiceScope scope,
         Domain.Entities.Browser.Page page,
         RenderOptions options,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool startWithLabelMode = false)
     {
         var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
         if (analyzer == null || !analyzer.IsConfigured)
@@ -614,7 +615,8 @@ internal static class StrategyChooserHandler
                 lens,
                 ct,
                 existingConfig,
-                promptLeadUrl: c => PromptForLeadUrlAsync(ctx, options, c)).ConfigureAwait(false);
+                promptLeadUrl: c => PromptForLeadUrlAsync(ctx, options, c),
+                startWithLabelMode: startWithLabelMode).ConfigureAwait(false);
             completed = !result.Cancelled;
             return result;
         }
@@ -942,6 +944,8 @@ internal static class StrategyChooserHandler
         int choice;
         try
         {
+            // workspace-t1ok.7: outcome-first entry — AI does the first shot, or
+            // the user labels the links by hand; "teach" wording is gone.
             var card = new UI.Components.SetupWizardOverlay.WizardCard
             {
                 Title = "Set up this site",
@@ -951,10 +955,14 @@ internal static class StrategyChooserHandler
                     new UI.Components.SetupWizardOverlay.CardOption
                     {
                         Label = aiAvailable
-                            ? "✨ Let AI find the stories (recommended)"
+                            ? "✨ Let AI figure out this site's layout (recommended)"
                             : "AI setup — add an OpenAI key first (press c on the launcher)",
                     },
-                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Document order — show every link" },
+                    new UI.Components.SetupWizardOverlay.CardOption
+                    {
+                        Label = "Mark the links yourself — you label, WireCopy learns the pattern",
+                    },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Show every link, in page order" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Compare all strategies…" },
                 },
                 Cursor = aiAvailable ? 0 : 1,
@@ -977,9 +985,12 @@ internal static class StrategyChooserHandler
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             case 1:
-                await RunStrategyAndApplyAsync(ctx, scope, page, ScrapingStrategies.DocumentOrderStrategy.StrategyId, options, ct).ConfigureAwait(false);
+                await RunAiSetupAndApplyAsync(ctx, scope, page, options, ct, startWithLabelMode: true).ConfigureAwait(false);
                 break;
             case 2:
+                await RunStrategyAndApplyAsync(ctx, scope, page, ScrapingStrategies.DocumentOrderStrategy.StrategyId, options, ct).ConfigureAwait(false);
+                break;
+            case 3:
                 await RunCompareModeAsync(ctx, options, ct).ConfigureAwait(false);
                 break;
             default:
@@ -1015,7 +1026,7 @@ internal static class StrategyChooserHandler
                 Prompt = ChooserEntry.DescribeConfig(config),
                 Options =
                 {
-                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Reconfigure with AI" },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Refine the layout with AI (keeps your fixes)" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Reset to document order" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Compare all strategies…" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Close" },
@@ -1059,9 +1070,10 @@ internal static class StrategyChooserHandler
         IServiceScope scope,
         Domain.Entities.Browser.Page page,
         RenderOptions options,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool startWithLabelMode = false)
     {
-        var wizardResult = await RunSetupWizardAsync(ctx, scope, page, options, ct).ConfigureAwait(false);
+        var wizardResult = await RunSetupWizardAsync(ctx, scope, page, options, ct, startWithLabelMode).ConfigureAwait(false);
         if (wizardResult.Cancelled)
         {
             ctx.NavigationService.SetStatusMessage("Cancelled — site not configured");

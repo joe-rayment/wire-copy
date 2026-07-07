@@ -147,7 +147,7 @@ def main():
             t.wait_for("Techmeme", timeout=120)
             time.sleep(6)
             choose_layout(t)
-            t.wait_for("Reconfigure with AI", timeout=25)
+            t.wait_for("Refine the layout with AI", timeout=25)
             t.send_keys("Up", "Up", "Up", "Enter")
             t.wait_for("Your new layout", timeout=45)
 

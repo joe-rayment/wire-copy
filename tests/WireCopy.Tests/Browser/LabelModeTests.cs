@@ -417,6 +417,159 @@ public class LabelModeTests
             Arg.Any<SiteHierarchyConfig>(), Arg.Any<CancellationToken>());
     }
 
+    // ---- bead 8: refine respects labels + instruction log ----------------------
+
+    [Fact]
+    public async Task Refine_DisobedientModel_LabeledAdStaysExcluded_AndInstructionLogged()
+    {
+        var ad = Story("https://sponsor.example/pitch", "Sponsored pitch headline long enough here", "div.sp a", sectionTitle: "Sponsor Posts");
+        var links = RiverPage();
+        links.Add(ad);
+        var seeded = ConfigWith(
+            sections: new List<HierarchySection>
+            {
+                new() { Name = "Headlines", SortOrder = 0, UrlPatterns = new List<string> { "/story" } },
+            },
+            labels: new List<UserLinkLabel> { Label(ad.Url, LinkLabelKind.Ad) })
+            with
+        { ExcludeSectionTitles = new List<string> { "Sponsor Posts" } };
+
+        // The "model" forgets every exclude when applying the tweak.
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.RefineLayoutAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<SiteHierarchyConfig>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new InferredPattern
+            {
+                Config = ConfigWith(sections: new List<HierarchySection>
+                {
+                    new() { Name = "Headlines", SortOrder = 0, UrlPatterns = new List<string> { "/story" } },
+                }),
+            });
+
+        // Seeded preview → Space → Down past "Fix links by hand" → Enter on
+        // "Tell the AI what to change…" → refine → Enter saves.
+        var input = Input(
+            Cmd(CommandType.ToggleSelection),
+            Cmd(CommandType.MoveDown),
+            Cmd(CommandType.ActivateLink),
+            Cmd(CommandType.ActivateLink));
+
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            links, "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>("hide the podcast links"),
+            pickLeadFromTree: null,
+            applyPreview: null,
+            lens: null,
+            CancellationToken.None,
+            existingConfig: seeded);
+
+        result.Config.Should().NotBeNull();
+        NavigationTreeBuilder.IsExcluded(ad, result.Config!).Should().BeTrue(
+            "the ledger's ad label is re-applied in code after every refine");
+        result.Config!.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Ad);
+        result.Config.UserInstructions.Should().Contain("hide the podcast links",
+            "an applied instruction joins the standing log");
+    }
+
+    [Fact]
+    public void AppendInstruction_CapsAtMax()
+    {
+        var config = ConfigWith();
+        for (var i = 0; i < SiteHierarchyConfig.MaxUserInstructions + 5; i++)
+        {
+            config = LabelDerivation.AppendInstruction(config, $"instruction {i}");
+        }
+
+        config.UserInstructions.Should().HaveCount(SiteHierarchyConfig.MaxUserInstructions);
+        config.UserInstructions[^1].Should().Be($"instruction {SiteHierarchyConfig.MaxUserInstructions + 4}",
+            "the newest instructions survive the cap");
+    }
+
+    [Fact]
+    public async Task RefinePrompt_CarriesGroundTruthLabels_AndInstructionLog()
+    {
+        var config = new OpenAiHierarchyConfiguration
+        {
+            Model = "gpt-5-mini",
+            ReasoningEffort = "minimal",
+            MaxTokens = 4096,
+        };
+        var settings = Substitute.For<IUserSettingsStore>();
+        settings.Get("OpenAiApiKey").Returns("sk-test");
+
+        string? capturedUser = null;
+        OpenAiHierarchyAnalyzer.ChatCompleter completer = (_, _, messages, _, _) =>
+        {
+            capturedUser = messages.OfType<OpenAI.Chat.UserChatMessage>().First()
+                .Content.First(p => p.Text != null).Text;
+            return Task.FromResult(
+                "{\"sections\":[{\"name\":\"Stories\",\"story_indices\":[0,1],\"start_collapsed\":false}]," +
+                "\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}");
+        };
+
+        var analyzer = new OpenAiHierarchyAnalyzer(
+            Options.Create(config),
+            Options.Create(new OpenAiTtsConfiguration()),
+            settings,
+            Substitute.For<ILogger<OpenAiHierarchyAnalyzer>>(),
+            completer);
+
+        var links = RiverPage();
+        var current = ConfigWith(labels: new List<UserLinkLabel>
+        {
+            Label("https://x.com/story/beta", LinkLabelKind.Article, 1),
+            Label("https://x.com/story/gamma", LinkLabelKind.Ad),
+        }) with
+        { UserInstructions = new List<string> { "merge the columns" } };
+
+        await analyzer.RefineLayoutAsync(null, links, "https://x.com/", current, "hide the events rail");
+
+        capturedUser.Should().Contain("USER-LABELED GROUND TRUTH");
+        capturedUser.Should().Contain("articles, in required order: [1]");
+        capturedUser.Should().Contain("ads/hidden — keep excluded: [2]");
+        capturedUser.Should().Contain("EARLIER USER INSTRUCTIONS");
+        capturedUser.Should().Contain("merge the columns");
+        capturedUser.Should().Contain("hide the events rail");
+    }
+
+    [Fact]
+    public async Task StartWithLabelMode_LabelsToPreview_ZeroModelCalls()
+    {
+        // workspace-t1ok.7: the "Mark the links yourself" entry — label mode
+        // runs FIRST over a flat seed, the derived config previews, Enter
+        // saves; the analyzer is never called.
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        var links = RiverPage();
+
+        // Flat-seed label view lists story-shaped articles; label the first
+        // one as rank-1, apply, then Enter saves the preview.
+        var input = Input(
+            Key('a'),
+            Cmd(CommandType.ActivateLink),   // apply labels
+            Cmd(CommandType.ActivateLink));  // save the preview
+
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            links, "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null,
+            applyPreview: null,
+            lens: null,
+            CancellationToken.None,
+            startWithLabelMode: true);
+
+        result.Config.Should().NotBeNull();
+        result.Config!.Sections.Should().NotBeEmpty("the labeled article derived a river section");
+        result.Config.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Article && l.Rank == 1);
+        budget.Used.Should().Be(0, "hand-labeling costs no model calls");
+        await analyzer.DidNotReceiveWithAnyArgs().InferPatternFromAnswersAsync(
+            default, default!, default!, default!, default!, default);
+        await analyzer.DidNotReceiveWithAnyArgs().ProposeSetupQuestionsAsync(default, default!, default!, default);
+    }
+
     [Fact]
     public async Task InferPatternFromLabels_PromptCarriesGroundTruthIndices()
     {

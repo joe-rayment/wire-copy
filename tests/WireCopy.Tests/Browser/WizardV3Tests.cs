@@ -592,7 +592,7 @@ public class WizardV3Tests
             pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        budget.Used.Should().Be(3, "propose + infer + the answered confirm question");
+        budget.Used.Should().Be(3, "silent propose + infer + the answered confirm question");
         answersLog.Last().Should().Contain(a => a.QuestionId == "confirm" && a.Answer.Contains("The lead box"));
     }
 }

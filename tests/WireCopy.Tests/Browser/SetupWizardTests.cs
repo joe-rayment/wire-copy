@@ -92,19 +92,18 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public async Task AcceptAllPath_ClampsQuestions_ExactlyTwoRoundTrips_ShowsIdentifier()
+    public async Task FirstShot_ZeroQuestions_ExactlyOneRoundTrip_ShowsIdentifier()
     {
+        // workspace-t1ok.7: the question round is GONE — accepting the first
+        // shot costs exactly ONE model call and never renders a question card.
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
-        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProposalWith(questionCount: 5));
-
         IReadOnlyList<SetupAnswer>? capturedAnswers = null;
         analyzer.InferPatternFromAnswersAsync(
                 Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
             .Returns(ci => { capturedAnswers = ci.Arg<IReadOnlyList<SetupAnswer>>(); return new InferredPattern { Config = SomeConfig() }; });
 
-        var input = InputSequence(CommandType.ActivateLink); // Enter every card
+        var input = InputSequence(CommandType.ActivateLink); // Enter saves the preview
 
         var overlay = new SetupWizardOverlay.State();
         var cards = new List<IReadOnlyList<string>>();
@@ -129,15 +128,17 @@ public class SetupWizardTests
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        budget.Used.Should().Be(2, "accept-all spends exactly propose + infer");
-        capturedAnswers!.Count.Should().BeLessThanOrEqualTo(SetupWizard.MaxStructuredQuestions,
-            "structured questions are clamped to at most 3 (5 proposed)");
+        budget.Used.Should().Be(2, "silent propose + infer — no user-facing question round");
+        capturedAnswers!.Should().BeEmpty("there are no question answers anymore");
+        await analyzer.Received(1).ProposeSetupQuestionsAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
 
         // Identifier transparency: the preview card shows the durable selector
         // that will be saved.
         cards.SelectMany(c => c).Should().Contain(l => l.Contains("section.lead", StringComparison.Ordinal));
 
-        // The removed confirmation-theater options must not resurface.
+        // No question cards, no removed confirmation-theater options.
+        cards.SelectMany(c => c).Should().NotContain(l => l.Contains("Set up this site with AI", StringComparison.Ordinal));
         cards.SelectMany(c => c).Should().NotContain(l => l.Contains("Looks good", StringComparison.OrdinalIgnoreCase));
         cards.SelectMany(c => c).Should().NotContain(l => l.Contains("document order", StringComparison.OrdinalIgnoreCase));
     }
@@ -289,7 +290,7 @@ public class SetupWizardTests
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        budget.Used.Should().Be(3, "propose + infer + one refine for the pick");
+        budget.Used.Should().Be(3, "silent propose + infer + one refine for the pick");
 
         // workspace-9k27.4: a normal preview adjustment REFINES the current
         // layout (RefineLayoutAsync) — it must NOT regenerate from the proposal
@@ -502,33 +503,13 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public async Task RunAsync_DropsNonDiscriminatingQuestions_KeepsRealOnes()
+    public async Task RunAsync_NeverAsksQuestions_ProposeNeverCalled()
     {
-        var proposal = ProposalWith(questionCount: 1); // one real question (distinct labels? "Opt" only 1 option!)
-        proposal.Questions.Clear();
-        proposal.Questions.Add(new SetupQuestion
-        {
-            Id = "junk",
-            Prompt = "Does this look right?",
-            Kind = SetupQuestionKind.ConfirmOrder,
-            DefaultAnswer = "Yes",
-        });
-        proposal.Questions.Add(new SetupQuestion
-        {
-            Id = "real",
-            Prompt = "Which is the lead?",
-            Kind = SetupQuestionKind.PickMain,
-            DefaultAnswer = "Hero",
-            Options = new List<SetupOption>
-            {
-                new() { Label = "Hero", ParentSelector = "section.hero" },
-                new() { Label = "First feed item", ParentSelector = "section.feed" },
-            },
-        });
-
+        // workspace-t1ok.7: even an analyzer eager to propose questions never
+        // gets the chance — the wizard goes straight to the first shot.
         var analyzer = Substitute.For<IHierarchyAnalyzer>();
         analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(proposal);
+            .Returns(ProposalWith(questionCount: 3));
         IReadOnlyList<SetupAnswer>? captured = null;
         analyzer.InferPatternFromAnswersAsync(
                 Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
@@ -544,8 +525,7 @@ public class SetupWizardTests
             pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-        captured.Should().ContainSingle("only the discriminating question was asked")
-            .Which.QuestionId.Should().Be("real");
+        captured.Should().BeEmpty("the proposal's questions are discarded, never asked");
     }
 
     // ---- workspace-6yb7.6: degenerate gate ----
@@ -615,7 +595,7 @@ public class SetupWizardTests
 
         result.Config.Should().NotBeNull();
         result.Config!.Sections[0].Name.Should().Be("Top Story", "the repaired config is what previews and saves");
-        budget.Used.Should().Be(3, "propose + infer + exactly one automatic repair");
+        budget.Used.Should().Be(3, "silent propose + infer + exactly one automatic repair");
         allAnswers[1].Should().Contain(a => a.QuestionId == "self-test-failure",
             "the repair round-trip carries the structured mismatch feedback");
     }
@@ -651,7 +631,7 @@ public class SetupWizardTests
 
         result.Cancelled.Should().BeTrue("a 0-coverage config must be unsaveable");
         result.Config.Should().BeNull();
-        budget.Used.Should().Be(3, "propose + infer + the single repair attempt");
+        budget.Used.Should().Be(3, "silent propose + infer + the single repair attempt");
         previewApplied.Should().Be(0, "a degenerate config never reaches the live preview");
         titles.Should().Contain("No reliable pattern found");
         titles.Should().NotContain("Your new layout");
@@ -699,7 +679,7 @@ public class SetupWizardTests
 
         result.Config.Should().NotBeNull();
         result.Config!.Sections[0].Name.Should().Be("Top Story");
-        budget.Used.Should().Be(4, "propose + infer + auto-repair + pick-driven re-inference");
+        budget.Used.Should().Be(4, "silent propose + infer + auto-repair + pick-driven re-inference");
     }
 
     // ---- workspace-wylw: live lens confirmation ----
@@ -779,9 +759,9 @@ public class SetupWizardTests
     }
 
     [Fact]
-    public async Task QuestionAndPreviewCards_HighlightFocusedOptionOnLens()
+    public async Task PreviewCards_HighlightFocusedOptionOnLens()
     {
-        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 1), SomeConfig());
+        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
         var input = InputSequence(CommandType.ActivateLink);
 
         var highlighted = new List<string>();
@@ -811,9 +791,6 @@ public class SetupWizardTests
             CancellationToken.None);
 
         result.Config.Should().NotBeNull();
-
-        // The question card focused its first option → its links lit up.
-        highlighted.Should().Contain("section.feed a[href]");
 
         // The preview card lit the saved section's links and was rendered with
         // its real match count before Enter saved.

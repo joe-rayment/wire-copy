@@ -9,23 +9,20 @@ using WireCopy.Infrastructure.Browser.UI.Components;
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
 /// <summary>
-/// workspace-6yb7.3 — the preview-first AI setup wizard.
-/// Calls <see cref="IHierarchyAnalyzer.ProposeSetupQuestionsAsync"/> (round 1),
-/// asks the model's clarifying questions (each option highlights its matches on
-/// the sidecar lens), calls
-/// <see cref="IHierarchyAnalyzer.InferPatternFromAnswersAsync"/> (round 2), and
-/// then shows the RESULT: the candidate config is applied to the real link tree
-/// behind a slim caption card, so what the user evaluates is the page they will
-/// actually get. Enter saves exactly what is previewed; Space opens the adjust
-/// loop (point at the lead / free-text guidance, each one budget-guarded
-/// re-inference); Esc discards — document order is the implicit unconfigured
-/// default and is never presented as a wizard option.
+/// workspace-6yb7.3 / workspace-t1ok.7 — the preview-first AI setup wizard.
+/// ONE vision-grounded <see cref="IHierarchyAnalyzer.InferPatternFromAnswersAsync"/>
+/// call produces the first shot (the clarifying-question round is gone — the
+/// label mode and refine loop are the adjustment surface), then shows the
+/// RESULT: the candidate config is applied to the real link tree behind a slim
+/// caption card, so what the user evaluates is the page they will actually
+/// get. Enter saves exactly what is previewed; Space opens the adjust loop
+/// (label links by hand — deterministic and budget-free — point at the top
+/// story, paste its URL, or steer with free text); Esc discards — document
+/// order is the implicit unconfigured default and is never presented as a
+/// wizard option.
 /// </summary>
 internal static class SetupWizard
 {
-    /// <summary>Cap on structured question cards shown.</summary>
-    internal const int MaxStructuredQuestions = 3;
-
     /// <summary>
     /// workspace-6yb7.6: minimum share of the page's story links a config must
     /// cover to earn a preview. Below this the wizard repairs or fails honestly.
@@ -84,10 +81,56 @@ internal static class SetupWizard
         Lens? lens,
         CancellationToken ct,
         SiteHierarchyConfig? existingConfig = null,
-        Func<CancellationToken, Task<string?>>? promptLeadUrl = null)
+        Func<CancellationToken, Task<string?>>? promptLeadUrl = null,
+        bool startWithLabelMode = false)
     {
         ArgumentNullException.ThrowIfNull(analyzer);
         ArgumentNullException.ThrowIfNull(budget);
+
+        // ---- workspace-t1ok.7: "Mark the links yourself" — label mode FIRST,
+        // over the plain every-link list, zero model calls unless the
+        // generalization fallback fires. The derived (or flat) config then runs
+        // the normal preview/refine loop.
+        if (startWithLabelMode)
+        {
+            var seed = existingConfig ?? new SiteHierarchyConfig
+            {
+                Domain = HierarchyDomainKey.FromUrl(pageUrl),
+                UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(pageUrl),
+                Sections = new List<HierarchySection>(),
+                CreatedAt = DateTime.UtcNow,
+                ModelVersion = "label-first",
+                Kind = LayoutKind.DocumentOrder,
+                Version = 3,
+            };
+            var labeled = await RunLabelAdjustAsync(
+                analyzer, input, render, overlay, links, pageUrl, screenshot, seed, budget, lens, ct)
+                .ConfigureAwait(false);
+            if (labeled == null)
+            {
+                return new Result { Cancelled = true };
+            }
+
+            return await RunPreviewLoopAsync(
+                analyzer,
+                input,
+                render,
+                overlay,
+                links,
+                pageUrl,
+                screenshot,
+                proposal: EmptyProposal(),
+                answers: new List<SetupAnswer>(),
+                config: labeled.Config,
+                confirmQuestion: labeled.ConfirmQuestion,
+                budget,
+                freeTextPrompt,
+                pickLeadFromTree,
+                applyPreview,
+                lens,
+                ct,
+                promptLeadUrl).ConfigureAwait(false);
+        }
 
         // ---- workspace-9k27.4: re-entry on an already-configured site seeds
         // the preview from the SAVED layout, so a small tweak refines the
@@ -121,7 +164,13 @@ internal static class SetupWizard
                 promptLeadUrl).ConfigureAwait(false);
         }
 
-        // ---- Round 1: propose pattern + questions ----
+        // ---- workspace-t1ok.7: the question CARDS are gone — the clarifying
+        // questions read as "teach the layout" theater and their arrow-driven
+        // answers confused users; the label mode + refine loop are the
+        // adjustment surface now. The propose round itself STAYS as a silent
+        // first reading (dropping it regressed the techmeme first shot to the
+        // flat fallback — the structured proposal is load-bearing for infer
+        // quality); its questions are simply discarded.
         if (!budget.TrySpend())
         {
             return new Result { Cancelled = true };
@@ -134,37 +183,7 @@ internal static class SetupWizard
             render,
             ct).ConfigureAwait(false);
 
-        // ---- Up to MaxStructuredQuestions clarifying-question cards ----
-        // workspace-6yb7.4: only DISCRIMINATING questions survive — a question
-        // must offer concrete, visually inspectable alternatives whose answers
-        // change the layout. Confirmation theater is dropped client-side even
-        // when the model emits it.
         var answers = new List<SetupAnswer>();
-        var questions = proposal.Questions
-            .Where(IsDiscriminating)
-            .Take(MaxStructuredQuestions)
-            .ToList();
-        for (var qi = 0; qi < questions.Count; qi++)
-        {
-            var card = BuildQuestionCard(questions[qi], qi + 1, questions.Count);
-            var choice = await RunCardAsync(input, render, overlay, card, lens, ct).ConfigureAwait(false);
-            if (choice < 0)
-            {
-                return new Result { Cancelled = true };
-            }
-
-            // workspace-wylw: echo the chosen option's durable identifier back to
-            // round 2, so the model grounds the answer in the selector the user
-            // confirmed rather than re-deriving it from the label alone.
-            var chosen = card.Options[Math.Clamp(choice, 0, card.Options.Count - 1)];
-            answers.Add(new SetupAnswer
-            {
-                QuestionId = questions[qi].Id,
-                Answer = chosen.Identifier.Length > 0 ? $"{chosen.Label} ({chosen.Identifier})" : chosen.Label,
-            });
-        }
-
-        // ---- Round 2: infer the durable pattern from the answers ----
         if (!budget.TrySpend())
         {
             return new Result { Cancelled = true };
@@ -181,7 +200,7 @@ internal static class SetupWizard
         // user's ledger (labels, applied instructions, More rules) must be
         // carried onto it explicitly at every acceptance site or one round
         // would silently erase every prior hand correction.
-        var config = LabelDerivation.CarryUserState(inferred.Config, existingConfig);
+        var config = LabelDerivation.CarryAndEnforce(inferred.Config, existingConfig, links);
         var confirmQuestion = inferred.ConfirmQuestion;
 
         // ---- workspace-6yb7.6: degenerate gate — self-test BEFORE showing
@@ -198,7 +217,7 @@ internal static class SetupWizard
                 overlay,
                 render,
                 ct).ConfigureAwait(false);
-            config = LabelDerivation.CarryUserState(inferred.Config, config);
+            config = LabelDerivation.CarryAndEnforce(inferred.Config, config, links);
             confirmQuestion = inferred.ConfirmQuestion;
         }
 
@@ -219,7 +238,7 @@ internal static class SetupWizard
                 overlay,
                 render,
                 ct).ConfigureAwait(false);
-            config = LabelDerivation.CarryUserState(inferred.Config, config);
+            config = LabelDerivation.CarryAndEnforce(inferred.Config, config, links);
             confirmQuestion = inferred.ConfirmQuestion;
         }
 
@@ -1365,7 +1384,7 @@ internal static class SetupWizard
                     return new Result { Cancelled = true };
                 }
 
-                config = LabelDerivation.CarryUserState(repaired.Config, config);
+                config = LabelDerivation.CarryAndEnforce(repaired.Config, config, links);
                 confirmQuestion = repaired.ConfirmQuestion;
                 continue;
             }
@@ -1424,7 +1443,7 @@ internal static class SetupWizard
                         overlay,
                         render,
                         ct).ConfigureAwait(false);
-                    config = LabelDerivation.CarryUserState(inferred.Config, undoConfig);
+                    config = LabelDerivation.CarryAndEnforce(inferred.Config, undoConfig, links);
                     confirmQuestion = inferred.ConfirmQuestion;
                 }
 
@@ -1497,7 +1516,7 @@ internal static class SetupWizard
                     if (adjusted != null)
                     {
                         undoConfig = before; // remember the pre-refine layout for 'z'
-                        config = LabelDerivation.CarryUserState(adjusted.Config, before);
+                        config = LabelDerivation.CarryAndEnforce(adjusted.Config, before, links);
                         confirmQuestion = adjusted.ConfirmQuestion;
                     }
 
@@ -1587,7 +1606,9 @@ internal static class SetupWizard
             pickIndex = options.Count;
             options.Add(new SetupWizardOverlay.CardOption
             {
-                Label = addsAnother ? "Pick another story — adds a co-equal section" : "Pick a story to teach the layout",
+                Label = addsAnother
+                    ? "Point at another story — adds a co-equal section"
+                    : "Point at the top story — click it in the browser",
             });
         }
 
@@ -1599,7 +1620,7 @@ internal static class SetupWizard
             urlIndex = options.Count;
             options.Add(new SetupWizardOverlay.CardOption
             {
-                Label = addsAnother ? "Paste another story's URL — adds a co-equal section" : "Paste a story's URL",
+                Label = addsAnother ? "Paste another story's URL — adds a co-equal section" : "Paste the top story's URL",
             });
         }
 
@@ -1615,7 +1636,7 @@ internal static class SetupWizard
 
         shape ??= new AdjustCardShape(
             Title: "Adjust the layout",
-            Prompt: "What should change?",
+            Prompt: "How do you want to fix it?",
             Footnote: budget.Remaining <= 2 ? $"{budget.Remaining} AI call(s) left for this setup" : string.Empty,
             Hint: "↑/↓ choose · Enter select · Esc back to preview");
 
@@ -1732,6 +1753,16 @@ internal static class SetupWizard
             overlay,
             render,
             ct).ConfigureAwait(false);
+
+        // workspace-t1ok.8: record the APPLIED instruction on the produced
+        // config, so later refine prompts keep honoring it (the caller's
+        // CarryAndEnforce sees the non-empty log and preserves it).
+        refined = refined with
+        {
+            Config = LabelDerivation.AppendInstruction(
+                LabelDerivation.CarryUserState(refined.Config, currentConfig), instruction),
+        };
+
         return PruneEmptySections(refined, links);
     }
 
@@ -2083,30 +2114,6 @@ internal static class SetupWizard
             },
             ProgressPump.DefaultInterval,
             ct).ConfigureAwait(false);
-    }
-
-    private static SetupWizardOverlay.WizardCard BuildQuestionCard(SetupQuestion question, int number, int total)
-    {
-        // workspace-6yb7.4: IsDiscriminating guarantees >= 2 concrete options, so
-        // there is no synthesized yes/no fallback — every row is a real
-        // alternative whose matches light up on the lens as it is focused.
-        var options = question.Options.Select(o => new SetupWizardOverlay.CardOption
-        {
-            Label = o.Label,
-            Identifier = FormatIdentifier(o.ParentSelector, o.UrlPattern),
-            HighlightSelector = CssForIdentifier(o.ParentSelector, o.UrlPattern),
-        }).ToList();
-        var defaultCursor = Math.Max(0, options.FindIndex(o =>
-            string.Equals(o.Label, question.DefaultAnswer, StringComparison.OrdinalIgnoreCase)));
-
-        return new SetupWizardOverlay.WizardCard
-        {
-            Title = $"Set up this site with AI · {number} of {total}",
-            Prompt = question.Prompt,
-            Options = options,
-            Cursor = defaultCursor,
-            Hint = "↑/↓ see each option on the page · Enter choose · Esc cancel",
-        };
     }
 
     private static string FormatIdentifier(string parentSelector, string urlPattern)

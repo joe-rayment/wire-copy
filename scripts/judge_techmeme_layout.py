@@ -67,7 +67,7 @@ def main():
 
             choose_layout(t)
             t.wait_for("How should WireCopy read this site?", timeout=25)
-            t.send_keys("Enter")  # Let AI find the stories
+            t.send_keys("Enter")  # ✨ Let AI figure out this site's layout
 
             deadline = time.time() + 400
             while time.time() < deadline:

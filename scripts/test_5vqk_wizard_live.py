@@ -97,7 +97,7 @@ def main():
             # --- Ctrl+L (g l) -> AI-first entry -> preview ---
             choose_layout(t)
             t.wait_for("How should WireCopy read this site?", timeout=25)
-            t.send_keys("Enter")  # Let AI find the stories
+            t.send_keys("Enter")  # ✨ Let AI figure out this site's layout
 
             deadline = time.time() + 360
             while time.time() < deadline:
@@ -124,7 +124,7 @@ def main():
 
             # --- Space -> Paste a story's URL -> DETERMINISTIC news river ---
             t.send_keys("Space")
-            t.wait_for_any("Paste a story", "Paste another story", "Pick a story", timeout=20)
+            t.wait_for_any("Paste the top story", "Paste another story", "Fix links by hand", timeout=20)
             # Move to the URL option and select it. Layout: pick row(s) then URL row.
             screen = t.capture()
             # Navigate: the 'Paste ... URL' row — press Down until focused, then Enter.
