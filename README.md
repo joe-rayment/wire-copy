@@ -199,7 +199,9 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `OpenAiHierarchy:SetupReasoningEffort` | Reasoning tier for the one-time `g l` site setup (higher = more consistent layouts; revisits never call the model) | `medium` |
 | `OpenAiHierarchy:MonthlyTokenBudget` | Per-month cap on analyzer tokens (0 = disabled) | `200000` |
 | `Browser:Visibility` | Legacy — **ignored**. The browser is always headful (headless is bot-blocked on the sites this targets); display-less hosts run under a virtual display via the `run` script. Kept only so old settings files still bind | (ignored) |
-| `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = launch parked off-screen; <code>&#124;</code> docks on demand) | `false` |
+| `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = the browser stays parked out of the way; <code>&#124;</code> docks on demand) | `false` |
+| `Browser:ParkMode` | Where the un-docked browser sits — it always keeps rendering, never steals focus, and honors a manual minimize. `Corner` tucks it into a small bottom-right tile; `Offscreen` moves it off-screen and minimizes it; `Auto` picks `Corner` on macOS (which pulls off-screen windows back into view, so hiding them leaves an ugly sliver) and `Offscreen` elsewhere | `Auto` |
+| `Browser:CornerParkWidth` / `Browser:CornerParkHeight` / `Browser:CornerParkMargin` | Size and edge gap (px) of the `Corner` park tile | `800` / `600` / `8` |
 | `Browser:DockSide` / `Browser:DockWidthPx` | Which edge the sidecar docks to, and how wide (iPhone-SE width) | `Right` / `390` |
 | `Browser:TileTerminalWithSidecar` | macOS side-by-side: docking also resizes the terminal to the other half; dismiss restores it. Needs Accessibility permission | `false` |
 | `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
