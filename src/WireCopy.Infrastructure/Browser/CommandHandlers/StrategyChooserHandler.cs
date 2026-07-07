@@ -538,8 +538,14 @@ internal static class StrategyChooserHandler
 
         var overlay = new UI.Components.SetupWizardOverlay.State();
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-        ctx.SetOverlayPainter(opts =>
+
+        // workspace-t1ok.1: kept as a closure because the tree pick clears the
+        // painter to show the bare list; every pick exit must re-arm it or the
+        // wizard's next card renders into a null painter — an invisible menu
+        // whose cursor still eats the arrow keys.
+        Action installWizardPainter = () => ctx.SetOverlayPainter(opts =>
             UI.Components.SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+        installWizardPainter();
 
         // workspace-wylw: focused wizard options highlight their matched links
         // live on the sidecar lens (same surface as the article tuner).
@@ -589,7 +595,21 @@ internal static class StrategyChooserHandler
                 screenshot,
                 budget,
                 c => PromptForGuidanceAsync(ctx, options, c),
-                c => PickLeadFromTreeAsync(ctx, scope, page, options, c),
+                async c =>
+                {
+                    try
+                    {
+                        return await PickLeadFromTreeAsync(ctx, scope, page, options, c).ConfigureAwait(false);
+                    }
+                    finally
+                    {
+                        // workspace-t1ok.1: the pick cleared the card painter and
+                        // pinned a 2-minute hint; undo both on every exit path so
+                        // the wizard's next card is visible again.
+                        ctx.NavigationService.ClearStatusMessage();
+                        installWizardPainter();
+                    }
+                },
                 applyPreview,
                 lens,
                 ct,
@@ -741,8 +761,8 @@ internal static class StrategyChooserHandler
         // Visibly distinct footer so the pick mode is unmistakable.
         ClearOverlay(ctx);
         var hint = lensPage != null
-            ? "Pick a story to teach the layout — click it in the browser window, or j/k + Enter here · Esc cancel"
-            : "Pick a story to teach the layout — j/k move · Enter set · Esc cancel";
+            ? "Point at the top story — click it in the browser window, or j/k + Enter here · Esc back"
+            : "Point at the top story — j/k move · Enter set · Esc back";
         ctx.NavigationService.SetStatusMessage(hint, TimeSpan.FromMinutes(2));
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
@@ -803,7 +823,7 @@ internal static class StrategyChooserHandler
                         var node = (ctx.NavigationService.CurrentPage?.LinkTree ?? tree).GetSelectedNode();
                         if (node == null || node.IsGroupHeader)
                         {
-                            ctx.NavigationService.SetStatusMessage("Pick a story, not a section header — j/k move · Enter set · Esc cancel", TimeSpan.FromMinutes(2));
+                            ctx.NavigationService.SetStatusMessage("That's a section header — move to a story, then press Enter · Esc back", TimeSpan.FromMinutes(2));
                             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                             break;
                         }
