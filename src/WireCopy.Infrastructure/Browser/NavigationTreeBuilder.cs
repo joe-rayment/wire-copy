@@ -176,6 +176,66 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     }
 
     /// <summary>
+    /// workspace-t1ok.3: durable "route to the More menu" test — a content link
+    /// the user marked as site chrome worth keeping. Same Contains semantics as
+    /// <see cref="IsExcluded"/>, over <see cref="SiteHierarchyConfig.MoreSelectors"/>
+    /// and <see cref="SiteHierarchyConfig.MoreUrlPatterns"/>. Evaluated BEFORE
+    /// greedy section assignment so a broad story-river selector can never claim
+    /// a menu-labeled link back into the article flow.
+    /// </summary>
+    internal static bool MatchesMore(LinkInfo link, SiteHierarchyConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(link);
+        ArgumentNullException.ThrowIfNull(config);
+        if (link.ParentSelector != null && config.MoreSelectors.Count > 0 &&
+            config.MoreSelectors.Any(s =>
+                !string.IsNullOrEmpty(s) &&
+                link.ParentSelector.Contains(s, StringComparison.OrdinalIgnoreCase)))
+        {
+            return true;
+        }
+
+        return config.MoreUrlPatterns.Count > 0 &&
+            config.MoreUrlPatterns.Any(p =>
+                !string.IsNullOrEmpty(p) &&
+                link.Url.Contains(p, StringComparison.OrdinalIgnoreCase));
+    }
+
+    /// <summary>
+    /// workspace-t1ok.3: the rank-order overlay. Links matching a labeled
+    /// article's URL (by <see cref="LabelDerivation.NormalizeUrl"/>) sort first
+    /// in the user's labeled order; everything else keeps its document order
+    /// behind them. Today the user's exact order holds; tomorrow, when the
+    /// labeled URLs have rotated off the page, the structural pattern governs
+    /// and this overlay is a no-op.
+    /// </summary>
+    internal static List<LinkInfo> OrderByLabeledRank(List<LinkInfo> sectionLinks, SiteHierarchyConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(sectionLinks);
+        ArgumentNullException.ThrowIfNull(config);
+        var ranks = new Dictionary<string, int>(StringComparer.Ordinal);
+        foreach (var label in config.UserLabels)
+        {
+            if (label.Kind == LinkLabelKind.Article && label.Rank is { } rank)
+            {
+                ranks.TryAdd(LabelDerivation.NormalizeUrl(label.Url), rank);
+            }
+        }
+
+        if (ranks.Count == 0)
+        {
+            return sectionLinks;
+        }
+
+        return sectionLinks
+            .Select((link, index) => (Link: link, Index: index))
+            .OrderBy(x => ranks.TryGetValue(LabelDerivation.NormalizeUrl(x.Link.Url), out var r) ? r : int.MaxValue)
+            .ThenBy(x => x.Index)
+            .Select(x => x.Link)
+            .ToList();
+    }
+
+    /// <summary>
     /// workspace-cn2g.5: order links by a rank encoded in their URL (a small numeric
     /// path segment like /1 /2 /3, or a rank/order/pos/position/page/p query param),
     /// when the signal is CLEAN — enough links carry a rank, the ranks are mostly
@@ -431,6 +491,18 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                 }
             }
 
+            // workspace-t1ok.3: menu-labeled content links belong under the More
+            // menu on the flat path too — retyping them to Navigation files them
+            // there via BuildWithGroups' normal consolidation.
+            if (hierarchyConfig.MoreSelectors.Count > 0 || hierarchyConfig.MoreUrlPatterns.Count > 0)
+            {
+                flatLinks = flatLinks
+                    .Select(l => l.Type == LinkType.Content && MatchesMore(l, hierarchyConfig)
+                        ? l with { Type = LinkType.Navigation }
+                        : l)
+                    .ToList();
+            }
+
             return BuildGroupedTree(flatLinks);
         }
 
@@ -472,6 +544,24 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                     excludedCount,
                     guarded.ExcludeSelectors.Count,
                     guarded.ExcludeUrlPatterns.Count);
+            }
+        }
+
+        // workspace-t1ok.3: menu-labeled content links leave the section pool
+        // BEFORE greedy assignment (a broad river selector must not claim them
+        // back) and re-enter at the bottom inside the collapsed More menu. The
+        // stale-coverage floor below is computed over the remaining pool, so a
+        // menu-heavy page doesn't read as stale.
+        var moreContent = new List<LinkInfo>();
+        if (hierarchyConfig.MoreSelectors.Count > 0 || hierarchyConfig.MoreUrlPatterns.Count > 0)
+        {
+            moreContent = contentLinks.Where(l => MatchesMore(l, hierarchyConfig)).ToList();
+            if (moreContent.Count > 0)
+            {
+                contentLinks = contentLinks.Where(l => !MatchesMore(l, hierarchyConfig)).ToList();
+                _logger.LogInformation(
+                    "Routed {Count} content link(s) to the More menu via durable rules (workspace-t1ok.3)",
+                    moreContent.Count);
             }
         }
 
@@ -547,7 +637,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                 sectionNode.Collapse();
             }
 
-            foreach (var link in sectionLinks)
+            foreach (var link in OrderByLabeledRank(sectionLinks, hierarchyConfig))
             {
                 sectionNode.AddChild(link);
             }
@@ -585,7 +675,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                 droppedUnmatched);
         }
 
-        AddChromeGroups(root, nonContentLinks);
+        AddChromeGroups(root, nonContentLinks, moreContent);
 
         var tree = NavigationTree.BuildFromRoot(root);
         _logger.LogInformation(

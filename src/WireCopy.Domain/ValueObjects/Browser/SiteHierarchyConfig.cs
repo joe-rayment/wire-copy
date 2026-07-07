@@ -35,6 +35,12 @@ public record SiteHierarchyConfig
     /// </summary>
     public const double StaleCoverageFraction = 0.10;
 
+    /// <summary>workspace-t1ok.3: cap on the <see cref="UserLabels"/> ledger.</summary>
+    public const int MaxUserLabels = 200;
+
+    /// <summary>workspace-t1ok.3: cap on the <see cref="UserInstructions"/> log.</summary>
+    public const int MaxUserInstructions = 20;
+
     public required string Domain { get; init; }
     public required string UrlPattern { get; init; }
     public required List<HierarchySection> Sections { get; init; }
@@ -73,6 +79,37 @@ public record SiteHierarchyConfig
     /// markup uses a per-day random id, so an ad the user removes stays removed.
     /// </summary>
     public List<string> ExcludeSectionTitles { get; init; } = new();
+
+    /// <summary>
+    /// workspace-t1ok.3: content links whose <see cref="LinkInfo.ParentSelector"/>
+    /// contains any of these fragments are routed OUT of the story sections and
+    /// under the collapsed "More" chrome menu (kept reachable, out of the article
+    /// flow). Same Contains semantics as <see cref="ExcludeSelectors"/>.
+    /// </summary>
+    public List<string> MoreSelectors { get; init; } = new();
+
+    /// <summary>
+    /// workspace-t1ok.3: content links whose <see cref="LinkInfo.Url"/> contains
+    /// any of these substrings are routed under the collapsed "More" chrome menu.
+    /// </summary>
+    public List<string> MoreUrlPatterns { get; init; } = new();
+
+    /// <summary>
+    /// workspace-t1ok.3: the user's hand-labeled links — durable ground truth
+    /// that every later AI round must honor (never regenerate away a user
+    /// correction). Latest-wins per normalized URL, capped at
+    /// <see cref="MaxUserLabels"/>. Labeled article ranks also order matched
+    /// links within a section while those URLs are still on the page.
+    /// </summary>
+    public List<UserLinkLabel> UserLabels { get; init; } = new();
+
+    /// <summary>
+    /// workspace-t1ok.3: plain-English refinement instructions that have been
+    /// APPLIED to this config, oldest first, capped at
+    /// <see cref="MaxUserInstructions"/> — carried into later refine prompts so
+    /// a new tweak can't silently undo an earlier one.
+    /// </summary>
+    public List<string> UserInstructions { get; init; } = new();
 
     /// <summary>
     /// workspace-5oe9.5/.6: set when this config cannot be trusted to curate

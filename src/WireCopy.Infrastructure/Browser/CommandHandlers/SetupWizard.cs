@@ -176,7 +176,12 @@ internal static class SetupWizard
             overlay,
             render,
             ct).ConfigureAwait(false);
-        var config = inferred.Config;
+
+        // workspace-t1ok.3: every model parse builds a BRAND-NEW config — the
+        // user's ledger (labels, applied instructions, More rules) must be
+        // carried onto it explicitly at every acceptance site or one round
+        // would silently erase every prior hand correction.
+        var config = LabelDerivation.CarryUserState(inferred.Config, existingConfig);
         var confirmQuestion = inferred.ConfirmQuestion;
 
         // ---- workspace-6yb7.6: degenerate gate — self-test BEFORE showing
@@ -193,7 +198,7 @@ internal static class SetupWizard
                 overlay,
                 render,
                 ct).ConfigureAwait(false);
-            config = inferred.Config;
+            config = LabelDerivation.CarryUserState(inferred.Config, config);
             confirmQuestion = inferred.ConfirmQuestion;
         }
 
@@ -214,7 +219,7 @@ internal static class SetupWizard
                 overlay,
                 render,
                 ct).ConfigureAwait(false);
-            config = inferred.Config;
+            config = LabelDerivation.CarryUserState(inferred.Config, config);
             confirmQuestion = inferred.ConfirmQuestion;
         }
 
@@ -688,7 +693,8 @@ internal static class SetupWizard
             var articles = contentLinks
                 .Where(l => !l.IsSponsored
                     && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength
-                    && !NavigationTreeBuilder.IsExcluded(l, config))
+                    && !NavigationTreeBuilder.IsExcluded(l, config)
+                    && !NavigationTreeBuilder.MatchesMore(l, config))
                 .ToList();
             rows.Add(new PreviewRow(
                 new SetupWizardOverlay.CardOption
@@ -720,8 +726,11 @@ internal static class SetupWizard
         var claimed = new HashSet<LinkInfo>();
         foreach (var section in config.Sections)
         {
+            // workspace-t1ok.3: mirror the tree builder — menu-routed links never
+            // join a section, and labeled article ranks order the matched rows.
             var matched = contentLinks
                 .Where(l => !NavigationTreeBuilder.IsExcluded(l, config)
+                    && !NavigationTreeBuilder.MatchesMore(l, config)
                     && !claimed.Contains(l)
                     && NavigationTreeBuilder.MatchesSection(l, section))
                 .ToList();
@@ -734,6 +743,8 @@ internal static class SetupWizard
             {
                 claimed.Add(l);
             }
+
+            matched = NavigationTreeBuilder.OrderByLabeledRank(matched, config);
 
             rows.Add(new PreviewRow(
                 new SetupWizardOverlay.CardOption
@@ -1031,39 +1042,7 @@ internal static class SetupWizard
     }
 
     /// <summary>Strips scheme, leading www., query, fragment and trailing slash; lower-cases.</summary>
-    internal static string NormalizeUrl(string url)
-    {
-        var s = url.Trim();
-        if (s.Length == 0)
-        {
-            return s;
-        }
-
-        var scheme = s.IndexOf("://", StringComparison.Ordinal);
-        if (scheme >= 0)
-        {
-            s = s[(scheme + 3)..];
-        }
-
-        var hash = s.IndexOf('#', StringComparison.Ordinal);
-        if (hash >= 0)
-        {
-            s = s[..hash];
-        }
-
-        var query = s.IndexOf('?', StringComparison.Ordinal);
-        if (query >= 0)
-        {
-            s = s[..query];
-        }
-
-        if (s.StartsWith("www.", StringComparison.OrdinalIgnoreCase))
-        {
-            s = s[4..];
-        }
-
-        return s.TrimEnd('/').ToLowerInvariant();
-    }
+    internal static string NormalizeUrl(string url) => LabelDerivation.NormalizeUrl(url);
 
     /// <summary>
     /// workspace-6yb7.6: the honest failure card shown instead of a preview
@@ -1191,7 +1170,7 @@ internal static class SetupWizard
                     return new Result { Cancelled = true };
                 }
 
-                config = repaired.Config;
+                config = LabelDerivation.CarryUserState(repaired.Config, config);
                 confirmQuestion = repaired.ConfirmQuestion;
                 continue;
             }
@@ -1250,7 +1229,7 @@ internal static class SetupWizard
                         overlay,
                         render,
                         ct).ConfigureAwait(false);
-                    config = inferred.Config;
+                    config = LabelDerivation.CarryUserState(inferred.Config, undoConfig);
                     confirmQuestion = inferred.ConfirmQuestion;
                 }
 
@@ -1323,7 +1302,7 @@ internal static class SetupWizard
                     if (adjusted != null)
                     {
                         undoConfig = before; // remember the pre-refine layout for 'z'
-                        config = adjusted.Config;
+                        config = LabelDerivation.CarryUserState(adjusted.Config, before);
                         confirmQuestion = adjusted.ConfirmQuestion;
                     }
 
