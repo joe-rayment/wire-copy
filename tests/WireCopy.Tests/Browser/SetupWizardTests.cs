@@ -86,10 +86,15 @@ public class SetupWizardTests
         var input = Substitute.For<IInputHandler>();
         input.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(
-                new NavigationCommand { Type = commands[0] },
-                commands.Skip(1).Select(c => new NavigationCommand { Type = c }).ToArray());
+                Cmdify(commands[0]),
+                commands.Skip(1).Select(Cmdify).ToArray());
         return input;
     }
+
+    // workspace-nbvb.3: 's' saves the preview; tests spell it as SaveToCollection
+    // (the real 's' binding) and the helper stamps the raw char the intercept reads.
+    private static NavigationCommand Cmdify(CommandType c) =>
+        new() { Type = c, RawKeyChar = c == CommandType.SaveToCollection ? 's' : null };
 
     [Fact]
     public async Task FirstShot_ZeroQuestions_ExactlyOneRoundTrip_ShowsIdentifier()
@@ -103,7 +108,7 @@ public class SetupWizardTests
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
             .Returns(ci => { capturedAnswers = ci.Arg<IReadOnlyList<SetupAnswer>>(); return new InferredPattern { Config = SomeConfig() }; });
 
-        var input = InputSequence(CommandType.ActivateLink); // Enter saves the preview
+        var input = InputSequence(CommandType.SaveToCollection); // 's' saves the preview
 
         var overlay = new SetupWizardOverlay.State();
         var cards = new List<IReadOnlyList<string>>();
@@ -147,7 +152,7 @@ public class SetupWizardTests
     public async Task ObviousPattern_ZeroQuestions_GoesStraightToPreview()
     {
         var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
-        var input = InputSequence(CommandType.ActivateLink); // Enter on the preview saves
+        var input = InputSequence(CommandType.SaveToCollection); // 's' on the preview saves
 
         var overlay = new SetupWizardOverlay.State();
         var titles = new List<string>();
@@ -177,7 +182,7 @@ public class SetupWizardTests
     public async Task Preview_AppliesCandidateTreeBeforeAskingToSave()
     {
         var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
-        var input = InputSequence(CommandType.ActivateLink);
+        var input = InputSequence(CommandType.SaveToCollection);
 
         var previewed = new List<SiteHierarchyConfig>();
         var result = await SetupWizard.RunAsync(
@@ -263,12 +268,12 @@ public class SetupWizardTests
 
         // Preview: Space (adjust) → adjust card Down past "Fix links by hand"
         // (workspace-t1ok.5: label mode is option 0) → Enter on the pick option
-        // → re-infer → preview again → Enter saves.
+        // → re-infer → preview again → 's' saves.
         var input = InputSequence(
             CommandType.ToggleSelection,
             CommandType.MoveDown,
             CommandType.ActivateLink,
-            CommandType.ActivateLink);
+            CommandType.SaveToCollection);
 
         var pickedLink = new LinkInfo
         {
@@ -308,10 +313,15 @@ public class SetupWizardTests
     {
         var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
 
+        // Space → adjust card: Down past "Mark links…" (option 0 since t1ok.5)
+        // to the pick option → Enter → the header pick is rejected → 's' saves.
+        // (Before workspace-nbvb this test lacked the Down and silently ran the
+        // LABEL flow instead of the pick — passing for the wrong reason.)
         var input = InputSequence(
             CommandType.ToggleSelection,
+            CommandType.MoveDown,
             CommandType.ActivateLink,
-            CommandType.ActivateLink);
+            CommandType.SaveToCollection);
 
         var header = LinkInfo.CreateSubSectionHeader("Top Story", LinkType.Content);
         var budget = new ModelRoundTripBudget();
@@ -360,12 +370,12 @@ public class SetupWizardTests
 
         // Preview: Space → adjust card: no pick wired, so the free-text option
         // sits below "Fix links by hand" (workspace-t1ok.5: label mode is
-        // option 0) → Down, Enter → free text → refine → preview → Enter.
+        // option 0) → Down, Enter → free text → refine → preview → 's'.
         var input = InputSequence(
             CommandType.ToggleSelection,
             CommandType.MoveDown,
             CommandType.ActivateLink,
-            CommandType.ActivateLink);
+            CommandType.SaveToCollection);
 
         var budget = new ModelRoundTripBudget();
         var result = await SetupWizard.RunAsync(
@@ -396,7 +406,7 @@ public class SetupWizardTests
         var input = InputSequence(
             CommandType.ToggleSelection,
             CommandType.GoBack,
-            CommandType.ActivateLink);
+            CommandType.SaveToCollection);
 
         var budget = new ModelRoundTripBudget();
         var result = await SetupWizard.RunAsync(
@@ -516,7 +526,7 @@ public class SetupWizardTests
                 Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
             .Returns(ci => { captured = ci.Arg<IReadOnlyList<SetupAnswer>>().ToList(); return new InferredPattern { Config = SomeConfig() }; });
 
-        var input = InputSequence(CommandType.ActivateLink);
+        var input = InputSequence(CommandType.SaveToCollection);
 
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
@@ -584,7 +594,7 @@ public class SetupWizardTests
                 return new InferredPattern { Config = ++inferCalls == 1 ? MismatchedConfig() : SomeConfig() };
             });
 
-        var input = InputSequence(CommandType.ActivateLink); // Enter saves the (repaired) preview
+        var input = InputSequence(CommandType.SaveToCollection); // 's' saves the (repaired) preview
 
         var budget = new ModelRoundTripBudget();
         var result = await SetupWizard.RunAsync(
@@ -652,11 +662,11 @@ public class SetupWizardTests
 
         // infer #1 degenerate → auto-repair infer #2 still degenerate → failure
         // card: Down past "Fix links by hand" (workspace-t1ok.5) → Enter on the
-        // pick option → pick → infer #3 good → preview → Enter saves.
+        // pick option → pick → infer #3 good → preview → 's' saves.
         var input = InputSequence(
             CommandType.MoveDown,
             CommandType.ActivateLink,
-            CommandType.ActivateLink);
+            CommandType.SaveToCollection);
 
         var pickedLink = new LinkInfo
         {
@@ -762,7 +772,7 @@ public class SetupWizardTests
     public async Task PreviewCards_HighlightFocusedOptionOnLens()
     {
         var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
-        var input = InputSequence(CommandType.ActivateLink);
+        var input = InputSequence(CommandType.SaveToCollection);
 
         var highlighted = new List<string>();
         var cleared = 0;
@@ -1028,7 +1038,7 @@ public class SetupWizardTests
         var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), degenerate);
 
         var result = await SetupWizard.RunAsync(
-            analyzer, InputSequence(CommandType.ActivateLink), _ => Task.CompletedTask,
+            analyzer, InputSequence(CommandType.SaveToCollection), _ => Task.CompletedTask,
             new SetupWizardOverlay.State(), links, "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
@@ -1142,7 +1152,7 @@ public class SetupWizardTests
             new NavigationCommand { Type = CommandType.MoveDown },
             new NavigationCommand { Type = CommandType.MoveDown },
             new NavigationCommand { Type = CommandType.CancelRun, RawKeyChar = 'x' }, // real 'x' key
-            new NavigationCommand { Type = CommandType.ActivateLink });
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
@@ -1223,7 +1233,7 @@ public class SetupWizardTests
         var config = ConfigOf(Sec("Stories", "div.river"));
 
         var (result, _, _) = await RunPreview(
-            config, links, Down(), Raw('x', CommandType.CancelRun), new NavigationCommand { Type = CommandType.ActivateLink });
+            config, links, Down(), Raw('x', CommandType.CancelRun), new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         result.Config.Should().NotBeNull();
         NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeTrue("the exact-URL fallback hides the marked row");
@@ -1247,11 +1257,11 @@ public class SetupWizardTests
         var config = ConfigOf(Sec("Stories", "div.ii"));
 
         var (result, _, footnotes) = await RunPreview(
-            config, links, Down(), Raw('x', CommandType.CancelRun), new NavigationCommand { Type = CommandType.ActivateLink });
+            config, links, Down(), Raw('x', CommandType.CancelRun), new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeFalse("no safe rule exists");
         footnotes.Should().Contain(f => f.Contains("still visible", StringComparison.Ordinal)
-            && f.Contains("Fix links by hand", StringComparison.Ordinal));
+            && f.Contains("Mark links to teach the AI", StringComparison.Ordinal));
         result.Config!.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Ad,
             "the intent is recorded even when today's derivation can't enforce it");
     }
@@ -1265,7 +1275,7 @@ public class SetupWizardTests
         // Rows: [0]=header, [1..3]=stories. Rank Gamma (row 3) as article #1.
         var (result, _, _) = await RunPreview(
             config, links, Down(), Down(), Down(), Raw('a', CommandType.AddBookmark),
-            new NavigationCommand { Type = CommandType.ActivateLink });
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         result.Config!.UserLabels.Should().ContainSingle(l =>
             l.Kind == LinkLabelKind.Article && l.Rank == 1 && l.Url == links[2].Url);
@@ -1281,7 +1291,7 @@ public class SetupWizardTests
         var config = ConfigOf(Sec("Stories", "div.river"));
 
         var (result, _, _) = await RunPreview(
-            config, links, Down(), Down(), Raw('m'), new NavigationCommand { Type = CommandType.ActivateLink });
+            config, links, Down(), Down(), Raw('m'), new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         NavigationTreeBuilder.MatchesMore(links[1], result.Config!).Should().BeTrue("the 'm' mark routes the row under More");
         NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeFalse();
@@ -1295,7 +1305,7 @@ public class SetupWizardTests
         var config = ConfigOf(Sec("Stories", "div.river"));
 
         var (result, _, _) = await RunPreview(
-            config, links, Down(), Down(), Raw('i'), new NavigationCommand { Type = CommandType.ActivateLink });
+            config, links, Down(), Down(), Raw('i'), new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeTrue();
         result.Config!.UserLabels.Should().ContainSingle(l => l.Kind == LinkLabelKind.Ignore && l.Url == links[1].Url);
@@ -1319,7 +1329,7 @@ public class SetupWizardTests
 
         // Beta is rank-1, so it leads: rows [0]=header, [1]=Beta. Clear it.
         var (result, _, _) = await RunPreview(
-            config, links, Down(), Raw('u'), new NavigationCommand { Type = CommandType.ActivateLink });
+            config, links, Down(), Raw('u'), new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         result.Config!.UserLabels.Should().BeEmpty("'u' cleared the only label");
         var rows = SetupWizard.BuildPreviewRows(result.Config!, links);
@@ -1337,7 +1347,7 @@ public class SetupWizardTests
 
         var (_, focus, _) = await RunPreview(
             config, links, Down(), Down(), Raw('x', CommandType.CancelRun),
-            new NavigationCommand { Type = CommandType.ActivateLink });
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         // Rows were [header, Alpha, Beta, Gamma]; 'x' on Beta leaves [header,
         // Alpha, Gamma] — the re-rendered cursor sits on Gamma (Beta's successor).
@@ -1355,7 +1365,7 @@ public class SetupWizardTests
         var (result, focus, _) = await RunPreview(
             config, links, Down(), Down(), Raw('x', CommandType.CancelRun),
             Raw('z', CommandType.Undo),
-            new NavigationCommand { Type = CommandType.ActivateLink });
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         result.Config!.UserLabels.Should().BeEmpty("undo reverts the mark's ledger entry too");
         NavigationTreeBuilder.IsExcluded(links[1], result.Config!).Should().BeFalse("undo restored the marked row");
@@ -1363,6 +1373,150 @@ public class SetupWizardTests
         // After the x the cursor sat on Gamma (index 2 of the pruned rows); the
         // undo re-inserts Beta at that index — by-URL restore keeps Gamma focused.
         focus.Last().Should().Contain("Gamma");
+    }
+
+    // ---- workspace-nbvb.3: 's' saves; Enter nudges ----
+
+    [Fact]
+    public async Task Preview_Enter_NudgesInsteadOfSaving_SaveKeySaves()
+    {
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var (result, _, footnotes) = await RunPreview(
+            config, links,
+            Down(),
+            new NavigationCommand { Type = CommandType.ActivateLink }, // Enter on a story row
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
+
+        footnotes.Should().Contain(f => f.Contains("Press s to save", StringComparison.Ordinal),
+            "Enter on a layout row nudges instead of surprise-saving");
+        result.Config.Should().NotBeNull("'s' saves");
+    }
+
+    // ---- workspace-nbvb.1: marks never restructure the layout ----
+
+    [Fact]
+    public async Task Preview_RuleMark_OnArticleCarryingConfig_LeavesSectionsUntouched()
+    {
+        // The reproduced 'i' defect: with an article label on the ledger, any
+        // mark press re-derived rivers — renaming "Stories" to "Stories 2" and
+        // even swapping its selector. A rule-only mark must not touch sections.
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river")) with
+        {
+            UserLabels = new List<UserLinkLabel>
+            {
+                new()
+                {
+                    Url = links[1].Url, Text = links[1].DisplayText, ParentSelector = links[1].ParentSelector,
+                    Kind = LinkLabelKind.Article, Rank = 1, LabeledAt = DateTime.UtcNow,
+                },
+            },
+        };
+
+        // Rows: [0]=Stories header, [1]=Beta(rank 1), [2]=Alpha, [3]=Gamma.
+        var (result, _, _) = await RunPreview(
+            config, links, Down(), Down(), Raw('i'),
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
+
+        var section = result.Config!.Sections.Should().ContainSingle().Subject;
+        section.Name.Should().Be("Stories", "a hide-one-link press must not rename the river");
+        section.ParentSelectors.Should().Equal(new[] { "div.river" }, "…or swap its selectors");
+        NavigationTreeBuilder.IsExcluded(links[0], result.Config!).Should().BeTrue("Alpha was hidden");
+        result.Config.UserLabels.Should().HaveCount(2, "the ignore joined the article on the ledger");
+    }
+
+    [Fact]
+    public async Task Preview_RankInsideExistingRiver_KeepsRiverIdentity()
+    {
+        // workspace-nbvb.1: 'a' on a story that already lives in the river must
+        // rank it there — not derive a second river named "Stories 2".
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var (result, _, _) = await RunPreview(
+            config, links, Down(), Down(), Down(), Raw('a', CommandType.AddBookmark),
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
+
+        var section = result.Config!.Sections.Should().ContainSingle().Subject;
+        section.Name.Should().Be("Stories");
+        section.ParentSelectors.Should().Equal(new[] { "div.river" });
+        var rows = SetupWizard.BuildPreviewRows(result.Config!, links);
+        rows[1].Link!.Url.Should().Be(links[2].Url, "the rank-1 article leads the existing river");
+    }
+
+    // ---- workspace-nbvb.4: rename sections ----
+
+    [Fact]
+    public async Task Preview_RenameSection_AppliesImmediately_AndLandsOnLedger()
+    {
+        var links = RiverOf3();
+        var config = ConfigOf(Sec("Stories", "div.river"));
+
+        var overlay = new SetupWizardOverlay.State();
+        var result = await SetupWizard.RunAsync(
+            Substitute.For<IHierarchyAnalyzer>(),
+            InputCommands(
+                Raw('r'), // cursor starts on the section header row
+                new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' }),
+            _ => Task.CompletedTask, overlay, links, "https://x.com/", null, new ModelRoundTripBudget(),
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null,
+            CancellationToken.None, existingConfig: config,
+            promptSectionName: (_, _) => Task.FromResult<string?>("Tech Talk"));
+
+        result.Config!.Sections[0].Name.Should().Be("Tech Talk");
+        result.Config.UserSectionNames.Should().ContainSingle(r => r.Name == "Tech Talk"
+            && r.Identifiers.Contains("div.river"));
+    }
+
+    // ---- workspace-nbvb.2: explicit generalize from marks ----
+
+    [Fact]
+    public async Task Adjust_GeneralizeFromMarks_SpendsOneCall_AndEnforcesLabels()
+    {
+        var links = RiverOf3();
+        var adLabel = new UserLinkLabel
+        {
+            Url = links[2].Url, Text = links[2].DisplayText, ParentSelector = links[2].ParentSelector,
+            Kind = LinkLabelKind.Ad, LabeledAt = DateTime.UtcNow,
+        };
+        var config = ConfigOf(Sec("Stories", "div.river")) with
+        {
+            UserLabels = new List<UserLinkLabel> { adLabel },
+            ExcludeUrlPatterns = new List<string> { "x.com/news/gamma" },
+        };
+
+        // The "model" generalizes but forgets the labeled ad's exclusion.
+        var analyzer = Substitute.For<IHierarchyAnalyzer>();
+        analyzer.InferPatternFromLabelsAsync(
+                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+                Arg.Any<IReadOnlyList<UserLinkLabel>>(), Arg.Any<SiteHierarchyConfig>(), Arg.Any<CancellationToken>())
+            .Returns(new InferredPattern { Config = ConfigOf(Sec("Model river", "div.river")) });
+
+        // Space → adjust card [0]=Mark links, [1]=Generalize (labels exist) → Enter → 's'.
+        var budget = new ModelRoundTripBudget();
+        var result = await SetupWizard.RunAsync(
+            analyzer,
+            InputCommands(
+                new NavigationCommand { Type = CommandType.ToggleSelection },
+                new NavigationCommand { Type = CommandType.MoveDown },
+                new NavigationCommand { Type = CommandType.ActivateLink },
+                new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' }),
+            _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/", null, budget,
+            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
+            pickLeadFromTree: null, applyPreview: null, lens: null,
+            CancellationToken.None, existingConfig: config);
+
+        budget.Used.Should().Be(1, "the explicit generalize is exactly one budget-guarded call");
+        await analyzer.Received(1).InferPatternFromLabelsAsync(
+            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
+            Arg.Is<IReadOnlyList<UserLinkLabel>>(l => l.Count == 1),
+            Arg.Any<SiteHierarchyConfig>(), Arg.Any<CancellationToken>());
+        result.Config!.Sections.Should().Contain(s => s.Name == "Model river", "the model layout was accepted");
+        NavigationTreeBuilder.IsExcluded(links[2], result.Config!).Should().BeTrue(
+            "the labeled ad stays excluded — enforcement re-applies the ledger in code");
     }
 
     [Fact]
@@ -1424,7 +1578,7 @@ public class SetupWizardTests
         var analyzer = AnalyzerWithVision(config);
 
         var result = await SetupWizard.RunAsync(
-            analyzer, InputCommands(new NavigationCommand { Type = CommandType.ActivateLink }),
+            analyzer, InputCommands(new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' }),
             _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/",
             screenshot: new byte[] { 1, 2, 3 }, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
@@ -1451,7 +1605,7 @@ public class SetupWizardTests
         var analyzer = AnalyzerWithVision(config, visionIndex: -1);
 
         await SetupWizard.RunAsync(
-            analyzer, InputCommands(new NavigationCommand { Type = CommandType.ActivateLink }),
+            analyzer, InputCommands(new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' }),
             _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/",
             screenshot: new byte[] { 1, 2, 3 }, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),

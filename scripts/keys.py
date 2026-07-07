@@ -75,5 +75,5 @@ def summary_refine(t):
 
 
 def summary_fix_links(t):
-    """Select 'Fix links by hand' on the configured-site summary card (workspace-v2m8.4)."""
-    summary_select(t, "Fix links by hand")
+    """Select 'Mark links to teach the AI' on the configured-site summary card (v2m8.4/nbvb.2)."""
+    summary_select(t, "Mark links to teach")

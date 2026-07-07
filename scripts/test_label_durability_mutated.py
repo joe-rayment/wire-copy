@@ -190,7 +190,7 @@ def main():
             summary_refine(t)
             t.wait_for("Your new layout", timeout=45)
             t.send_keys("Space")
-            t.wait_for("Fix links by hand", timeout=20)
+            t.wait_for("Mark links to teach the AI", timeout=20)
             t.send_keys("Enter")
             t.wait_for("Mark the links", timeout=15)
 
@@ -221,7 +221,7 @@ def main():
             t.send_keys("Enter")
             t.wait_for("Your new layout", timeout=120)
             time.sleep(1)
-            t.send_keys("Enter")  # save
+            t.send_keys("s")  # save (nbvb.3)
             t.wait_for("Site set up", timeout=20)
             time.sleep(1)
 

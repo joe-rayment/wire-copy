@@ -81,6 +81,37 @@ internal static class LabelDerivation
             }
 
             var rank = label.Rank ?? int.MaxValue;
+
+            // workspace-nbvb.1: an article already inside an existing river
+            // section keeps THAT river — its rank orders it there via
+            // OrderByLabeledRank. Re-deriving here rebuilt a fresh (sometimes
+            // DIFFERENT) river named "Stories 2" on every later mark, so
+            // hiding one link could restructure the whole layout. A river the
+            // user RENAMED (nbvb.4) no longer carries a river name, so the
+            // rename ledger vouches for it instead.
+            var existingRiver = current.Sections.FirstOrDefault(s =>
+                (IsRiverName(s.Name) || IsRenamedSection(current, s))
+                && NavigationTreeBuilder.MatchesSection(link, s));
+            if (existingRiver != null)
+            {
+                var slot = rivers.FindIndex(r => ReferenceEquals(r.Section, existingRiver));
+                if (slot >= 0)
+                {
+                    rivers[slot] = (existingRiver, Math.Min(rivers[slot].MinRank, rank));
+                }
+                else
+                {
+                    rivers.Add((existingRiver, rank));
+                }
+
+                foreach (var other in contentLinks.Where(l => NavigationTreeBuilder.MatchesSection(l, existingRiver)))
+                {
+                    covered.Add(NormalizeUrl(other.Url));
+                }
+
+                continue;
+            }
+
             if (rivers.Count >= MaxLabelRivers && rivers.Count > 0)
             {
                 // Bound reached: pin by exact path into the leading river.
@@ -157,6 +188,10 @@ internal static class LabelDerivation
 
         config = ApplyRuleLabels(config, labels, links);
 
+        // workspace-nbvb.4: freshly built rivers must pick up the user's
+        // section names before they render.
+        config = ApplySectionRenames(config);
+
         return config with
         {
             Kind = config.Sections.Count > 0 ? LayoutKind.AiCurated : current.Kind,
@@ -182,7 +217,14 @@ internal static class LabelDerivation
         List<LinkInfo> links)
     {
         var carried = CarryUserState(fresh, prior);
-        return carried.UserLabels.Count == 0 ? carried : ApplyRuleLabels(carried, carried.UserLabels, links);
+        if (carried.UserLabels.Count > 0)
+        {
+            carried = ApplyRuleLabels(carried, carried.UserLabels, links);
+        }
+
+        // workspace-nbvb.4: user renames are enforced like labels — the model
+        // rewrites section names freely; the ledger wins.
+        return ApplySectionRenames(carried);
     }
 
     /// <summary>
@@ -246,8 +288,14 @@ internal static class LabelDerivation
 
         foreach (var link in Present(LinkLabelKind.Ignore))
         {
-            config = DeriveExcludeFor(config, link, links, allowSectionTitle: false)
-                ?? AppendExactExclude(config, link, links);
+            // workspace-nbvb.1: 'i' hides EXACTLY this link — the exact rule
+            // comes first; class extrapolation is the Ad label's job. The
+            // token/segment route remains only for the URL-prefix collision
+            // where an exact rule would nuke sibling links.
+            var exact = AppendExactExclude(config, link, links);
+            config = NavigationTreeBuilder.IsExcluded(link, exact)
+                ? exact
+                : DeriveExcludeFor(config, link, links, allowSectionTitle: false) ?? exact;
         }
 
         // ---- menu labels → More-menu routes ----
@@ -546,6 +594,12 @@ internal static class LabelDerivation
         string.Equals(name, "Stories", StringComparison.Ordinal)
         || name.StartsWith("Stories ", StringComparison.Ordinal);
 
+    /// <summary>workspace-nbvb.4: true when the rename ledger owns this section (identifier overlap).</summary>
+    internal static bool IsRenamedSection(SiteHierarchyConfig config, HierarchySection section) =>
+        config.UserSectionNames.Any(r => section.ParentSelectors.Concat(section.UrlPatterns)
+            .Intersect(r.Identifiers, StringComparer.OrdinalIgnoreCase)
+            .Any());
+
     /// <summary>Strips scheme, leading www., query, fragment and trailing slash; lower-cases.</summary>
     internal static string NormalizeUrl(string url)
     {
@@ -667,8 +721,93 @@ internal static class LabelDerivation
         {
             UserLabels = fresh.UserLabels.Count > 0 ? fresh.UserLabels : prior.UserLabels,
             UserInstructions = fresh.UserInstructions.Count > 0 ? fresh.UserInstructions : prior.UserInstructions,
+            UserSectionNames = fresh.UserSectionNames.Count > 0 ? fresh.UserSectionNames : prior.UserSectionNames,
             MoreSelectors = fresh.MoreSelectors.Count > 0 ? fresh.MoreSelectors : prior.MoreSelectors,
             MoreUrlPatterns = fresh.MoreUrlPatterns.Count > 0 ? fresh.MoreUrlPatterns : prior.MoreUrlPatterns,
         };
+    }
+
+    /// <summary>
+    /// workspace-nbvb.4: records a user's section rename on the ledger (newest
+    /// last, latest-wins when the same identifiers are renamed again, capped)
+    /// and applies it to the section list immediately.
+    /// </summary>
+    internal static SiteHierarchyConfig AppendSectionRename(
+        SiteHierarchyConfig config, HierarchySection section, string name)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(section);
+        var trimmed = (name ?? string.Empty).Trim();
+        if (trimmed.Length == 0)
+        {
+            return config;
+        }
+
+        var identifiers = section.ParentSelectors.Concat(section.UrlPatterns)
+            .Where(x => !string.IsNullOrWhiteSpace(x))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        var entry = new UserSectionRename
+        {
+            Identifiers = identifiers,
+            Name = trimmed,
+            RenamedAt = DateTime.UtcNow,
+        };
+
+        // Latest-wins: renaming the same section again replaces the old entry.
+        var ledger = config.UserSectionNames
+            .Where(r => !r.Identifiers.Intersect(identifiers, StringComparer.OrdinalIgnoreCase).Any())
+            .Append(entry)
+            .ToList();
+        if (ledger.Count > SiteHierarchyConfig.MaxUserSectionNames)
+        {
+            ledger = ledger.Skip(ledger.Count - SiteHierarchyConfig.MaxUserSectionNames).ToList();
+        }
+
+        return ApplySectionRenames(config with { UserSectionNames = ledger });
+    }
+
+    /// <summary>
+    /// workspace-nbvb.4: re-applies the rename ledger to the CURRENT section
+    /// list — every model round and label derivation builds fresh sections, so
+    /// this runs at the same enforcement points the labels use
+    /// (<see cref="CarryAndEnforce"/> and the end of <see cref="DeriveConfig"/>).
+    /// A rename owns the FIRST section sharing any of its identifiers; each
+    /// section takes at most one rename.
+    /// </summary>
+    internal static SiteHierarchyConfig ApplySectionRenames(SiteHierarchyConfig config)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        if (config.UserSectionNames.Count == 0 || config.Sections.Count == 0)
+        {
+            return config;
+        }
+
+        var sections = config.Sections.ToList();
+        var renamedIndexes = new HashSet<int>();
+        foreach (var rename in config.UserSectionNames)
+        {
+            for (var i = 0; i < sections.Count; i++)
+            {
+                if (renamedIndexes.Contains(i))
+                {
+                    continue;
+                }
+
+                var identifiers = sections[i].ParentSelectors.Concat(sections[i].UrlPatterns);
+                if (identifiers.Intersect(rename.Identifiers, StringComparer.OrdinalIgnoreCase).Any())
+                {
+                    if (!string.Equals(sections[i].Name, rename.Name, StringComparison.Ordinal))
+                    {
+                        sections[i] = sections[i] with { Name = rename.Name };
+                    }
+
+                    renamedIndexes.Add(i);
+                    break;
+                }
+            }
+        }
+
+        return renamedIndexes.Count == 0 ? config : config with { Sections = sections };
     }
 }

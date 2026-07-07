@@ -124,7 +124,7 @@ def main():
 
             # --- Space -> Paste a story's URL -> DETERMINISTIC news river ---
             t.send_keys("Space")
-            t.wait_for_any("Paste the top story", "Paste another story", "Fix links by hand", timeout=20)
+            t.wait_for_any("Paste the top story", "Paste another story", "Mark links to teach", timeout=20)
             # Move to the URL option and select it. Layout: pick row(s) then URL row.
             screen = t.capture()
             # Navigate: the 'Paste ... URL' row — press Down until focused, then Enter.

@@ -15,7 +15,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// label mode and refine loop are the adjustment surface), then shows the
 /// RESULT: the candidate config is applied to the real link tree behind a slim
 /// caption card, so what the user evaluates is the page they will actually
-/// get. Enter saves exactly what is previewed; Space opens the adjust loop
+/// get. 's' saves exactly what is previewed; Space opens the adjust loop
 /// (label links by hand — deterministic and budget-free — point at the top
 /// story, paste its URL, or steer with free text); Esc discards — document
 /// order is the implicit unconfigured default and is never presented as a
@@ -73,6 +73,17 @@ internal static class SetupWizard
     private const int MarkClearChoice = -8;
 
     /// <summary>
+    /// workspace-nbvb.3: card-loop sentinel: 's' — save the previewed layout.
+    /// Enter no longer saves: on a row list, Enter-on-a-story saving the whole
+    /// layout read as a surprise; its one preview role left is answering an
+    /// "AI asks" confirm row.
+    /// </summary>
+    private const int SaveChoice = -9;
+
+    /// <summary>workspace-nbvb.4: card-loop sentinel: 'r' — rename the focused section header.</summary>
+    private const int RenameChoice = -10;
+
+    /// <summary>
     /// Runs the wizard. Dependencies are injected (not pulled from CommandContext)
     /// so the flow is unit-testable with a mock analyzer + scripted input.
     /// </summary>
@@ -99,7 +110,8 @@ internal static class SetupWizard
         CancellationToken ct,
         SiteHierarchyConfig? existingConfig = null,
         Func<CancellationToken, Task<string?>>? promptLeadUrl = null,
-        bool startWithLabelMode = false)
+        bool startWithLabelMode = false,
+        Func<string, CancellationToken, Task<string?>>? promptSectionName = null)
     {
         ArgumentNullException.ThrowIfNull(analyzer);
         ArgumentNullException.ThrowIfNull(budget);
@@ -146,7 +158,8 @@ internal static class SetupWizard
                 applyPreview,
                 lens,
                 ct,
-                promptLeadUrl).ConfigureAwait(false);
+                promptLeadUrl,
+                promptSectionName).ConfigureAwait(false);
         }
 
         // ---- workspace-9k27.4: re-entry on an already-configured site seeds
@@ -178,7 +191,8 @@ internal static class SetupWizard
                 applyPreview,
                 lens,
                 ct,
-                promptLeadUrl).ConfigureAwait(false);
+                promptLeadUrl,
+                promptSectionName).ConfigureAwait(false);
         }
 
         // ---- workspace-t1ok.7: the question CARDS are gone — the clarifying
@@ -303,7 +317,8 @@ internal static class SetupWizard
             applyPreview,
             lens,
             ct,
-            promptLeadUrl).ConfigureAwait(false);
+            promptLeadUrl,
+            promptSectionName).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -701,8 +716,8 @@ internal static class SetupWizard
             Options = options,
             Footnote = footnote,
             Hint = canUndo
-                ? "a article · x ad · m menu · i hide · u clear · Enter save · Space refine · z undo · Esc back"
-                : "a article · x ad · m menu · i hide · u clear · Enter save · Space refine · Esc back",
+                ? "a article · x ad · m menu · i hide · u clear · r rename · s save · Space adjust · z undo · Esc"
+                : "a article · x ad · m menu · i hide · u clear · r rename · s save · Space adjust · Esc",
         };
     }
 
@@ -804,7 +819,8 @@ internal static class SetupWizard
                     Identifier = string.Join(" · ", section.ParentSelectors.Concat(section.UrlPatterns)),
                     HighlightSelector = CssForSection(section),
                 },
-                null));
+                null,
+                section));
             foreach (var link in matched)
             {
                 rows.Add(new PreviewRow(
@@ -1349,7 +1365,8 @@ internal static class SetupWizard
         Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
         Lens? lens,
         CancellationToken ct,
-        Func<CancellationToken, Task<string?>>? promptLeadUrl = null)
+        Func<CancellationToken, Task<string?>>? promptLeadUrl = null,
+        Func<string, CancellationToken, Task<string?>>? promptSectionName = null)
     {
         // workspace-romy.7: previousCovered carries the last previewed config's
         // coverage into the next preview so each adjustment round shows what
@@ -1519,8 +1536,14 @@ internal static class SetupWizard
 
             switch (choice)
             {
-                case >= 0: // Enter — save exactly what is previewed
+                case SaveChoice: // 's' — save exactly what is previewed
                     return new Result { Config = PruneSubsumedSections(config, links) };
+                case >= 0:
+                    // workspace-nbvb.3: Enter on a layout row nudges instead of
+                    // surprise-saving the whole layout (an "AI asks" confirm row
+                    // was already answered above, before this switch).
+                    notice = "Press s to save the layout · Esc discards it.";
+                    continue;
                 case CancelChoice:
                     return new Result { Cancelled = true };
                 case UndoChoice:
@@ -1560,6 +1583,13 @@ internal static class SetupWizard
                         MarkClearChoice => 'u',
                         _ => 'x',
                     };
+                    var urlKey = NormalizeUrl(marked.Url);
+                    if (markKey == 'u' && !config.UserLabels.Any(l => NormalizeUrl(l.Url) == urlKey))
+                    {
+                        notice = "No mark on this row to clear.";
+                        continue;
+                    }
+
                     var pending = new Dictionary<string, UserLinkLabel>(StringComparer.Ordinal);
                     foreach (var saved in config.UserLabels)
                     {
@@ -1576,8 +1606,31 @@ internal static class SetupWizard
                         .Take(NavigationTreeBuilder.MaxContentLinks)
                         .Select(l => l.Url)
                         .ToList();
-                    var markDerived = LabelDerivation.DeriveConfig(markBase, orderedLabels, seenNow, links);
-                    var next = markDerived == null ? markBase : PruneSubsumedSections(markDerived, links);
+
+                    // workspace-nbvb.1: a mark that leaves the ARTICLE set
+                    // unchanged must not touch the sections — the full
+                    // derivation rebuilds rivers, and on a config already
+                    // carrying ranked articles that re-derivation renamed and
+                    // restructured the layout under a hide-one-link press.
+                    // Rule-only marks apply their single rule to the CURRENT
+                    // config; only article changes re-derive from the base.
+                    SiteHierarchyConfig next;
+                    if (ArticleSetUnchanged(config.UserLabels, pending))
+                    {
+                        var withLedger = config with
+                        {
+                            UserLabels = LabelDerivation.MergeLabels(config.UserLabels, orderedLabels, seenNow),
+                        };
+                        next = pending.TryGetValue(urlKey, out var newLabel)
+                            ? LabelDerivation.ApplyRuleLabels(withLedger, new[] { newLabel }, links)
+                            : withLedger; // 'u' — entry removed; a visible row had no effective rule
+                    }
+                    else
+                    {
+                        var markDerived = LabelDerivation.DeriveConfig(markBase, orderedLabels, seenNow, links);
+                        next = markDerived == null ? markBase : PruneSubsumedSections(markDerived, links);
+                    }
+
                     if (!ReferenceEquals(next, config))
                     {
                         undoConfig = config; // 'z' restores the pre-mark layout (labels included)
@@ -1586,6 +1639,38 @@ internal static class SetupWizard
                     }
 
                     notice = MarkOutcomeNotice(config, pending, marked, markKey, links);
+                    continue;
+                case RenameChoice:
+                    // workspace-nbvb.4: 'r' on a section header renames it —
+                    // recorded on the rename ledger so model rounds and label
+                    // derivations (which build fresh section lists) keep it.
+                    if (config.Sections.Count == 0)
+                    {
+                        notice = "This flat list has no sections to rename yet.";
+                        continue;
+                    }
+
+                    if (preview.Cursor < 0 || preview.Cursor >= previewRows.Count
+                        || previewRows[preview.Cursor].Section is not { } renameTarget)
+                    {
+                        notice = "Move to a section header row, then press r to rename it.";
+                        continue;
+                    }
+
+                    if (promptSectionName == null)
+                    {
+                        notice = "Renaming isn't available on this screen.";
+                        continue;
+                    }
+
+                    var newName = await promptSectionName(renameTarget.Name, ct).ConfigureAwait(false);
+                    if (!string.IsNullOrWhiteSpace(newName)
+                        && !string.Equals(newName.Trim(), renameTarget.Name, StringComparison.Ordinal))
+                    {
+                        undoConfig = config;
+                        config = LabelDerivation.AppendSectionRename(config, renameTarget, newName.Trim());
+                    }
+
                     continue;
                 case AdjustChoice:
                     var before = config;
@@ -1656,6 +1741,22 @@ internal static class SetupWizard
 #pragma warning restore SA1202
 
     /// <summary>
+    /// workspace-nbvb.1: true when <paramref name="pending"/> holds exactly the
+    /// same ranked-article set as the saved ledger — the test that lets a
+    /// rule-only mark (x/m/i) skip the section-rebuilding derivation.
+    /// </summary>
+    private static bool ArticleSetUnchanged(
+        IReadOnlyList<UserLinkLabel> before, IReadOnlyDictionary<string, UserLinkLabel> pending)
+    {
+        static HashSet<(string Url, int Rank)> Articles(IEnumerable<UserLinkLabel> labels) =>
+            labels.Where(l => l.Kind == LinkLabelKind.Article)
+                .Select(l => (NormalizeUrl(l.Url), l.Rank ?? int.MaxValue))
+                .ToHashSet();
+
+        return Articles(before).SetEquals(Articles(pending.Values));
+    }
+
+    /// <summary>
     /// workspace-v2m8.1: the honest per-mark outcome line. Null (no notice) when
     /// the mark took; otherwise the label self-test's reason the row still
     /// renders wrong (e.g. an exact-URL rule refused over a prefix collision),
@@ -1676,7 +1777,7 @@ internal static class SetupWizard
         var failure = LabelDerivation.LabelsReproducedFailures(config, new[] { label }, links).FirstOrDefault();
         return failure == null
             ? null
-            : $"{failure} — Space → \"Fix links by hand\" can generalize it with AI.";
+            : $"{failure} — Space → \"Mark links to teach the AI\" can generalize it.";
     }
 
     /// <summary>
@@ -1715,10 +1816,10 @@ internal static class SetupWizard
             var doneCard = new SetupWizardOverlay.WizardCard
             {
                 Title = shape?.Title ?? "Adjust the layout",
-                Prompt = "The AI budget for this setup is used up — you can still fix links by hand.",
+                Prompt = "The AI budget for this setup is used up — you can still mark links yourself.",
                 Options = new List<SetupWizardOverlay.CardOption>
                 {
-                    new() { Label = "Fix links by hand — mark articles, ads, menu links" },
+                    new() { Label = "Mark links to teach the AI — articles, ads, menus" },
                     new() { Label = "Back" },
                 },
                 Footnote = $"{budget.Used} of {budget.Max} AI calls used",
@@ -1751,8 +1852,22 @@ internal static class SetupWizard
         var labelIndex = options.Count;
         options.Add(new SetupWizardOverlay.CardOption
         {
-            Label = "Fix links by hand — mark articles, ads, menu links",
+            Label = "Mark links to teach the AI — articles, ads, menus",
         });
+
+        // workspace-nbvb.2: the user-invoked generalization — "use my marks as
+        // the basis and build the proper configuration". The same model call
+        // the label self-test uses as a silent fallback, now explicit.
+        var generalizeIndex = -1;
+        if (currentConfig.UserLabels.Count > 0)
+        {
+            generalizeIndex = options.Count;
+            var n = currentConfig.UserLabels.Count;
+            options.Add(new SetupWizardOverlay.CardOption
+            {
+                Label = $"Generalize from your {n} mark{(n == 1 ? string.Empty : "s")} with AI — build the full layout",
+            });
+        }
 
         if (allowPick)
         {
@@ -1812,6 +1927,13 @@ internal static class SetupWizard
         {
             return await RunLabelAdjustAsync(
                 analyzer, input, render, overlay, links, pageUrl, screenshot, currentConfig, budget, lens, ct, focusUrl)
+                .ConfigureAwait(false);
+        }
+
+        if (generalizeIndex >= 0 && choice == generalizeIndex)
+        {
+            return await RunGeneralizeFromMarksAsync(
+                analyzer, render, overlay, links, pageUrl, screenshot, currentConfig, budget, ct)
                 .ConfigureAwait(false);
         }
 
@@ -2000,6 +2122,63 @@ internal static class SetupWizard
         }
 
         return new InferredPattern { Config = derived, Confidence = 0.6 };
+    }
+
+    /// <summary>
+    /// workspace-nbvb.2: the user-invoked "use my marks as the basis" round —
+    /// ONE budget-guarded <see cref="IHierarchyAnalyzer.InferPatternFromLabelsAsync"/>
+    /// call over the saved ledger (the same model round the label self-test
+    /// fires as a silent fallback, now explicit). The label rules are re-applied
+    /// IN CODE on the result (a disobedient response cannot resurrect a labeled
+    /// ad or strand a menu link), renames re-applied, dead sections pruned; the
+    /// user judges the outcome on the preview and 'z' undoes. Returns null when
+    /// the budget is spent or the call fails — the caller keeps the current
+    /// config.
+    /// </summary>
+    private static async Task<InferredPattern?> RunGeneralizeFromMarksAsync(
+        IHierarchyAnalyzer analyzer,
+        Func<CancellationToken, Task> render,
+        SetupWizardOverlay.State overlay,
+        List<LinkInfo> links,
+        string pageUrl,
+        byte[]? screenshot,
+        SiteHierarchyConfig currentConfig,
+        ModelRoundTripBudget budget,
+        CancellationToken ct)
+    {
+        if (!budget.TrySpend())
+        {
+            return null;
+        }
+
+        try
+        {
+            var modelPattern = await RunWithProgressAsync(
+                analyzer.InferPatternFromLabelsAsync(
+                    screenshot, links, pageUrl, currentConfig.UserLabels, currentConfig, ct),
+                "Generalizing from your marks",
+                overlay,
+                render,
+                ct).ConfigureAwait(false);
+
+            var candidate = LabelDerivation.CarryAndEnforce(modelPattern.Config, currentConfig, links);
+            candidate = PruneSubsumedSections(candidate, links);
+            return new InferredPattern
+            {
+                Config = candidate,
+                Confidence = modelPattern.Confidence,
+                ConfirmQuestion = modelPattern.ConfirmQuestion,
+            };
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // A failed round must not kill the wizard — the current config stands.
+            return null;
+        }
     }
 
     /// <summary>
@@ -2222,6 +2401,8 @@ internal static class SetupWizard
                     'm' => MarkMenuChoice,
                     'i' => MarkHideChoice,
                     'u' => MarkClearChoice,
+                    's' => SaveChoice,
+                    'r' => RenameChoice,
                     _ => 0,
                 };
                 if (mark != 0)
@@ -2365,7 +2546,8 @@ internal static class SetupWizard
     }
 
     /// <summary>workspace-5vqk.3/.4: one preview row — its rendered option plus the link it stands for (null for a section header).</summary>
-    internal sealed record PreviewRow(SetupWizardOverlay.CardOption Option, LinkInfo? Link);
+    /// <summary>One preview row: a link row, or a section header (carrying its section for 'r' rename).</summary>
+    internal sealed record PreviewRow(SetupWizardOverlay.CardOption Option, LinkInfo? Link, HierarchySection? Section = null);
 
     /// <summary>workspace-t1ok.4: one label-mode row — a card option plus the link it labels (null = header).</summary>
     internal sealed record LabelRow(SetupWizardOverlay.CardOption Option, LinkInfo? Link, bool CurrentlyHidden);

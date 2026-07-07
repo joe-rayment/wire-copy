@@ -181,7 +181,7 @@ def main():
                             cap(t, "03b. AFTER UNDO (should match pre-steer 01-preview)", "02b-after-undo.txt")
 
                 if not args.no_save and "Your new layout" in t.capture():
-                    t.send_keys("Enter")
+                    t.send_keys("s")  # workspace-nbvb.3: 's' saves the preview
                     try:
                         t.wait_for("Site set up", timeout=30)
                     except Exception:

@@ -368,6 +368,80 @@ public class LabelModeTests
     // ---- bead 6: AI fallback ---------------------------------------------------
 
     [Fact]
+    public void ApplyRuleLabels_Ignore_HidesExactlyTheLabeledLink()
+    {
+        // workspace-nbvb.1: 'i' means THIS link. Two chrome links share a
+        // distinctive container class — before the exact-first fix the token
+        // route hid BOTH (class extrapolation is the Ad label's job, not hide's).
+        LinkInfo Nav(string url, string text) => new()
+        {
+            Url = url,
+            DisplayText = text,
+            Type = LinkType.Content,
+            ImportanceScore = 40,
+            ParentSelector = "div.rail > span.src",
+        };
+        var links = FourStories();
+        links.Add(Nav("https://x.com/nav/one", "Nav one"));
+        links.Add(Nav("https://x.com/nav/two", "Nav two"));
+
+        var result = LabelDerivation.ApplyRuleLabels(
+            ConfigWith(), new[] { Label("https://x.com/nav/one", LinkLabelKind.Ignore) }, links);
+
+        NavigationTreeBuilder.IsExcluded(links[4], result).Should().BeTrue("the labeled link hides");
+        NavigationTreeBuilder.IsExcluded(links[5], result).Should().BeFalse(
+            "its container-sibling survives — the exact rule comes first for hide");
+    }
+
+    // ---- workspace-nbvb.4: rename ledger ----
+
+    [Fact]
+    public void AppendSectionRename_RenamesNow_AndLatestWinsOnTheLedger()
+    {
+        var section = new HierarchySection
+        {
+            Name = "Stories",
+            SortOrder = 0,
+            ParentSelectors = new List<string> { "div.river" },
+        };
+        var config = ConfigWith(sections: new List<HierarchySection> { section });
+
+        var once = LabelDerivation.AppendSectionRename(config, section, "Tech Talk");
+        once.Sections[0].Name.Should().Be("Tech Talk");
+        once.UserSectionNames.Should().ContainSingle(r => r.Name == "Tech Talk");
+
+        var twice = LabelDerivation.AppendSectionRename(once, once.Sections[0], "Front Page");
+        twice.Sections[0].Name.Should().Be("Front Page");
+        twice.UserSectionNames.Should().ContainSingle(r => r.Name == "Front Page",
+            "renaming the same identifiers again replaces the entry");
+    }
+
+    [Fact]
+    public void CarryAndEnforce_ReappliesRename_OverAModelFreshSectionList()
+    {
+        var prior = ConfigWith(sections: new List<HierarchySection>
+        {
+            new() { Name = "Tech Talk", SortOrder = 0, ParentSelectors = new List<string> { "div.river" } },
+        }) with
+        {
+            UserSectionNames = new List<UserSectionRename>
+            {
+                new() { Identifiers = new List<string> { "div.river" }, Name = "Tech Talk", RenamedAt = DateTime.UtcNow },
+            },
+        };
+
+        // The model round rebuilt the section and called it "Main feed".
+        var fresh = ConfigWith(sections: new List<HierarchySection>
+        {
+            new() { Name = "Main feed", SortOrder = 0, ParentSelectors = new List<string> { "div.river" } },
+        });
+
+        var enforced = LabelDerivation.CarryAndEnforce(fresh, prior, FourStories());
+
+        enforced.Sections[0].Name.Should().Be("Tech Talk", "the rename ledger wins over the model's name");
+    }
+
+    [Fact]
     public void ApplyRuleLabels_DisobedientModelConfig_StillExcludesLabeledAd()
     {
         var links = RiverPage();
@@ -468,13 +542,15 @@ public class LabelModeTests
                 }),
             });
 
-        // Seeded preview → Space → Down past "Fix links by hand" → Enter on
-        // "Tell the AI what to change…" → refine → Enter saves.
+        // Seeded preview → Space → Down past "Mark links…" AND the generalize
+        // row (the config carries a label, workspace-nbvb.2) → Enter on
+        // "Tell the AI what to change…" → refine → 's' saves.
         var input = Input(
             Cmd(CommandType.ToggleSelection),
             Cmd(CommandType.MoveDown),
+            Cmd(CommandType.MoveDown),
             Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink));
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });
 
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
@@ -568,8 +644,8 @@ public class LabelModeTests
         // one as rank-1, apply, then Enter saves the preview.
         var input = Input(
             Key('a'),
-            Cmd(CommandType.ActivateLink),   // apply labels
-            Cmd(CommandType.ActivateLink));  // save the preview
+            Cmd(CommandType.ActivateLink),                                    // apply labels
+            new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' });  // save the preview
 
         var budget = new ModelRoundTripBudget();
         var result = await SetupWizard.RunAsync(

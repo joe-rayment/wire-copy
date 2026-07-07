@@ -520,10 +520,14 @@ public class WizardV3Tests
         var input = Substitute.For<IInputHandler>();
         input.WaitForInputAsync(Arg.Any<CancellationToken>())
             .Returns(
-                new WireCopy.Application.DTOs.Browser.NavigationCommand { Type = commands[0] },
-                commands.Skip(1).Select(c => new WireCopy.Application.DTOs.Browser.NavigationCommand { Type = c }).ToArray());
+                Cmdify(commands[0]),
+                commands.Skip(1).Select(Cmdify).ToArray());
         return input;
     }
+
+    // workspace-nbvb.3: 's' saves the preview; SaveToCollection is the real 's' binding.
+    private static WireCopy.Application.DTOs.Browser.NavigationCommand Cmdify(CommandType c) =>
+        new() { Type = c, RawKeyChar = c == CommandType.SaveToCollection ? 's' : null };
 
     private static IHierarchyAnalyzer AnalyzerWithQuestionThenClean(
         SiteHierarchyConfig config, List<IReadOnlyList<SetupAnswer>> answersLog)
@@ -550,13 +554,13 @@ public class WizardV3Tests
     }
 
     [Fact]
-    public async Task ConfirmQuestion_PlainEnter_QuickAcceptsWithoutAnswering()
+    public async Task ConfirmQuestion_SaveKey_QuickAcceptsWithoutAnswering()
     {
         var links = ParseLinks();
         var config = ConfigWithSections(Section("Top", "section.lead"), Section("Feed", "section.feed"));
         var answersLog = new List<IReadOnlyList<SetupAnswer>>();
         var analyzer = AnalyzerWithQuestionThenClean(config, answersLog);
-        var input = InputSequence(CommandType.ActivateLink); // Enter on cursor 0 = section row
+        var input = InputSequence(CommandType.SaveToCollection); // 's' saves as-is, question ignored
 
         var budget = new ModelRoundTripBudget();
         var result = await SetupWizard.RunAsync(
@@ -565,7 +569,7 @@ public class WizardV3Tests
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
             pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
 
-        result.Config.Should().NotBeNull("Enter on a section row saves immediately, question ignored");
+        result.Config.Should().NotBeNull("'s' saves immediately, question ignored");
         budget.Used.Should().Be(2, "ignoring the question must not spend extra model calls");
     }
 
@@ -579,10 +583,11 @@ public class WizardV3Tests
 
         // workspace-5vqk.3: preview rows are now [0]=Top header, [1]=Top's headline,
         // [2]=Feed header, [3]=Feed's headline, [4]=answer 1, [5]=answer 2. Four
-        // Downs land on the first answer row; then Enter saves the re-previewed config.
+        // Downs land on the first answer row; Enter ANSWERS it (its one preview
+        // role, workspace-nbvb.3); then 's' saves the re-previewed config.
         var input = InputSequence(
             CommandType.MoveDown, CommandType.MoveDown, CommandType.MoveDown, CommandType.MoveDown,
-            CommandType.ActivateLink, CommandType.ActivateLink);
+            CommandType.ActivateLink, CommandType.SaveToCollection);
 
         var budget = new ModelRoundTripBudget();
         var result = await SetupWizard.RunAsync(

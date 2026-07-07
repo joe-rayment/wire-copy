@@ -231,7 +231,7 @@ def run_site(site_key, som_dir):
             return gate
 
         # Save exactly what is previewed.
-        t.send_keys("Enter")
+        t.send_keys("s")  # nbvb.3: 's' saves the preview
         try:
             t.wait_for("Site set up", timeout=30)
             gate.shot(t, "5. saved")

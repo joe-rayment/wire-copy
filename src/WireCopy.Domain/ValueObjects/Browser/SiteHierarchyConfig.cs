@@ -41,6 +41,9 @@ public record SiteHierarchyConfig
     /// <summary>workspace-t1ok.3: cap on the <see cref="UserInstructions"/> log.</summary>
     public const int MaxUserInstructions = 20;
 
+    /// <summary>workspace-nbvb.4: cap on the <see cref="UserSectionNames"/> ledger.</summary>
+    public const int MaxUserSectionNames = 12;
+
     public required string Domain { get; init; }
     public required string UrlPattern { get; init; }
     public required List<HierarchySection> Sections { get; init; }
@@ -110,6 +113,14 @@ public record SiteHierarchyConfig
     /// a new tweak can't silently undo an earlier one.
     /// </summary>
     public List<string> UserInstructions { get; init; } = new();
+
+    /// <summary>
+    /// workspace-nbvb.4: user-chosen section names, oldest first, capped at
+    /// <see cref="MaxUserSectionNames"/>. Model rounds and label derivations
+    /// build fresh section lists, so renames are re-applied by identifier
+    /// overlap at the same enforcement points the labels use.
+    /// </summary>
+    public List<UserSectionRename> UserSectionNames { get; init; } = new();
 
     /// <summary>
     /// workspace-5oe9.5/.6: set when this config cannot be trusted to curate

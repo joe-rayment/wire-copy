@@ -250,6 +250,37 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
+    /// workspace-nbvb.4: prompts for a section's new name ('r' on a preview
+    /// header row). Null/empty cancels — the section keeps its current name.
+    /// </summary>
+    private static async Task<string?> PromptForSectionNameAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        string currentName,
+        CancellationToken ct)
+    {
+        var palette = Themes.BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new UI.Components.FormFieldConfig
+        {
+            Label = "Rename section",
+            Subtitle = $"Currently \"{currentName}\" — the new name survives AI refines",
+            Placeholder = "Type the new name and press Enter · Esc to keep it",
+        };
+
+        var fieldWidth = Math.Min(60, Math.Max(40, options.TerminalWidth - 6));
+        var fieldHeight = UI.Components.FormField.HeightFor(field);
+        var startRow = Math.Max(0, options.TerminalHeight - fieldHeight - 1);
+
+        return await UI.Components.FormField.PromptAsync(
+            ctx.InputHandler,
+            field,
+            palette,
+            startRow,
+            fieldWidth,
+            ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// workspace-cbjx.2: prompts for the main story's URL so the lead can be set
     /// by pasting a link instead of scrolling the tree. Returns the raw text
     /// (resolved against the page's links by <see cref="SetupWizard.ResolveLeadByUrl"/>);
@@ -616,7 +647,8 @@ internal static class StrategyChooserHandler
                 ct,
                 existingConfig,
                 promptLeadUrl: c => PromptForLeadUrlAsync(ctx, options, c),
-                startWithLabelMode: startWithLabelMode).ConfigureAwait(false);
+                startWithLabelMode: startWithLabelMode,
+                promptSectionName: (current, c) => PromptForSectionNameAsync(ctx, options, current, c)).ConfigureAwait(false);
             completed = !result.Cancelled;
             return result;
         }
@@ -1021,9 +1053,10 @@ internal static class StrategyChooserHandler
         try
         {
             // workspace-v2m8.4: hand-labeling is offered HERE, one Enter from
-            // g l — it used to hide three levels deep (Refine → preview →
-            // Space → "Fix links by hand"), so users concluded there was no way
-            // to mark ads/menus at all. The cursor also defaults to it: on a
+            // g l — it used to hide three levels deep, so users concluded there
+            // was no way to mark ads/menus at all. workspace-nbvb.2 phrases it
+            // as TEACHING the AI (marks are the basis the model generalizes
+            // from), not a manual alternative. The cursor defaults to it: on a
             // configured site the user opened this card to FIX something (Esc
             // remains the no-op exit).
             var card = new UI.Components.SetupWizardOverlay.WizardCard
@@ -1033,7 +1066,7 @@ internal static class StrategyChooserHandler
                 Options =
                 {
                     new UI.Components.SetupWizardOverlay.CardOption { Label = ChooserEntry.RefineOptionLabel(config) },
-                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Fix links by hand — mark articles, ads, menu links" },
+                    new UI.Components.SetupWizardOverlay.CardOption { Label = "Mark links to teach the AI — articles, ads, menus" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Reset to document order" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Compare all strategies…" },
                     new UI.Components.SetupWizardOverlay.CardOption { Label = "Close" },

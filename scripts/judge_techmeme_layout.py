@@ -83,7 +83,7 @@ def main():
             dump("preview.txt", screen)
             if "Your new layout" in screen:
                 print("reached preview; saving")
-                t.send_keys("Enter")
+                t.send_keys("s")  # nbvb.3: 's' saves the preview
                 try:
                     t.wait_for("Site set up", timeout=30)
                 except TimeoutError:

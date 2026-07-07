@@ -4,7 +4,7 @@ Gate for workspace-t1ok.4/.5 — LABEL MODE end to end, the epic's core flow.
 
 Drives the real app on the pinned techmeme fixture with real keys (tmux,
 headful under Xvfb — never headless), through: seeded config -> g l ->
-Reconfigure -> seeded preview (0 model calls) -> Space -> "Fix links by hand"
+Reconfigure -> seeded preview (0 model calls) -> Space -> "Mark links to teach the AI"
 -> label two articles (a, a), an ad (x) and a menu link (m) -> Enter (apply,
 deterministic derivation) -> asserts the USER-VISIBLE outcomes:
 
@@ -152,7 +152,7 @@ def main():
             t.wait_for("Your new layout", timeout=45)
 
             t.send_keys("Space")
-            t.wait_for("Fix links by hand", timeout=20)
+            t.wait_for("Mark links to teach the AI", timeout=20)
             t.send_keys("Enter")
             t.wait_for("Mark the links", timeout=15)
 
@@ -212,8 +212,8 @@ def main():
             if not found_n2:
                 failures.append("rank-2 headline never appeared while scrolling the preview")
 
-            # Save.
-            t.send_keys("Enter")
+            # Save (nbvb.3: 's').
+            t.send_keys("s")
             t.wait_for("Site set up", timeout=20)
             time.sleep(1)
 

@@ -218,7 +218,7 @@ def main():
                 t.send_keys("k")
                 time.sleep(1)
 
-                t.send_keys("Enter")  # save exactly what is previewed
+                t.send_keys("s")  # save exactly what is previewed (nbvb.3: 's' saves)
                 t.wait_for("Site set up", timeout=30)
                 transcript(t, log, "6. saved — AI Curated with durable sections")
 

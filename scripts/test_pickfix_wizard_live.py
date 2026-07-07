@@ -16,7 +16,7 @@ outcome, with ZERO model calls:
   2. Space -> pick option -> j,j,Enter picks a story (deterministic river
      derivation — still no model call).
   3. ASSERT: the "Your new layout" preview card is VISIBLE again with its
-     "Enter save" hint; the "Point at the top story" pick hint is GONE from
+     "s save" hint; the "Point at the top story" pick hint is GONE from
      the status bar; pressing Down twice visibly MOVES the card cursor (the
      focused `▸` row changes between captures).
 
@@ -146,7 +146,7 @@ def main():
             # --- Space -> adjust card -> pick option (index 0) ---
             t.send_keys("Space")
             t.wait_for_any("Point at the top story", "Point at another story", timeout=20)
-            t.send_keys("Down")  # past "Fix links by hand" (option 0) to the pick option
+            t.send_keys("Down")  # past "Mark links to teach the AI" (option 0) to the pick option
             t.send_keys("Enter")
 
             # Pick mode: card cleared, pick hint pinned. (Tolerate the pre-fix
@@ -170,8 +170,8 @@ def main():
             else:
                 time.sleep(1.5)
                 screen = t.screenshot("3 preview restored after pick")
-                if "Enter save" not in screen:
-                    failures.append("preview hint (Enter save) missing after the pick")
+                if "s save" not in screen:
+                    failures.append("preview hint (s save) missing after the pick")
                 if "Point at the top story" in screen or "Pick a story to teach" in screen:
                     failures.append("stale pick hint still in the status bar after the pick")
 

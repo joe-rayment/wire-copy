@@ -6,7 +6,7 @@ Drives the real app on the pinned techmeme fixture with real keys (tmux,
 headful under Xvfb — never headless), through the exact journey the user
 reported broken on live techmeme (2026-07-07 review):
 
-  1. g l on a configured site: the summary offers "Fix links by hand" directly
+  1. g l on a configured site: the summary offers "Mark links to teach the AI" directly
      and the Refine row makes NO "(keeps your fixes)" claim while the ledger is
      empty (v2m8.3/.4); the cursor defaults to the fix row.
   2. Refine -> seeded preview (ZERO model calls); the hint teaches a/x/m/i/u.
@@ -15,8 +15,8 @@ reported broken on live techmeme (2026-07-07 review):
      that visually replaced it — NOT back on the top header (v2m8.1/.2).
   4. 'm' routes a row under More; 'a' ranks a row [ 1] and reorders; 'z'
      undoes the rank (ledger included).
-  5. Enter saves; the persisted JSON carries ad + menu + article labels.
-  6. Re-entering g l now shows "(keeps your 3 fixes)" and "Fix links by hand"
+  5. Enter only nudges; 's' saves; the persisted JSON carries ad + menu + article labels.
+  6. Re-entering g l now shows "(keeps your 3 fixes)" and the mark-links row
      opens the label card directly, seeded with the saved badges.
   7. The whole run makes ZERO analyzer calls (marks are deterministic).
 
@@ -90,9 +90,9 @@ def main():
             screen = t.capture()
             if "keeps your" in screen:
                 failures.append("summary claims '(keeps your …)' with an empty ledger")
-            if "Fix links by hand" not in screen:
-                failures.append("summary card has no direct 'Fix links by hand' option")
-            if "Fix links by hand" not in cursor_row(t):
+            if "Mark links to teach the AI" not in screen:
+                failures.append("summary card has no direct 'Mark links to teach the AI' option")
+            if "Mark links to teach" not in cursor_row(t):
                 failures.append(f"summary default cursor is {cursor_row(t)!r}, expected the fix row")
 
             # ---- seeded preview, marking grammar in the hint ------------------
@@ -163,8 +163,14 @@ def main():
             t.send_keys("a")  # re-mark for the persistence checks
             time.sleep(1.2)
 
-            # ---- save + persisted ledger --------------------------------------
+            # ---- Enter nudges; 's' saves (nbvb.3) -----------------------------
             t.send_keys("Enter")
+            time.sleep(0.8)
+            if "Site set up" in t.capture():
+                failures.append("Enter still saves the layout — nbvb.3 wants 's'")
+            if "Press s to save" not in t.capture():
+                failures.append("Enter on a story row did not show the 's saves' nudge")
+            t.send_keys("s")
             t.wait_for("Site set up", timeout=20)
             time.sleep(1)
 
