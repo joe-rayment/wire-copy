@@ -74,8 +74,9 @@ internal static class SidecarDocker
     /// and are plausible — the just-anchored window needs a beat to re-associate with the real
     /// display, and a single early read can return phantom off-screen geometry. Returns the
     /// stable value, or the last plausible one, or null if none was ever plausible.
+    /// (Internal so <see cref="CornerParker"/> reuses the same stabilized read — workspace-v7g7.)
     /// </summary>
-    private static async Task<SidecarGeometry.DisplayInfo?> ReadStableDisplayAsync(IDockWindowGeometry geo)
+    internal static async Task<SidecarGeometry.DisplayInfo?> ReadStableDisplayAsync(IDockWindowGeometry geo)
     {
         SidecarGeometry.DisplayInfo? lastPlausible = null;
         SidecarGeometry.DisplayInfo? prev = null;

@@ -15,14 +15,22 @@ internal interface IDockWindowGeometry
     /// <summary>Take the window out of any minimized/parked state (windowState = normal).</summary>
     Task NormalizeAsync();
 
+    /// <summary>Iconify the window (windowState = minimized) — used to RETURN a window to the
+    /// minimized state the user had put it in before an interaction summoned it (workspace-v7g7).</summary>
+    Task IconifyAsync();
+
+    /// <summary>Read the window's current CDP windowState ("normal"/"minimized"/"maximized"/
+    /// "fullscreen"), or null when it cannot be read (workspace-v7g7).</summary>
+    Task<string?> ReadWindowStateAsync();
+
     /// <summary>
-    /// Put the window into the truly-hidden state — the inverse of <see cref="NormalizeAsync"/>
-    /// (workspace-ynn9). macOS: an off-screen park (move to the park coordinate) that keeps the
-    /// window painting and never animates/steals focus. Non-macOS: the off-screen move AND
-    /// <c>windowState=minimized</c>, so the move hides it under bare Xvfb (no WM to honor an
-    /// iconify) while the minimize hides it under a real clamping window manager (which pulls the
-    /// off-screen coordinate back on-screen — the stray-tile bug). One primitive, hidden on every
-    /// environment.
+    /// Put the window into the truly-hidden state (workspace-ynn9): the off-screen move to the
+    /// park coordinate, PLUS <c>windowState=minimized</c> on non-macOS — the move hides it under
+    /// bare Xvfb (no WM to honor an iconify) while the minimize hides it under a real clamping
+    /// window manager (which pulls the off-screen coordinate back on-screen — the stray-tile bug).
+    /// workspace-v7g7: this no longer normalizes first; the CALLER must ensure the window is not
+    /// minimized/maximized — a minimized window must be LEFT ALONE (the old unconditional
+    /// normalize deminiaturized the user's own Cmd+M on every background prefetch park).
     /// </summary>
     Task HideAsync();
 

@@ -97,6 +97,28 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // Accessibility failure logged at Warning is invisible in the TUI without this.
     private int _permissionNoticeShown;
 
+    // workspace-v7g7: where the Corner park last placed the tile. While set, background parks
+    // leave the window wherever it currently is — respecting a user drag/resize of the tile.
+    // Every flow that intentionally moves the window on-screen (restore, dock) clears it so the
+    // NEXT park re-places the corner.
+    private TerminalTiling.WindowRect? _lastCornerRect;
+
+    // workspace-v7g7: true once a park has OBSERVED the tile where we left it. Only then does a
+    // later drift count as the user's drag/resize and get respected — a WM re-placing the window
+    // as it maps during launch must be corrected, not adopted as "the user's spot".
+    private bool _cornerRespectArmed;
+
+    // workspace-v7g7: the display's REAL work area, captured at launch BEFORE the fetch page's
+    // viewport emulation is applied — after it, JS screen metrics on the emulated pages report
+    // the 1280x720 viewport instead of the display. Null when the capture failed; corner
+    // placement then falls back to the (possibly lying) JS read.
+    private SidecarGeometry.DisplayInfo? _realDisplay;
+
+    // workspace-v7g7: 1 when RestoreWindowAsync found the window USER-minimized before summoning
+    // it for an interaction — the cleanup park then returns it to minimized instead of a visible
+    // park. Voided by docking (the user asked for the window on-screen).
+    private int _restoreFoundUserMinimized;
+
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
         ILogger<BrowserSession> logger,
@@ -364,10 +386,25 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         // against the focus-war: the hand-back is still gated on OUR browser being frontmost.
         Interlocked.Exchange(ref _pendingInteractionHandback, 1);
 
+        // workspace-v7g7: if the USER had minimized the window (on macOS any minimize is theirs —
+        // we never iconify there; elsewhere our own iconify is flagged), remember it so the
+        // post-interaction cleanup park returns the window to THEIR minimized state instead of a
+        // visible park. Read BEFORE the un-minimize below destroys the evidence.
+        var priorState = await GetWindowStateAsync().ConfigureAwait(false);
+        if (priorState == "minimized" && !_iconifiedByUs)
+        {
+            Interlocked.Exchange(ref _restoreFoundUserMinimized, 1);
+        }
+
         // workspace-ynn9: the window is now brought ON-SCREEN for the user to interact with, so it
         // is no longer OUR-hidden. Clearing this means a subsequent USER-minimize of this on-screen
         // window is correctly treated as "leave it alone" by the re-dock gate (wo4q).
         _iconifiedByUs = false;
+
+        // workspace-v7g7: the window is intentionally moving on-screen — the corner memory is
+        // stale, so the next park re-places the tile instead of "respecting" this position.
+        _lastCornerRect = null;
+        _cornerRespectArmed = false;
 
         try
         {
@@ -664,23 +701,39 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 return null;
             }
 
-            var page = await ctx.NewPageAsync().ConfigureAwait(false);
+            // workspace-v7g7: create the tab QUIETLY — CDP Target.createTarget background:true is
+            // a ctrl-click "open in background tab": the active tab never changes and nothing is
+            // raised, so no compensation is needed. The old NewPageAsync activated the new tab
+            // and the compensating Page.bringToFront OS-activated Chromium on macOS — every
+            // prefetch-tab (re)creation popped the browser over the user's work.
+            var page = await CreateBackgroundPageQuietlyAsync(ctx).ConfigureAwait(false);
 
-            // Tab etiquette: creating a tab activates it in a headed window — hand
-            // the window straight back to the lens/fetch tab so prefetch never
-            // steals the page the user is reading (workspace-wo4q).
-            var front = _lensPage ?? _page;
-            if (front != null)
+            if (page == null)
             {
-                try
+                // Fallback (CDP path unavailable): the classic creation. Tab etiquette: creating
+                // a tab activates it in a headed window — hand the window straight back to the
+                // lens/fetch tab so prefetch never steals the page the user is reading
+                // (workspace-wo4q). Information on purpose — the e2e gate asserts this
+                // activating path never runs.
+                page = await ctx.NewPageAsync().ConfigureAwait(false);
+                _logger.LogInformation("Background tab created via fallback NewPageAsync (activating)");
+                var front = _lensPage ?? _page;
+                if (front != null)
                 {
-                    await front.BringToFrontAsync().ConfigureAwait(false);
-                }
-                catch (PlaywrightException ex)
-                {
-                    _logger.LogDebug(ex, "Could not re-activate the front tab after creating a background tab");
+                    try
+                    {
+                        await front.BringToFrontAsync().ConfigureAwait(false);
+                    }
+                    catch (PlaywrightException ex)
+                    {
+                        _logger.LogDebug(ex, "Could not re-activate the front tab after creating a background tab");
+                    }
                 }
             }
+
+            // workspace-v7g7: the context is viewport-less — give the prefetch tab the same
+            // fixed viewport as the fetch page so prefetched pages render/extract identically.
+            await ApplyFetchViewportAsync(page).ConfigureAwait(false);
 
             _logger.LogDebug(
                 "Created background tab in the shared context (total pages: {Count})",
@@ -1367,13 +1420,20 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 "--disable-renderer-backgrounding",
             };
 
-            // workspace-75ng: spawn the headed window OFF-SCREEN so it never flashes at Chromium's
-            // default on-screen position and never steals keyboard focus at startup. Only on macOS,
-            // where the huge virtual desktop honors the off-screen coordinate (workspace-ynn9): on a
-            // real non-macOS window manager the coordinate is clamped back to (0,0), so this arg buys
-            // nothing but a guaranteed launch tile — the early HideAsync (which also iconifies) is
-            // what hides the window there. The window stays headful and renders fully regardless.
-            if (OperatingSystem.IsMacOS())
+            // workspace-75ng: spawn the headed window away from Chromium's default on-screen
+            // position so the launch never flashes a big window over the user's work.
+            // Corner mode (workspace-v7g7, macOS default): huge POSITIVE coordinates — an OS
+            // that clamps (macOS pulls windows back on-screen; the old -32000 spawn clamped
+            // into the field-reported top-LEFT sliver) lands it near the BOTTOM-RIGHT, where
+            // the early/end-of-launch park then places the exact corner tile.
+            // Offscreen mode keeps the classic macOS-only off-screen spawn (workspace-ynn9); on
+            // a real non-macOS window manager either coordinate is clamped anyway and the early
+            // HideAsync (which also iconifies) is what hides the window there.
+            if (_browserConfig.EffectiveParkMode == ParkMode.Corner)
+            {
+                args.Add("--window-position=20000,20000");
+            }
+            else if (OperatingSystem.IsMacOS())
             {
                 args.Add($"--window-position={_browserConfig.ParkCoordinate},{_browserConfig.ParkCoordinate}");
             }
@@ -1392,9 +1452,18 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 Timeout = 30000, // 30s timeout prevents indefinite hang if browser can't start
 
                 // Headed mode: let Chromium use its real UA to avoid version-mismatch detection (e.g. claiming
-                // Chrome/131 but actually running Chromium/145), and its real window size for the viewport.
+                // Chrome/131 but actually running Chromium/145).
                 UserAgent = null,
-                ViewportSize = null,
+
+                // workspace-v7g7: NoViewport, NOT null. In Playwright/.NET `null` means the DEFAULT
+                // 1280x720 EMULATED viewport — Patchright then sizes the OS window to fit it
+                // (1288x851) overriding our --window-size, silently re-asserts that size after
+                // navigations (reverting every park/corner placement), and overrides the JS screen
+                // metrics with the emulated 1280x720 (the workspace-r2we "0.8x work area" dock
+                // skew on a 1600px display). With NoViewport the OS window is entirely ours; the
+                // fetch/prefetch pages get the exact same 1280x720 viewport re-applied PER PAGE
+                // below, so rendering/extraction behavior is unchanged.
+                ViewportSize = ViewportSize.NoViewport,
                 IgnoreHTTPSErrors = true,
             });
 
@@ -1455,13 +1524,26 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync().ConfigureAwait(false);
 
+            // workspace-v7g7: capture the REAL display work area from the still-unemulated first
+            // page — the moment the fetch viewport is applied below, every JS screen metric on
+            // this page reports the emulated 1280x720 instead of the display. Corner planning
+            // uses this pre-emulation truth.
+            _realDisplay = await CaptureRealDisplayAsync().ConfigureAwait(false);
+
+            // workspace-v7g7: the context has NO Playwright-managed viewport (see the launch
+            // options) — re-apply the exact viewport the app has always rendered and extracted
+            // at (Playwright's old context default) to the fetch page itself.
+            await ApplyFetchViewportAsync(_page).ConfigureAwait(false);
+
             // workspace-ynn9: on non-macOS the window can't be spawned off-screen (the WM clamps
             // --window-position back on-screen), so it maps at Chromium's default position for a
             // beat. Hide it as EARLY as possible — before the slower cookie/init setup below —
-            // to shrink the on-screen flash to map→first-CDP. Harmless on macOS (already off-
-            // screen via the launch arg) so we simply skip it there. The end-of-launch
-            // dock/park below still runs and owns the final state + focus hand-back.
-            if (!OperatingSystem.IsMacOS())
+            // to shrink the on-screen flash to map→first-CDP. In Offscreen mode this is skipped
+            // on macOS (already off-screen via the launch arg); in Corner mode (workspace-v7g7)
+            // it runs everywhere — the launch arg only lands NEAR the corner (OS-clamped), so the
+            // early park snaps the exact tile sooner. The end-of-launch dock/park below still
+            // runs and owns the final state + focus hand-back.
+            if (!OperatingSystem.IsMacOS() || _browserConfig.EffectiveParkMode == ParkMode.Corner)
             {
                 await HideHeadedWindowEarlyAsync().ConfigureAwait(false);
             }
@@ -1588,8 +1670,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             var windowId = windowInfo.GetProperty("windowId").GetInt32();
             var geo = new CdpDockWindowGeometry(
                 _page, cdp, windowId, _browserConfig.DockSettleDelayMs, _browserConfig.ParkCoordinate);
-            await geo.HideAsync().ConfigureAwait(false);
-            _iconifiedByUs = true;
+            await ApplyParkedStateAsync(geo).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1598,12 +1679,195 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <summary>
-    /// Hides the headed window (workspace-75ng, workspace-ynn9): on macOS an off-screen park
-    /// (windowState=normal, keeps painting, no focus grab); on non-macOS an off-screen move PLUS
-    /// windowState=minimized, because a real window manager clamps the off-screen coordinate back
-    /// on-screen — the iconify is what actually removes it from view. Clears the docked flag,
-    /// restores the terminal tile, and hands focus back. Assumes a live headed <see cref="_page"/>;
-    /// swallows CDP failures (non-fatal).
+    /// Creates a tab in the shared context WITHOUT activating it (workspace-v7g7):
+    /// <c>Target.createTarget background:true</c> over CDP, then adopts the Playwright page that
+    /// attaches for it. Returns null when anything about the CDP path fails — the caller
+    /// (<see cref="CreateBackgroundPageAsync"/>) falls back to the classic (activating) creation.
+    /// </summary>
+    private async Task<IPage?> CreateBackgroundPageQuietlyAsync(IBrowserContext ctx)
+    {
+        if (_page == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var existing = ctx.Pages.ToList();
+            var tcs = new TaskCompletionSource<IPage>(TaskCreationOptions.RunContinuationsAsynchronously);
+            void OnPage(object? sender, IPage p)
+            {
+                if (!existing.Contains(p))
+                {
+                    tcs.TrySetResult(p);
+                }
+            }
+
+            ctx.Page += OnPage;
+            try
+            {
+                var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+                var created = await cdp.SendAsync("Target.createTarget", new Dictionary<string, object>
+                {
+                    ["url"] = "about:blank",
+                    ["background"] = true,
+                }).ConfigureAwait(false);
+                if (created?.TryGetProperty("targetId", out _) != true)
+                {
+                    _logger.LogDebug("Quiet background-tab creation returned no targetId; falling back");
+                    return null;
+                }
+
+                // The page may have attached before or after the createTarget response — check
+                // the snapshot diff first, then wait on the event.
+                var adopted = ctx.Pages.FirstOrDefault(p => !existing.Contains(p));
+                if (adopted == null)
+                {
+                    var winner = await Task.WhenAny(tcs.Task, Task.Delay(5000)).ConfigureAwait(false);
+                    if (winner != tcs.Task)
+                    {
+                        _logger.LogDebug("Quiet background-tab creation timed out waiting for the page to attach");
+                        return null;
+                    }
+
+                    adopted = await tcs.Task.ConfigureAwait(false);
+                }
+
+                // Information on purpose: the e2e gate asserts from the file log that prefetch
+                // took the QUIET path (and never the activating fallback).
+                _logger.LogInformation("Created background tab quietly via CDP (no activation)");
+                return adopted;
+            }
+            finally
+            {
+                ctx.Page -= OnPage;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Quiet background-tab creation failed; falling back to NewPageAsync");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// The single "make the window not-in-the-way" actuator (workspace-v7g7), shared by the early
+    /// launch hide and every runtime park. Reads the CURRENT window state and lets the pure
+    /// <see cref="ParkPlanner"/> decide — the invariants live there: a USER-minimized window is
+    /// never touched (the old unconditional normalize deminiaturized it twice per prefetched
+    /// article — the field-reported "pops back up when I open a new site"), Corner mode places the
+    /// intentional bottom-right tile, Offscreen keeps the classic hide.
+    /// </summary>
+    private async Task ApplyParkedStateAsync(IDockWindowGeometry geo)
+    {
+        var state = await geo.ReadWindowStateAsync().ConfigureAwait(false);
+        var reMinimize = Interlocked.Exchange(ref _restoreFoundUserMinimized, 0) == 1;
+        var decision = ParkPlanner.Decide(
+            state, _iconifiedByUs, reMinimize, _browserConfig.EffectiveParkMode, OperatingSystem.IsMacOS());
+
+        if (decision.NormalizeFirst)
+        {
+            await geo.NormalizeAsync().ConfigureAwait(false);
+        }
+
+        switch (decision.Action)
+        {
+            case ParkPlanner.ParkAction.LeaveMinimized:
+                break;
+
+            case ParkPlanner.ParkAction.ReMinimize:
+                await geo.IconifyAsync().ConfigureAwait(false);
+                break;
+
+            case ParkPlanner.ParkAction.PlaceCorner:
+                var placement = await CornerParker.PlaceAsync(
+                    geo,
+                    _browserConfig.CornerParkWidth,
+                    _browserConfig.CornerParkHeight,
+                    _browserConfig.CornerParkMargin,
+                    _lastCornerRect,
+                    _cornerRespectArmed,
+                    _realDisplay,
+                    _logger).ConfigureAwait(false);
+                _lastCornerRect = placement?.Rect;
+                _cornerRespectArmed = placement?.Settled ?? false;
+                break;
+
+            case ParkPlanner.ParkAction.HideOffscreen:
+                await geo.HideAsync().ConfigureAwait(false);
+                break;
+        }
+
+        _iconifiedByUs = decision.IconifiedByUsAfter;
+    }
+
+    /// <summary>
+    /// Reads the display's REAL work area through the given page while it is still un-emulated
+    /// (workspace-v7g7). Anchors the window on-screen once if the first read is phantom (a
+    /// window spawned far off-screen can report no plausible display). Returns null on failure —
+    /// callers fall back to the JS read.
+    /// </summary>
+    private async Task<SidecarGeometry.DisplayInfo?> CaptureRealDisplayAsync()
+    {
+        if (_page == null)
+        {
+            return null;
+        }
+
+        try
+        {
+            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
+                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
+            var windowId = windowInfo.GetProperty("windowId").GetInt32();
+            var geo = new CdpDockWindowGeometry(
+                _page, cdp, windowId, _browserConfig.DockSettleDelayMs, _browserConfig.ParkCoordinate);
+
+            var display = await SidecarDocker.ReadStableDisplayAsync(geo).ConfigureAwait(false);
+            if (display is null)
+            {
+                await geo.MoveAsync(0, 0).ConfigureAwait(false);
+                display = await SidecarDocker.ReadStableDisplayAsync(geo).ConfigureAwait(false);
+            }
+
+            _logger.LogInformation(
+                "Real display work area (pre-emulation): {Display}",
+                display is { } d ? $"{d.AvailLeft},{d.AvailTop} {d.AvailWidth}x{d.AvailHeight}" : "unreadable");
+            return display;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not capture the real display work area (non-fatal)");
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// Applies the fetch/prefetch pages' fixed viewport (workspace-v7g7) — the exact 1280x720
+    /// the app rendered and extracted at when the CONTEXT owned the viewport, now re-applied per
+    /// page because the context runs viewport-less so the OS window stays ours to place.
+    /// </summary>
+    private async Task ApplyFetchViewportAsync(IPage page)
+    {
+        try
+        {
+            await page.SetViewportSizeAsync(
+                BrowserConfiguration.FetchViewportWidth, BrowserConfiguration.FetchViewportHeight).ConfigureAwait(false);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not apply the fetch viewport (non-fatal; the page renders at window size)");
+        }
+    }
+
+    /// <summary>
+    /// Parks the headed window out of the way (workspace-75ng/ynn9/v7g7), state-aware: a
+    /// USER-minimized window is left untouched; Corner mode (macOS default) keeps an intentional
+    /// bottom-right tile (windowState=normal, keeps painting, no focus grab); Offscreen mode does
+    /// the classic off-screen move plus a non-macOS iconify (a real window manager clamps the
+    /// off-screen coordinate back on-screen — the iconify is what actually removes it from view).
+    /// Clears the docked flag, restores the terminal tile, and hands focus back. Assumes a live
+    /// headed <see cref="_page"/>; swallows CDP failures (non-fatal).
     /// </summary>
     // workspace-fihe: <paramref name="weJustActivatedBrowser"/> is forwarded to the terminal
     // refocus. It is true only when this park follows WireCopy raising the browser (the
@@ -1625,14 +1889,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
             var windowId = windowInfo.GetProperty("windowId").GetInt32();
 
-            // The single runtime hide chokepoint (workspace-ynn9): route through HideAsync so the
-            // window is TRULY hidden — off-screen park on macOS, off-screen move + iconify
-            // everywhere else — instead of a coordinate-only move that a real WM clamps back
-            // on-screen as a stray tile.
+            // The single runtime hide chokepoint (workspace-ynn9/v7g7): state-aware, so a
+            // USER-minimized window is left alone, Corner mode (macOS default — it CLAMPS
+            // off-screen coordinates into a stray sliver) places the intentional bottom-right
+            // tile, and Offscreen keeps the classic off-screen move + non-macOS iconify.
             var geo = new CdpDockWindowGeometry(
                 _page, cdp, windowId, _browserConfig.DockSettleDelayMs, _browserConfig.ParkCoordinate);
-            await geo.HideAsync().ConfigureAwait(false);
-            _iconifiedByUs = true;
+            await ApplyParkedStateAsync(geo).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -1764,6 +2027,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         {
             return null;
         }
+
+        // workspace-v7g7: docking is an explicit "window on-screen" request — void any pending
+        // return-to-user-minimized intent, and drop the corner memory so the park after an
+        // un-dock re-places the tile instead of "respecting" the dock position.
+        Interlocked.Exchange(ref _restoreFoundUserMinimized, 0);
+        _lastCornerRect = null;
+        _cornerRespectArmed = false;
 
         try
         {
@@ -2026,11 +2296,28 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         public async Task NormalizeAsync() =>
             await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "normal" }).ConfigureAwait(false);
 
+        public async Task IconifyAsync() =>
+            await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "minimized" }).ConfigureAwait(false);
+
+        public async Task<string?> ReadWindowStateAsync()
+        {
+            try
+            {
+                var info = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
+                return info?.GetProperty("bounds").GetProperty("windowState").GetString();
+            }
+            catch
+            {
+                return null;
+            }
+        }
+
         public async Task HideAsync()
         {
-            // Normalize first: CDP forbids combining windowState with explicit bounds, and the
-            // window may arrive minimized from an earlier hide — normalize, then move off-screen.
-            await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "normal" }).ConfigureAwait(false);
+            // workspace-v7g7: NO normalize here — the caller (ParkPlanner) never routes a
+            // minimized window into this hide (the old unconditional normalize deminiaturized
+            // the user's own Cmd+M on every background prefetch park). CDP forbids combining
+            // windowState with explicit bounds, hence the separate calls below.
             await SetBoundsRawAsync(new Dictionary<string, object>
             {
                 ["left"] = _parkCoordinate,

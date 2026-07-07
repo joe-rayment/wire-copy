@@ -6,6 +6,19 @@ public class BrowserConfiguration
 {
     public const string SectionName = "Browser";
 
+    /// <summary>
+    /// The fetch/prefetch pages' emulated viewport (workspace-v7g7). The browser context runs
+    /// with NO Playwright-managed viewport (so the OS window is ours to park/place — a
+    /// context-level viewport makes Patchright size the window to fit it and revert our moves);
+    /// these constants re-apply per page the exact 1280x720 the app has always rendered and
+    /// extracted at, so scraping, AI-layout screenshots, and site behavior are identical in
+    /// every park mode and window size.
+    /// </summary>
+    public const int FetchViewportWidth = 1280;
+
+    /// <inheritdoc cref="FetchViewportWidth"/>
+    public const int FetchViewportHeight = 720;
+
     public string BrowserType { get; init; } = "Chrome"; // "Chrome" or "Firefox" - Primary browser
 
     public string FallbackBrowserType { get; init; } = "Firefox"; // Fallback browser if primary is blocked
@@ -107,6 +120,45 @@ public class BrowserConfiguration
     /// move, and Windows treats -32000 as the legacy minimize coordinate.
     /// </summary>
     public int ParkCoordinate { get; init; } = -32000;
+
+    /// <summary>
+    /// How the headed window is hidden when parked (workspace-v7g7). <see cref="ParkMode.Auto"/>
+    /// resolves to <see cref="ParkMode.Corner"/> on macOS — which clamps off-screen coordinates
+    /// back on-screen, leaving the old off-screen park as a stray sliver — and
+    /// <see cref="ParkMode.Offscreen"/> everywhere else. Override explicitly to force a mode
+    /// (the Linux e2e gates run <see cref="ParkMode.Corner"/> under a real WM this way).
+    /// </summary>
+    public ParkMode ParkMode { get; init; } = ParkMode.Auto;
+
+    /// <summary>
+    /// The parked corner tile's outer size (workspace-v7g7, <see cref="ParkMode.Corner"/> only).
+    /// Pages keep rendering at the fixed <see cref="FetchViewportWidth"/>x<see cref="FetchViewportHeight"/>
+    /// emulated viewport regardless of this window size (the tile shows the page's top-left crop),
+    /// so resizing the tile never changes scraping behavior. If the user drags or resizes the
+    /// tile by hand, their placement is adopted; the corner is only re-asserted after flows that
+    /// summon the window (dock, captcha/login).
+    /// </summary>
+    public int CornerParkWidth { get; init; } = 800;
+
+    /// <inheritdoc cref="CornerParkWidth"/>
+    public int CornerParkHeight { get; init; } = 600;
+
+    /// <summary>Gap between the corner tile and the work-area edges (workspace-v7g7).</summary>
+    public int CornerParkMargin { get; init; } = 8;
+
+    /// <summary>The park mode with <see cref="ParkMode.Auto"/> resolved for this platform.</summary>
+    public ParkMode EffectiveParkMode
+    {
+        get
+        {
+            if (ParkMode != ParkMode.Auto)
+            {
+                return ParkMode;
+            }
+
+            return OperatingSystem.IsMacOS() ? ParkMode.Corner : ParkMode.Offscreen;
+        }
+    }
 
     /// <summary>
     /// workspace-9k27.17: delay before the forced terminal refocus after a dock

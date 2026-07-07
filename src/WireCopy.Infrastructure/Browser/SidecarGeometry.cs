@@ -71,6 +71,39 @@ internal static class SidecarGeometry
     }
 
     /// <summary>
+    /// Computes the parked corner tile (workspace-v7g7): the requested size, shrunk if the work
+    /// area (minus margins) is smaller, placed FLUSH in the bottom-right corner with
+    /// <paramref name="margin"/> to the edges, and hard-clamped fully inside the work area.
+    /// <paramref name="actualSize"/> is the window's real size after Chromium clamps the request
+    /// to its platform minimum (post-readback); when known it is used so the tile still sits
+    /// flush even though the window is bigger than asked — same pattern as
+    /// <see cref="PlanDockedWindow"/>'s <c>actualWidth</c>.
+    /// </summary>
+    internal static TerminalTiling.WindowRect PlanCornerWindow(
+        DisplayInfo display,
+        int requestedWidth,
+        int requestedHeight,
+        int margin,
+        (int Width, int Height)? actualSize = null)
+    {
+        margin = Math.Max(0, margin);
+        var maxWidth = Math.Max(1, display.AvailWidth - (2 * margin));
+        var maxHeight = Math.Max(1, display.AvailHeight - (2 * margin));
+
+        var width = Math.Clamp(actualSize?.Width ?? requestedWidth, 1, maxWidth);
+        var height = Math.Clamp(actualSize?.Height ?? requestedHeight, 1, maxHeight);
+
+        var left = display.AvailLeft + display.AvailWidth - width - margin;
+        var top = display.AvailTop + display.AvailHeight - height - margin;
+
+        // Hard-clamp inside the work area regardless of size (off-screen impossible).
+        left = Math.Max(left, display.AvailLeft);
+        top = Math.Max(top, display.AvailTop);
+
+        return new TerminalTiling.WindowRect(left, top, width, height);
+    }
+
+    /// <summary>
     /// Computes the terminal's tile (the work-area slice the docked browser leaves free), given
     /// the browser's FINAL placed rect. Delegates to <see cref="TerminalTiling.ComputeTerminalRect"/>.
     /// </summary>
