@@ -403,6 +403,37 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
 
     private NavigationTree BuildWithHierarchyConfig(List<LinkInfo> links, SiteHierarchyConfig hierarchyConfig)
     {
+        // workspace-t1ok.2: a saved FLAT DocumentOrder config (Sections empty) is an
+        // intentional layout — "just show every link, minus what I dropped" — not a
+        // failed pattern. It used to fall through to the 0-sections greedy loop,
+        // trip the stale floor below, and rebuild from UNFILTERED links: the false
+        // "Saved layout no longer matches" nag on every revisit, with the user's
+        // 'x'-dropped ads resurrected. Route it to the grouped/ordered tree with
+        // the exclusion rules applied and no stale flag.
+        if (hierarchyConfig.Sections.Count == 0 && hierarchyConfig.Kind == LayoutKind.DocumentOrder)
+        {
+            var flatLinks = links;
+            if (hierarchyConfig.ExcludeSelectors.Count > 0
+                || hierarchyConfig.ExcludeUrlPatterns.Count > 0
+                || hierarchyConfig.ExcludeSectionTitles.Count > 0)
+            {
+                var flatContent = links.Where(l => l.Type == LinkType.Content).ToList();
+                var guardedFlat = GuardExcludeRules(hierarchyConfig, flatContent, _logger);
+                flatLinks = links
+                    .Where(l => l.Type != LinkType.Content || !IsExcluded(l, guardedFlat))
+                    .ToList();
+                var flatExcluded = links.Count - flatLinks.Count;
+                if (flatExcluded > 0)
+                {
+                    _logger.LogInformation(
+                        "Flat DocumentOrder config: excluded {Count} link(s) via durable rules (workspace-t1ok.2)",
+                        flatExcluded);
+                }
+            }
+
+            return BuildGroupedTree(flatLinks);
+        }
+
         var root = LinkNode.CreateRoot();
         var matchedLinks = new HashSet<int>();
         var orderedSections = hierarchyConfig.Sections.OrderBy(s => s.SortOrder).ToList();
@@ -554,22 +585,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                 droppedUnmatched);
         }
 
-        var nonContentGrouped = nonContentLinks.GroupBy(l => l.Type).ToDictionary(g => g.Key, g => g.ToList());
-        var groupOrder = new[] { LinkType.Navigation, LinkType.External, LinkType.Footer };
-        foreach (var linkType in groupOrder)
-        {
-            if (!nonContentGrouped.TryGetValue(linkType, out var groupLinks) || groupLinks.Count == 0)
-            {
-                continue;
-            }
-
-            var groupHeader = LinkInfo.CreateGroupHeader(linkType);
-            var groupNode = root.AddChild(groupHeader);
-            foreach (var link in groupLinks)
-            {
-                groupNode.AddChild(link);
-            }
-        }
+        AddChromeGroups(root, nonContentLinks);
 
         var tree = NavigationTree.BuildFromRoot(root);
         _logger.LogInformation(
@@ -697,22 +713,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
             }
         }
 
-        var nonContentGrouped = nonContentLinks.GroupBy(l => l.Type).ToDictionary(g => g.Key, g => g.ToList());
-        var groupOrder = new[] { LinkType.Navigation, LinkType.External, LinkType.Footer };
-        foreach (var linkType in groupOrder)
-        {
-            if (!nonContentGrouped.TryGetValue(linkType, out var groupLinks) || groupLinks.Count == 0)
-            {
-                continue;
-            }
-
-            var groupHeader = LinkInfo.CreateGroupHeader(linkType);
-            var groupNode = root.AddChild(groupHeader);
-            foreach (var link in groupLinks)
-            {
-                groupNode.AddChild(link);
-            }
-        }
+        AddChromeGroups(root, nonContentLinks);
 
         var tree = NavigationTree.BuildFromRoot(root);
 
@@ -724,4 +725,48 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
 
         return tree;
     }
+
+#pragma warning disable SA1204 // helper kept adjacent to its two sole callers above (workspace-t1ok.2).
+    /// <summary>
+    /// workspace-t1ok.2: shared chrome-group tail for the config-driven builders,
+    /// matching <see cref="NavigationTree.BuildWithGroups"/>: External keeps its
+    /// own group; Navigation + Footer (+ any content links routed to the menu by
+    /// config rules) consolidate into ONE collapsed
+    /// <see cref="NavigationTree.MoreGroupLabel"/> sub-menu at the bottom —
+    /// site chrome stays reachable but out of the article flow.
+    /// </summary>
+    private static void AddChromeGroups(
+        LinkNode root,
+        List<LinkInfo> nonContentLinks,
+        IReadOnlyList<LinkInfo>? moreContent = null)
+    {
+        var external = nonContentLinks.Where(l => l.Type == LinkType.External).ToList();
+        if (external.Count > 0)
+        {
+            var externalNode = root.AddChild(LinkInfo.CreateGroupHeader(LinkType.External));
+            foreach (var link in external)
+            {
+                externalNode.AddChild(link);
+            }
+        }
+
+        var more = new List<LinkInfo>();
+        if (moreContent != null)
+        {
+            more.AddRange(moreContent);
+        }
+
+        more.AddRange(nonContentLinks.Where(l => l.Type == LinkType.Navigation));
+        more.AddRange(nonContentLinks.Where(l => l.Type == LinkType.Footer));
+        if (more.Count > 0)
+        {
+            var moreNode = root.AddChild(
+                LinkInfo.CreateNamedGroupHeader(NavigationTree.MoreGroupLabel, LinkType.Navigation));
+            foreach (var link in more)
+            {
+                moreNode.AddChild(link);
+            }
+        }
+    }
+#pragma warning restore SA1204
 }

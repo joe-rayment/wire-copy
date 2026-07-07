@@ -74,6 +74,13 @@ public class NavigationTree
     }
 
     /// <summary>
+    /// workspace-cn2g.3 / workspace-t1ok.2: the single collapsed sub-menu that
+    /// holds a site's chrome (navigation + footer links). One shared label so
+    /// every tree builder produces the same group and rules can route to it.
+    /// </summary>
+    public const string MoreGroupLabel = "More";
+
+    /// <summary>
     /// Builds a navigation tree with hierarchical groups.
     /// Content links are added directly under root (no group header).
     /// Navigation, External, and Footer get collapsible group headers (collapsed by default).
@@ -115,7 +122,7 @@ public class NavigationTree
 
         if (more.Count > 0)
         {
-            var moreNode = root.AddChild(LinkInfo.CreateNamedGroupHeader("More", LinkType.Navigation));
+            var moreNode = root.AddChild(LinkInfo.CreateNamedGroupHeader(MoreGroupLabel, LinkType.Navigation));
             foreach (var link in more)
             {
                 moreNode.AddChild(link);
