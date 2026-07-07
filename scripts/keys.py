@@ -28,6 +28,16 @@ GO_TO_TOP = ("g", "g")
 DOCK_BROWSER = "|"        # ToggleBrowserDock
 ADOPT_LENS_PAGE = "y"     # AdoptLensPage
 UNDO = "z"                # Undo (e.g. undo a wizard refine)
+
+# --- Label mode (workspace-t1ok.4, SetupWizard.RunLabelModeAsync) -------------
+# Inside the wizard's "Mark the links" card only; matched by raw key char.
+
+LABEL_ARTICLE = "a"       # article — press order becomes the story order; again = clear
+LABEL_AD = "x"            # ad — exclude + extrapolate its slot
+LABEL_MENU = "m"          # site chrome to keep — routes under the collapsed More menu
+LABEL_IGNORE = "i"        # site chrome to hide entirely
+LABEL_CLEAR = "u"         # clear the row's label
+LABEL_TOGGLE_ALL = "Tab"  # flip current-layout <-> every-link view (rescue hidden links)
 TUNE_ARTICLE_LAYOUT = "E"  # TuneArticleLayout (Shift+E)
 FORCE_REFRESH = "R"       # ForceRefresh (Shift+R)
 INTERACTIVE_REFRESH = "I"  # InteractiveRefresh (Shift+I)

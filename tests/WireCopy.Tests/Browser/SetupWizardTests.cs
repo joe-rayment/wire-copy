@@ -260,10 +260,12 @@ public class SetupWizardTests
     {
         var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
 
-        // Preview: Space (adjust) → adjust card Enter on "Point at the main
-        // story" → re-infer → preview again → Enter saves.
+        // Preview: Space (adjust) → adjust card Down past "Fix links by hand"
+        // (workspace-t1ok.5: label mode is option 0) → Enter on the pick option
+        // → re-infer → preview again → Enter saves.
         var input = InputSequence(
             CommandType.ToggleSelection,
+            CommandType.MoveDown,
             CommandType.ActivateLink,
             CommandType.ActivateLink);
 
@@ -355,10 +357,12 @@ public class SetupWizardTests
                 return new InferredPattern { Config = SomeConfig() };
             });
 
-        // Preview: Space → adjust card: no pick wired, so cursor 0 is the
-        // free-text option → Enter → free text → re-infer → preview → Enter.
+        // Preview: Space → adjust card: no pick wired, so the free-text option
+        // sits below "Fix links by hand" (workspace-t1ok.5: label mode is
+        // option 0) → Down, Enter → free text → refine → preview → Enter.
         var input = InputSequence(
             CommandType.ToggleSelection,
+            CommandType.MoveDown,
             CommandType.ActivateLink,
             CommandType.ActivateLink);
 
@@ -667,9 +671,10 @@ public class SetupWizardTests
             .Returns(_ => new InferredPattern { Config = ++inferCalls <= 2 ? MismatchedConfig() : SomeConfig() });
 
         // infer #1 degenerate → auto-repair infer #2 still degenerate → failure
-        // card: Enter on "Point at the main story" → pick → infer #3 good →
-        // preview → Enter saves.
+        // card: Down past "Fix links by hand" (workspace-t1ok.5) → Enter on the
+        // pick option → pick → infer #3 good → preview → Enter saves.
         var input = InputSequence(
+            CommandType.MoveDown,
             CommandType.ActivateLink,
             CommandType.ActivateLink);
 

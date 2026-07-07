@@ -70,6 +70,25 @@ public interface IHierarchyAnalyzer
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// workspace-t1ok.6 — label-generalization fallback. The user HAND-LABELED
+    /// links (ranked articles / ads / hidden chrome / menu links) and the
+    /// deterministic derivation could not reproduce every label; this asks the
+    /// model for a durable pattern that does. The labels are GROUND TRUTH and
+    /// are never overridden: labeled articles must be shown in the labeled
+    /// order, labeled ads/hidden links excluded. Menu links are routed by code
+    /// (the model keeps them out of sections AND out of the excludes). The
+    /// caller re-applies the deterministic label rules to the result, so a
+    /// disobedient response still cannot violate a label.
+    /// </summary>
+    Task<InferredPattern> InferPatternFromLabelsAsync(
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        IReadOnlyList<UserLinkLabel> labels,
+        SiteHierarchyConfig currentConfig,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// workspace-frpl.10 (B9b) — a NEW single-label classify (distinct from the
     /// interactive-wizard surface above): given the section headings present on a
     /// page today and a durable intent (the recipe step's section name + aliases),

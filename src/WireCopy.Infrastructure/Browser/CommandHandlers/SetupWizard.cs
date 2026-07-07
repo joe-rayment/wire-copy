@@ -769,6 +769,295 @@ internal static class SetupWizard
         return rows;
     }
 
+    // ---- workspace-t1ok.4: label mode — the hand-categorizer behind
+    // "Fix links by hand". A full-height card over the link list; the user
+    // walks rows and marks each link article/ad/menu/hide; Enter hands the
+    // labels to the deterministic derivation (t1ok.5). Tab flips between the
+    // CURRENT layout's rows and EVERY content link (including ones the saved
+    // rules hide or route away — the rescue path).
+
+    /// <summary>Fixed badge for a row: the pending label wins; otherwise the saved config's state.</summary>
+    internal static string LabelBadge(UserLinkLabel? pending, bool hidden, bool menuRouted)
+    {
+        if (pending != null)
+        {
+            return pending.Kind switch
+            {
+                LinkLabelKind.Article => $"[{pending.Rank,2}] ",
+                LinkLabelKind.Ad => "[ad] ",
+                LinkLabelKind.Menu => "[menu] ",
+                _ => "[hide] ",
+            };
+        }
+
+        if (menuRouted)
+        {
+            return "[menu] ";
+        }
+
+        return hidden ? "[hidden] " : string.Empty;
+    }
+
+    /// <summary>
+    /// The label-mode rows. Current-layout view = the preview rows re-badged
+    /// (exclusion/More-aware, rank-ordered — exactly what would save). All-links
+    /// view = every content link in document order (capped like the tree), with
+    /// hidden/menu-routed state badged so a wrongly-hidden link can be rescued.
+    /// </summary>
+    internal static List<LabelRow> BuildLabelRows(
+        SiteHierarchyConfig config,
+        List<LinkInfo> links,
+        bool allLinks,
+        IReadOnlyDictionary<string, UserLinkLabel> pending)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(pending);
+        var rows = new List<LabelRow>();
+
+        if (!allLinks)
+        {
+            foreach (var row in BuildPreviewRows(config, links))
+            {
+                if (row.Link is not { } link)
+                {
+                    rows.Add(new LabelRow(row.Option, null, false));
+                    continue;
+                }
+
+                pending.TryGetValue(NormalizeUrl(link.Url), out var label);
+                rows.Add(new LabelRow(
+                    new SetupWizardOverlay.CardOption
+                    {
+                        Label = $"   {LabelBadge(label, hidden: false, menuRouted: false)}• {Truncate(CollapseWhitespace(link.DisplayText), 68)}",
+                        HighlightSelector = CssForLink(link),
+                    },
+                    link,
+                    CurrentlyHidden: false));
+            }
+
+            return rows;
+        }
+
+        var contentLinks = links
+            .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader)
+            .Take(NavigationTreeBuilder.MaxContentLinks)
+            .ToList();
+        rows.Add(new LabelRow(
+            new SetupWizardOverlay.CardOption
+            {
+                Label = $"Every link on this page — {contentLinks.Count} links, in page order",
+                HighlightSelector = string.Empty,
+            },
+            null,
+            false));
+        foreach (var link in contentLinks)
+        {
+            pending.TryGetValue(NormalizeUrl(link.Url), out var label);
+            var hidden = NavigationTreeBuilder.IsExcluded(link, config);
+            var menuRouted = NavigationTreeBuilder.MatchesMore(link, config);
+            rows.Add(new LabelRow(
+                new SetupWizardOverlay.CardOption
+                {
+                    Label = $"   {LabelBadge(label, hidden, menuRouted)}• {Truncate(CollapseWhitespace(link.DisplayText), 68)}",
+                    HighlightSelector = CssForLink(link),
+                },
+                link,
+                hidden));
+        }
+
+        return rows;
+    }
+
+    /// <summary>The label-mode card around the rows, with the running tally.</summary>
+    internal static SetupWizardOverlay.WizardCard BuildLabelCard(
+        List<LabelRow> rows,
+        bool allLinks,
+        int cursor,
+        string? notice,
+        IReadOnlyDictionary<string, UserLinkLabel> pending)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+        ArgumentNullException.ThrowIfNull(pending);
+        var articles = pending.Values.Count(l => l.Kind == LinkLabelKind.Article);
+        var ads = pending.Values.Count(l => l.Kind == LinkLabelKind.Ad);
+        var menu = pending.Values.Count(l => l.Kind == LinkLabelKind.Menu);
+        var hidden = pending.Values.Count(l => l.Kind == LinkLabelKind.Ignore);
+        var tally = $"{articles} article(s) · {ads} ad(s) · {menu} menu · {hidden} hidden";
+        var footnote = notice ?? (allLinks
+            ? $"{tally} — Tab to return to the current layout"
+            : $"{tally} — Tab to see every link, including hidden ones");
+
+        return new SetupWizardOverlay.WizardCard
+        {
+            Title = "Mark the links",
+            Prompt = "Label the links — the order you mark articles becomes the story order.",
+            Options = rows.Select(r => r.Option).ToList(),
+            Cursor = Math.Clamp(cursor, 0, Math.Max(0, rows.Count - 1)),
+            Hint = "a article · x ad · m menu · i hide · u clear · Tab all links · Enter apply · Esc back",
+            Footnote = footnote,
+        };
+    }
+
+    /// <summary>
+    /// The label-mode input loop. Arrow keys walk the rows (the focused link
+    /// highlights on the sidecar lens); a/x/m/i assign labels ('a' again on a
+    /// ranked row clears it and re-compacts the order), u clears, Tab toggles
+    /// the all-links view, Enter returns the outcome, Esc backs out (null).
+    /// Every other command is consumed — this loop owns input while alive.
+    /// </summary>
+    internal static async Task<LabelOutcome?> RunLabelModeAsync(
+        IInputHandler input,
+        Func<CancellationToken, Task> render,
+        SetupWizardOverlay.State overlay,
+        List<LinkInfo> links,
+        SiteHierarchyConfig currentConfig,
+        Lens? lens,
+        CancellationToken ct,
+        bool startInAllLinks = false)
+    {
+        ArgumentNullException.ThrowIfNull(input);
+        ArgumentNullException.ThrowIfNull(overlay);
+        ArgumentNullException.ThrowIfNull(currentConfig);
+
+        // Cross-session ledger: saved labels appear as badges immediately.
+        var pending = new Dictionary<string, UserLinkLabel>(StringComparer.Ordinal);
+        foreach (var saved in currentConfig.UserLabels)
+        {
+            pending.TryAdd(NormalizeUrl(saved.Url), saved);
+        }
+
+        var allLinks = startInAllLinks;
+        var cursor = 0;
+        string? notice = null;
+        var rows = BuildLabelRows(currentConfig, links, allLinks, pending);
+        if (rows.Count > 1 && rows[0].Link == null)
+        {
+            cursor = 1; // land on the first link row, not the header
+        }
+
+        while (!ct.IsCancellationRequested)
+        {
+            var card = BuildLabelCard(rows, allLinks, cursor, notice, pending);
+            notice = null;
+            overlay.Mode = SetupWizardOverlay.Mode.Card;
+            overlay.Card = card;
+            await render(ct).ConfigureAwait(false);
+            await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
+
+            var command = await input.WaitForInputAsync(ct).ConfigureAwait(false);
+
+            if (command.RawKeyChar is 'a' or 'A' or 'x' or 'X' or 'm' or 'M' or 'i' or 'I' or 'u' or 'U')
+            {
+                var row = rows.Count > 0 ? rows[Math.Clamp(cursor, 0, rows.Count - 1)] : null;
+                if (row?.Link is not { } link)
+                {
+                    notice = "Move to a link row to label it — headers can't be labeled yet.";
+                    continue;
+                }
+
+                ApplyLabelKey(pending, link, char.ToLowerInvariant(command.RawKeyChar.Value));
+                rows = BuildLabelRows(currentConfig, links, allLinks, pending);
+                continue;
+            }
+
+            switch (command.Type)
+            {
+                case CommandType.MoveDown or CommandType.ExpandNode:
+                    cursor = (cursor + 1) % Math.Max(1, rows.Count);
+                    break;
+                case CommandType.MoveUp or CommandType.CollapseNode:
+                    cursor = (cursor - 1 + Math.Max(1, rows.Count)) % Math.Max(1, rows.Count);
+                    break;
+                case CommandType.GoToTop:
+                    cursor = 0;
+                    break;
+                case CommandType.GoToBottom:
+                    cursor = Math.Max(0, rows.Count - 1);
+                    break;
+                case CommandType.SwitchView:
+                    // Keep the focused link focused across the view flip when it
+                    // exists on both sides.
+                    var focused = rows.Count > 0 ? rows[Math.Clamp(cursor, 0, rows.Count - 1)].Link : null;
+                    allLinks = !allLinks;
+                    rows = BuildLabelRows(currentConfig, links, allLinks, pending);
+                    cursor = focused == null
+                        ? Math.Min(1, Math.Max(0, rows.Count - 1))
+                        : Math.Max(0, rows.FindIndex(r =>
+                            r.Link != null && NormalizeUrl(r.Link.Url) == NormalizeUrl(focused.Url)));
+                    break;
+                case CommandType.ActivateLink:
+                    var seen = links
+                        .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader)
+                        .Take(NavigationTreeBuilder.MaxContentLinks)
+                        .Select(l => l.Url)
+                        .ToList();
+                    var labels = pending.Values
+                        .OrderBy(l => l.Kind == LinkLabelKind.Article ? 0 : 1)
+                        .ThenBy(l => l.Rank ?? int.MaxValue)
+                        .ToList();
+                    return new LabelOutcome(labels, seen);
+                case CommandType.GoBack or CommandType.Quit:
+                    return null;
+                case CommandType.TerminalResized:
+                    break;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Applies one label key to a link's pending entry (see the loop's key grammar).</summary>
+    internal static void ApplyLabelKey(Dictionary<string, UserLinkLabel> pending, LinkInfo link, char key)
+    {
+        var urlKey = NormalizeUrl(link.Url);
+        pending.TryGetValue(urlKey, out var existing);
+
+        if (key == 'u' || (key == 'a' && existing?.Kind == LinkLabelKind.Article))
+        {
+            pending.Remove(urlKey);
+            RecompactArticleRanks(pending);
+            return;
+        }
+
+        var kind = key switch
+        {
+            'a' => LinkLabelKind.Article,
+            'x' => LinkLabelKind.Ad,
+            'm' => LinkLabelKind.Menu,
+            _ => LinkLabelKind.Ignore,
+        };
+
+        var wasArticle = existing?.Kind == LinkLabelKind.Article;
+        pending[urlKey] = new UserLinkLabel
+        {
+            Url = link.Url,
+            Text = CollapseWhitespace(link.DisplayText),
+            ParentSelector = link.ParentSelector,
+            Kind = kind,
+            Rank = kind == LinkLabelKind.Article
+                ? pending.Values.Count(l => l.Kind == LinkLabelKind.Article) + 1
+                : null,
+            LabeledAt = DateTime.UtcNow,
+        };
+        if (wasArticle && kind != LinkLabelKind.Article)
+        {
+            RecompactArticleRanks(pending);
+        }
+    }
+
+    /// <summary>Re-numbers pending article ranks to 1..N preserving their order.</summary>
+    internal static void RecompactArticleRanks(Dictionary<string, UserLinkLabel> pending)
+    {
+        var rank = 1;
+        foreach (var entry in pending
+                     .Where(e => e.Value.Kind == LinkLabelKind.Article)
+                     .OrderBy(e => e.Value.Rank ?? int.MaxValue)
+                     .ToList())
+        {
+            pending[entry.Key] = entry.Value with { Rank = rank++ };
+        }
+    }
+
     /// <summary>Content links a config actually shows: matched by a section AND not excluded.</summary>
     internal static int CoveredCount(SiteHierarchyConfig config, List<LinkInfo> contentLinks) =>
         contentLinks.Count(l => !NavigationTreeBuilder.IsExcluded(l, config)
@@ -798,101 +1087,7 @@ internal static class SetupWizard
     /// exclusion would be a net no-op.
     /// </summary>
     internal static SiteHierarchyConfig? ExcludeItem(SiteHierarchyConfig config, LinkInfo item, List<LinkInfo> links)
-    {
-        ArgumentNullException.ThrowIfNull(config);
-        ArgumentNullException.ThrowIfNull(item);
-        var contentLinks = links.Where(l => l.Type == LinkType.Content && !l.IsGroupHeader).ToList();
-
-        // workspace-rpop.4: the DURABLE, class-level exclude. If the removed item sits
-        // under a recognized ad/rail heading ("Sponsor Posts", "Featured Podcasts", …
-        // captured by rpop.1), hide the WHOLE heading. The heading text is stable
-        // across revisits, so — unlike a selector token that on techmeme resolves to
-        // a per-day RANDOM sponsor-block id — the ad stays removed, and it catches
-        // EVERY ad in that section regardless of its markup. This is exactly "remove
-        // one ad, extrapolate to the rest", keyed on what the page SHOWS (a heading),
-        // not on brittle HTML structure.
-        var heading = item.SectionTitle?.Trim();
-        if (!string.IsNullOrEmpty(heading)
-            && !config.ExcludeSectionTitles.Contains(heading, StringComparer.OrdinalIgnoreCase)
-            && OpenAiHierarchyAnalyzer.IsNonStoryRailSectionName(heading))
-        {
-            return config with
-            {
-                ExcludeSectionTitles = config.ExcludeSectionTitles
-                    .Append(heading!)
-                    .Distinct(StringComparer.OrdinalIgnoreCase)
-                    .ToList(),
-            };
-        }
-
-        bool IsStory(LinkInfo l) =>
-            l.Type == LinkType.Content && !l.IsSponsored && (l.DisplayText?.Length ?? 0) >= LeadOverrideDerivation.MinStoryTextLength;
-
-        // workspace-r8on: EVERY story-shaped link on the page except the item — an
-        // exclude token/pattern may never match one of these. Protecting ALL story-
-        // shaped links (not just the ones a section currently COVERS) is what makes
-        // "remove an ad, extrapolate to other ads" precise: an ad camouflaged inside
-        // the news markup (techmeme's sponsor block div#culylwihx sits under div.ii)
-        // has only its sponsor-block container as a story-free token, so 'x' excludes
-        // exactly the ad class — NOT the whole column (div#topcol2 also matches the
-        // podcast/event clusters, which are uncovered-but-real, so it stays protected).
-        var keptStories = contentLinks
-            .Where(l => IsStory(l)
-                && !ReferenceEquals(l, item)
-                && !string.Equals(l.Url, item.Url, StringComparison.Ordinal))
-            .ToList();
-
-        bool SafeToken(string t) =>
-            keptStories.All(s => string.IsNullOrEmpty(s.ParentSelector)
-                || !s.ParentSelector.Contains(t, StringComparison.OrdinalIgnoreCase));
-        bool SafePattern(string p) =>
-            keptStories.All(s => !s.Url.Contains(p, StringComparison.OrdinalIgnoreCase));
-
-        var tokens = SelectorDerivation.DiscriminatingTokens(item.ParentSelector)
-            .Where(SafeToken)
-            .Distinct(StringComparer.Ordinal)
-            .Where(t => !config.ExcludeSelectors.Contains(t, StringComparer.OrdinalIgnoreCase))
-            .ToList();
-
-        var urlPatterns = new List<string>();
-        if (tokens.Count == 0)
-        {
-            // No selector token separates the item from the kept stories — try a
-            // distinctive URL segment that hits no kept story instead.
-            urlPatterns = SelectorDerivation.MeaningfulPathSegments(item.Url)
-                .Select(seg => $"/{seg}/")
-                .Where(SafePattern)
-                .Where(p => !config.ExcludeUrlPatterns.Contains(p, StringComparer.OrdinalIgnoreCase))
-                .Distinct(StringComparer.Ordinal)
-                .Take(2)
-                .ToList();
-        }
-
-        if (tokens.Count == 0 && urlPatterns.Count == 0)
-        {
-            return null; // REFUSED — nothing distinctive that spares the kept stories
-        }
-
-        var candidate = config with
-        {
-            ExcludeSelectors = config.ExcludeSelectors.Concat(tokens).Distinct(StringComparer.Ordinal).ToList(),
-            ExcludeUrlPatterns = config.ExcludeUrlPatterns.Concat(urlPatterns).Distinct(StringComparer.Ordinal).ToList(),
-        };
-
-        // Backstop: the 25% high-importance cap drops any rule that turns out to be
-        // too broad on THIS page (belt-and-suspenders over the per-token guard).
-        var guarded = NavigationTreeBuilder.GuardExcludeRules(candidate, contentLinks);
-        var dropped = (candidate.ExcludeSelectors.Count - guarded.ExcludeSelectors.Count)
-            + (candidate.ExcludeUrlPatterns.Count - guarded.ExcludeUrlPatterns.Count);
-
-        // If the guard vetoed everything we added, the item is still shown — refuse.
-        if (!NavigationTreeBuilder.IsExcluded(item, guarded))
-        {
-            return null;
-        }
-
-        return guarded with { DroppedExcludeRuleCount = config.DroppedExcludeRuleCount + dropped };
-    }
+        => LabelDerivation.DeriveExcludeFor(config, item, links, allowSectionTitle: true);
 
     /// <summary>workspace-5vqk.3: highlights ONE specific link on the lens by an href substring.</summary>
     internal static string CssForLink(LinkInfo link)
@@ -1340,22 +1535,31 @@ internal static class SetupWizard
         AdjustCardShape? shape = null,
         Func<CancellationToken, Task<string?>>? promptLeadUrl = null)
     {
-        // workspace-romy.7: an exhausted budget gets an honest dead-end card
-        // instead of options that would silently no-op after selection.
+        // workspace-romy.7: an exhausted budget gets an honest card instead of
+        // options that would silently no-op after selection. workspace-t1ok.5:
+        // hand-labeling costs NO budget, so it stays available even here.
         if (budget.Exhausted)
         {
             var doneCard = new SetupWizardOverlay.WizardCard
             {
                 Title = shape?.Title ?? "Adjust the layout",
-                Prompt = "The AI budget for this setup is used up — no more adjustments are possible.",
+                Prompt = "The AI budget for this setup is used up — you can still fix links by hand.",
                 Options = new List<SetupWizardOverlay.CardOption>
                 {
+                    new() { Label = "Fix links by hand — mark articles, ads, menu links" },
                     new() { Label = "Back" },
                 },
                 Footnote = $"{budget.Used} of {budget.Max} AI calls used",
-                Hint = "Enter/Esc back",
+                Hint = "↑/↓ choose · Enter select · Esc back",
             };
-            await RunCardAsync(input, render, overlay, doneCard, lens, ct).ConfigureAwait(false);
+            var deadEndChoice = await RunCardAsync(input, render, overlay, doneCard, lens, ct).ConfigureAwait(false);
+            if (deadEndChoice == 0)
+            {
+                return await RunLabelAdjustAsync(
+                    analyzer, input, render, overlay, links, pageUrl, screenshot, currentConfig, budget, lens, ct)
+                    .ConfigureAwait(false);
+            }
+
             return null;
         }
 
@@ -1369,6 +1573,15 @@ internal static class SetupWizard
         var options = new List<SetupWizardOverlay.CardOption>();
         var pickIndex = -1;
         var urlIndex = -1;
+
+        // workspace-t1ok.5: hand-labeling is the FIRST adjust tool — deterministic,
+        // budget-free, and the one that teaches the durable pattern.
+        var labelIndex = options.Count;
+        options.Add(new SetupWizardOverlay.CardOption
+        {
+            Label = "Fix links by hand — mark articles, ads, menu links",
+        });
+
         if (allowPick)
         {
             pickIndex = options.Count;
@@ -1419,6 +1632,13 @@ internal static class SetupWizard
         if (choice < 0)
         {
             return null;
+        }
+
+        if (choice == labelIndex)
+        {
+            return await RunLabelAdjustAsync(
+                analyzer, input, render, overlay, links, pageUrl, screenshot, currentConfig, budget, lens, ct)
+                .ConfigureAwait(false);
         }
 
         SetupAnswer? adjustment = null;
@@ -1513,6 +1733,83 @@ internal static class SetupWizard
             render,
             ct).ConfigureAwait(false);
         return PruneEmptySections(refined, links);
+    }
+
+    /// <summary>
+    /// workspace-t1ok.5: the "Fix links by hand" flow — label session →
+    /// deterministic derivation → label self-test, with ZERO model calls on the
+    /// happy path. When the deterministic config cannot reproduce every label
+    /// (and budget remains), ONE model call (workspace-t1ok.6) generalizes the
+    /// labels; the deterministic label rules are re-applied in code on top of
+    /// its result, and whichever candidate reproduces MORE labels wins (tie →
+    /// deterministic). Never a dead end: some config always returns so the
+    /// preview shows the real outcome.
+    /// </summary>
+    private static async Task<InferredPattern?> RunLabelAdjustAsync(
+        IHierarchyAnalyzer analyzer,
+        IInputHandler input,
+        Func<CancellationToken, Task> render,
+        SetupWizardOverlay.State overlay,
+        List<LinkInfo> links,
+        string pageUrl,
+        byte[]? screenshot,
+        SiteHierarchyConfig currentConfig,
+        ModelRoundTripBudget budget,
+        Lens? lens,
+        CancellationToken ct)
+    {
+        var outcome = await RunLabelModeAsync(input, render, overlay, links, currentConfig, lens, ct)
+            .ConfigureAwait(false);
+        if (outcome == null)
+        {
+            return null;
+        }
+
+        var derived = LabelDerivation.DeriveConfig(currentConfig, outcome.Labels, outcome.SeenUrls, links);
+        if (derived == null)
+        {
+            return null;
+        }
+
+        var failures = LabelDerivation.LabelsReproducedFailures(derived, outcome.Labels, links);
+        if (failures.Count == 0 || !budget.TrySpend())
+        {
+            return new InferredPattern { Config = derived, Confidence = failures.Count == 0 ? 1.0 : 0.6 };
+        }
+
+        // workspace-t1ok.6: one budget-guarded generalization round. A model or
+        // network failure must not kill the wizard — fall back to the
+        // deterministic config, which the preview shows honestly either way.
+        try
+        {
+            var modelPattern = await RunWithProgressAsync(
+                analyzer.InferPatternFromLabelsAsync(screenshot, links, pageUrl, outcome.Labels, currentConfig, ct),
+                "Learning your pattern",
+                overlay,
+                render,
+                ct).ConfigureAwait(false);
+
+            var candidate = LabelDerivation.CarryUserState(modelPattern.Config, derived);
+            candidate = LabelDerivation.ApplyRuleLabels(candidate, outcome.Labels, links);
+            candidate = PruneEmptySections(
+                new InferredPattern { Config = candidate, Confidence = modelPattern.Confidence },
+                links)!.Config;
+            var candidateFailures = LabelDerivation.LabelsReproducedFailures(candidate, outcome.Labels, links);
+            if (candidateFailures.Count < failures.Count)
+            {
+                return new InferredPattern { Config = candidate, Confidence = modelPattern.Confidence };
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            throw;
+        }
+        catch (Exception)
+        {
+            // Deterministic result stands; the preview shows exactly what stuck.
+        }
+
+        return new InferredPattern { Config = derived, Confidence = 0.6 };
     }
 
     /// <summary>
@@ -1854,4 +2151,15 @@ internal static class SetupWizard
 
     /// <summary>workspace-5vqk.3/.4: one preview row — its rendered option plus the link it stands for (null for a section header).</summary>
     internal sealed record PreviewRow(SetupWizardOverlay.CardOption Option, LinkInfo? Link);
+
+    /// <summary>workspace-t1ok.4: one label-mode row — a card option plus the link it labels (null = header).</summary>
+    internal sealed record LabelRow(SetupWizardOverlay.CardOption Option, LinkInfo? Link, bool CurrentlyHidden);
+
+    /// <summary>
+    /// workspace-t1ok.4: the outcome of a label session — the full pending label
+    /// set, plus every URL the session could see (so
+    /// <see cref="LabelDerivation.MergeLabels"/> can tell "cleared by the user"
+    /// from "rotated off the page").
+    /// </summary>
+    internal sealed record LabelOutcome(IReadOnlyList<UserLinkLabel> Labels, IReadOnlyList<string> SeenUrls);
 }

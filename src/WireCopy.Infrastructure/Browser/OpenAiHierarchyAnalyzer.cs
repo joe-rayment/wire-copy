@@ -630,6 +630,74 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
     }
 
     /// <inheritdoc />
+    public async Task<InferredPattern> InferPatternFromLabelsAsync(
+        byte[]? screenshot,
+        List<LinkInfo> links,
+        string pageUrl,
+        IReadOnlyList<UserLinkLabel> labels,
+        SiteHierarchyConfig currentConfig,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(labels);
+        ArgumentNullException.ThrowIfNull(currentConfig);
+
+        var apiKey = ResolveChatApiKey()
+            ?? throw new InvalidOperationException(
+                "OpenAI API key not configured. Open Setup from the launcher (press c) to configure.");
+
+        var contentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
+        var systemPrompt = BuildLabelsSystemPrompt(screenshot is { Length: > 0 });
+        var userPrompt = BuildLabelsUserPrompt(contentLinks, pageUrl, currentConfig, labels);
+
+        _logger.LogInformation(
+            "Generalizing {LabelCount} user label(s) for {Url} via {Model}",
+            labels.Count,
+            pageUrl,
+            JudgeModel());
+
+        // workspace-i1lv: same reasoning-model headroom as infer-pattern.
+        var outputCap = _config.SetupMaxTokens;
+        for (int attempt = 0; attempt < 2; attempt++)
+        {
+            try
+            {
+                var messages = BuildMessages(systemPrompt, userPrompt, screenshot);
+                var options = BuildOptions(
+                    schemaName: "site_pattern_indices",
+                    schema: SetupPatternIndicesSchema,
+                    schemaDescription: "A durable layout honoring every user label, as link INDICES.",
+                    reasoningEffortOverride: _config.ReasoningEffort,
+                    maxOutputTokensOverride: outputCap);
+
+                var responseText = await _chatCompleter(
+                    apiKey, JudgeModel(), messages, options, cancellationToken).ConfigureAwait(false);
+
+                if (string.IsNullOrWhiteSpace(responseText))
+                {
+                    throw new LayoutTruncationException(outputCap, null);
+                }
+
+                return ParsePatternFromAnswers(responseText, contentLinks, pageUrl, JudgeModel());
+            }
+            catch (LayoutTruncationException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(
+                    "Label-inference completion truncated at {Cap} tokens, retrying with a larger cap", ex.OutputTokenCap);
+                outputCap = checked(outputCap * 2);
+            }
+            catch (JsonException ex) when (attempt == 0)
+            {
+                _logger.LogWarning(ex, "Malformed JSON in label-inference response, retrying");
+                userPrompt = new StringBuilder(userPrompt)
+                    .Append("\n\nIMPORTANT: respond with ONLY the JSON object — no commentary.")
+                    .ToString();
+            }
+        }
+
+        throw new InvalidOperationException("Failed to parse label-inference response after retries");
+    }
+
+    /// <inheritdoc />
     public async Task<SectionClassification> ClassifySectionAsync(
         IReadOnlyList<string> candidateLabels,
         string intent,
@@ -1229,6 +1297,83 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
         sb.AppendLine($"  • {instruction.Trim()}");
         sb.AppendLine();
         sb.Append("Return the full edited layout.");
+        return sb.ToString();
+    }
+
+    /// <summary>workspace-t1ok.6: system prompt for the label-generalization fallback.</summary>
+    private static string BuildLabelsSystemPrompt(bool hasScreenshot)
+    {
+        var sb = new StringBuilder();
+        sb.AppendLine("You are learning a homepage layout from links the user HAND-LABELED. The labels are");
+        sb.AppendLine("GROUND TRUTH — never override one, no matter what the page looks like.");
+        sb.AppendLine("Work in link INDEX NUMBERS only — never CSS selectors or URLs; the app derives those itself.");
+        sb.AppendLine(VisionGuidance(hasScreenshot));
+        sb.AppendLine();
+        sb.AppendLine("Hard requirements:");
+        sb.AppendLine("- Every ARTICLE index must appear in a section, and section order must present the");
+        sb.AppendLine("  labeled articles in the given order (the first-labeled article leads the page).");
+        sb.AppendLine("- Every AD and HIDDEN index goes in exclude_indices.");
+        sb.AppendLine("- MENU indices are routed by the app: put them in NO section and NOT in exclude_indices.");
+        sb.AppendLine("- GENERALIZE: a section should capture the OTHER links shaped like its labeled");
+        sb.AppendLine("  articles (same repeating block/cluster), so the layout survives when today's");
+        sb.AppendLine("  links rotate out tomorrow. Do the same for ads: exclude the whole ad slot's");
+        sb.AppendLine("  links, not just the one labeled example.");
+        sb.AppendLine("- Keep parts of the CURRENT layout that don't conflict with a label.");
+        sb.AppendLine();
+        sb.AppendLine("Return the FULL layout as indices: every section's name + story_indices +");
+        sb.AppendLine("start_collapsed, and exclude_indices. Set `confidence` and leave `confirm_question`");
+        sb.Append("null unless something is genuinely ambiguous (then ONE short question with durable options).");
+        return sb.ToString();
+    }
+
+    /// <summary>workspace-t1ok.6: user prompt — numbered links + current layout + the labels as indices.</summary>
+    private static string BuildLabelsUserPrompt(
+        List<LinkInfo> contentLinks,
+        string pageUrl,
+        SiteHierarchyConfig currentConfig,
+        IReadOnlyList<UserLinkLabel> labels)
+    {
+        var sb = new StringBuilder();
+        sb.Append(BuildCuratedUserPrompt(contentLinks, pageUrl));
+        sb.AppendLine();
+        sb.AppendLine("CURRENT LAYOUT (keep what doesn't conflict with the labels):");
+        if (currentConfig.Sections.Count == 0)
+        {
+            sb.AppendLine("  (no sections yet)");
+        }
+
+        List<int> MembersOf(HierarchySection sec) => Enumerable.Range(0, contentLinks.Count)
+            .Where(idx => NavigationTreeBuilder.MatchesSection(contentLinks[idx], sec))
+            .ToList();
+
+        for (int i = 0; i < currentConfig.Sections.Count; i++)
+        {
+            var s = currentConfig.Sections[i];
+            var collapsed = s.StartCollapsed ? " (collapsed)" : string.Empty;
+            sb.AppendLine($"  section {i + 1}: \"{s.Name}\"{collapsed} — links [{string.Join(", ", MembersOf(s))}]");
+        }
+
+        var indexByKey = new Dictionary<string, int>(StringComparer.Ordinal);
+        for (int i = 0; i < contentLinks.Count; i++)
+        {
+            indexByKey.TryAdd(LabelDerivation.NormalizeUrl(contentLinks[i].Url), i);
+        }
+
+        List<int> IndicesOf(LinkLabelKind kind) => labels
+            .Where(l => l.Kind == kind)
+            .OrderBy(l => l.Rank ?? int.MaxValue)
+            .Select(l => indexByKey.TryGetValue(LabelDerivation.NormalizeUrl(l.Url), out var idx) ? idx : -1)
+            .Where(idx => idx >= 0)
+            .ToList();
+
+        sb.AppendLine();
+        sb.AppendLine("THE USER'S HAND LABELS (ground truth — never violate these):");
+        sb.AppendLine($"  ARTICLES in required order: [{string.Join(", ", IndicesOf(LinkLabelKind.Article))}]");
+        sb.AppendLine($"  ADS — must be in exclude_indices: [{string.Join(", ", IndicesOf(LinkLabelKind.Ad))}]");
+        sb.AppendLine($"  HIDDEN — must be in exclude_indices: [{string.Join(", ", IndicesOf(LinkLabelKind.Ignore))}]");
+        sb.AppendLine($"  MENU links — the app routes these; put them in NO section and do NOT exclude them: [{string.Join(", ", IndicesOf(LinkLabelKind.Menu))}]");
+        sb.AppendLine();
+        sb.Append("Return the full layout as indices, generalized to survive link churn.");
         return sb.ToString();
     }
 
