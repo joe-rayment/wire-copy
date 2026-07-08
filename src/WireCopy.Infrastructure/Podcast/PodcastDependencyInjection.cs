@@ -41,11 +41,16 @@ public static class PodcastDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(TtsAudioCacheConfiguration.SectionName).Bind(opts));
 
+        services.AddOptions<ChatterboxConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(ChatterboxConfiguration.SectionName).Bind(opts));
+
         // Register configuration validators
         services.AddSingleton<IValidateOptions<OpenAiTtsConfiguration>, OpenAiTtsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<PodcastConfiguration>, PodcastConfigurationValidator>();
         services.AddSingleton<IValidateOptions<GcsConfiguration>, GcsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<TtsAudioCacheConfiguration>, TtsAudioCacheConfigurationValidator>();
+        services.AddSingleton<IValidateOptions<ChatterboxConfiguration>, ChatterboxConfigurationValidator>();
 
         // Register user settings store (must be before services that consume it)
         services.AddSingleton<IUserSettingsStore, UserSettingsStore>();

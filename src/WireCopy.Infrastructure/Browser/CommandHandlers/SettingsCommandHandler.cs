@@ -52,6 +52,12 @@ internal static class SettingsCommandHandler
     internal const string KeyOutputRetentionHours = "PodcastOutputRetentionHours";
     internal const string KeyPodcastCostGateAlwaysShow = "PodcastCostGateAlwaysShow";
 
+    // workspace-2xej: narration engine selection + Chatterbox (local TTS) knobs.
+    internal const string KeyTtsEngine = "TtsEngine";                            // "openai" | "chatterbox"; absent = openai
+    internal const string KeyChatterboxVoiceSample = "ChatterboxVoiceSample";    // abs path or repo-relative; absent = built-in voice
+    internal const string KeyChatterboxExaggeration = "ChatterboxExaggeration";  // invariant float string
+    internal const string KeyChatterboxLastTestOk = "ChatterboxLastTestOk";      // ISO-8601 utc timestamp of last successful Test narration
+
     // workspace-r8on: layout-judge model + optional local (Ollama) endpoint.
     internal const string KeyLayoutModel = "LayoutModel";
     internal const string KeyLayoutEndpoint = "LayoutEndpoint";
