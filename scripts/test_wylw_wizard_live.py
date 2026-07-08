@@ -24,6 +24,7 @@ import glob
 import http.server
 import os
 import re
+import shutil
 import subprocess
 import sys
 import threading
@@ -113,6 +114,75 @@ def orange_pixels(png):
     return count
 
 
+def dock_window_geometry():
+    """The (x, width) of the docked browser window on DISPLAY, or None.
+
+    workspace-6vfo: a DURABLE dock outcome — the real Chromium window is a
+    persistent X window, unlike the transient 'docked' status toast that
+    expired before the gate could see it. Plain Xvfb (no auth cookie) so
+    xdotool reads it directly, same as the `import` screenshot above.
+    """
+    ids = subprocess.run(
+        ["xdotool", "search", "--class", "hrom"],  # matches Chromium-browser / chrome
+        capture_output=True, text=True,
+        env={**os.environ, "DISPLAY": DISPLAY}).stdout.split()
+    best = None
+    for wid in ids:
+        shell = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", wid],
+            capture_output=True, text=True,
+            env={**os.environ, "DISPLAY": DISPLAY}).stdout
+        d = dict(line.split("=", 1) for line in shell.splitlines() if "=" in line)
+        try:
+            w, x = int(d.get("WIDTH", 0)), int(d.get("X", 0))
+        except ValueError:
+            continue
+        # The docked strip is the only wide Chromium window (min ~500px clamp);
+        # skip the 10x10 helper/clipboard windows AND the off-screen PARKED window
+        # (X≈-32000 before it docks — matching that early returned a false result).
+        if w >= 400 and 0 <= x < SCREEN_W and (best is None or w > best[1]):
+            best = (x, w)
+    return best
+
+
+def all_chrome_windows():
+    ids = subprocess.run(
+        ["xdotool", "search", "--class", "hrom"],
+        capture_output=True, text=True,
+        env={**os.environ, "DISPLAY": DISPLAY}).stdout.split()
+    out = []
+    for wid in ids:
+        shell = subprocess.run(
+            ["xdotool", "getwindowgeometry", "--shell", wid],
+            capture_output=True, text=True,
+            env={**os.environ, "DISPLAY": DISPLAY}).stdout
+        d = dict(line.split("=", 1) for line in shell.splitlines() if "=" in line)
+        out.append((d.get("X"), d.get("WIDTH"), d.get("HEIGHT")))
+    return out
+
+
+def wait_for_dock(t, failures, timeout=90):
+    """Dock the opt-in sidecar (press |) and wait for the durable window outcome."""
+    t.send_keys("|")  # terminal app: the sidecar is opt-in, | toggles the dock
+    deadline = time.time() + timeout
+    geo = None
+    while time.time() < deadline:
+        geo = dock_window_geometry()
+        if geo:
+            break
+        time.sleep(1)
+    if geo is None:
+        print(f"  [dock debug] chrome windows seen: {all_chrome_windows()}")
+        failures.append("sidecar did not dock a browser window within %ds of pressing |" % timeout)
+        return None
+    x, w = geo
+    # Durable OUTCOME assertion (not a toast): the docked strip sits flush at
+    # the real right edge (workspace-4vqv), never clipped short.
+    if abs((x + w) - SCREEN_W) > 12:
+        failures.append(f"docked window not flush at the right edge: x+w={x + w}, screen={SCREEN_W}")
+    return geo
+
+
 def wizard_lens_log_lines():
     logs = sorted(glob.glob("/workspace/logs/wirecopy-*.log"))
     if not logs:
@@ -153,6 +223,20 @@ def main():
     xvfb = subprocess.Popen(
         ["Xvfb", DISPLAY, "-screen", "0", f"{SCREEN_W}x{SCREEN_H}x24"],
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    time.sleep(1.5)
+    # workspace-6vfo: the docked browser window needs a real WM to HOLD its
+    # setWindowBounds position — under bare Xvfb the dock places then the window
+    # drifts back off-screen (X≈-32000), so the lens is never visible. openbox is
+    # the same WM the corner-park gate requires for these window semantics.
+    openbox = None
+    if shutil.which("openbox"):
+        openbox = subprocess.Popen(
+            ["openbox"], env={**os.environ, "DISPLAY": DISPLAY},
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+        time.sleep(1.0)
+    else:
+        print("SKIP-WARNING: openbox not installed — the docked-lens window needs a real WM; "
+              "install openbox to gate the sidecar dock.")
     server = http.server.ThreadingHTTPServer(("127.0.0.1", 0), Site)
     port = server.server_address[1]
     threading.Thread(target=server.serve_forever, daemon=True).start()
@@ -163,9 +247,13 @@ def main():
     try:
         with TermTest(url=url, width=TERM_W, height=40) as t:
             t.wait_for("Headline number", timeout=60)
-            t.wait_for("docked", timeout=90)
+            # workspace-6vfo: the app boots app-primary (sidecar opt-in), so the
+            # old wait for a transient 'docked' toast never fired. Dock explicitly
+            # and assert the DURABLE window outcome (a real Chromium window flush
+            # at the right edge) instead of a status string.
+            geo = wait_for_dock(t, failures)
             time.sleep(2)
-            transcript(t, log, "1. link list loaded, sidecar docked")
+            transcript(t, log, f"1. link list loaded, sidecar docked (window {geo})")
 
             # --- Ctrl+L -> AI-first entry card ---
             choose_layout(t)  # g l = AI layout wizard
@@ -210,13 +298,19 @@ def main():
                 if n < 100:
                     failures.append(f"preview card: expected highlight on lens, found {n} px")
 
-                # j/k grammar: preview the next section live, then back.
-                t.send_keys("j")
-                time.sleep(1.5)
+                # j cycles the preview cursor down the tree; the lens follows the
+                # focused row's section. The fixture's Lead holds ONE story, so the
+                # cursor must descend past it into the 12-link Headlines section for
+                # the lens to MULTI-highlight. Press j until the lens log reports a
+                # multi-match (or we run out of rows), capturing a shot each step.
+                for step in range(6):
+                    t.send_keys("j")
+                    time.sleep(1.2)
+                    if any(f"highlighted {k} match(es)" in l
+                           for l in wizard_lens_log_lines()[log_mark:] for k in range(10, 14)):
+                        break
                 x_screenshot("03-preview-next-section.png")
-                transcript(t, log, "5. j cycles — next section previewed on the lens")
-                t.send_keys("k")
-                time.sleep(1)
+                transcript(t, log, "5. j cycles — headline section previewed on the lens")
 
                 t.send_keys("s")  # save exactly what is previewed (nbvb.3: 's' saves)
                 t.wait_for("Site set up", timeout=30)
@@ -260,6 +354,8 @@ def main():
         with open(os.path.join(OUT_DIR, "transcript.txt"), "w") as fh:
             fh.write("\n".join(log))
         subprocess.run(["tmux", "kill-server"], capture_output=True)
+        if openbox is not None:
+            openbox.terminate()
         xvfb.terminate()
         server.shutdown()
 
