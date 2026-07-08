@@ -2,6 +2,8 @@
 
 using FluentAssertions;
 using Microsoft.Playwright;
+using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Browser;
 using Xunit;
 
 namespace WireCopy.Tests.Browser;
@@ -139,6 +141,35 @@ public class PickScriptIntegrationTests : IAsyncLifetime
 
         var second = await page.EvaluateAsync<string>(WireCopy.Infrastructure.Browser.PickScript.Poll);
         second.Should().BeEmpty("each pick is observed exactly once");
+    }
+
+    [SkippableFact]
+    public async Task Click_WhileArmed_ParsesToTheExtractedLinkInfo_ForLabelModeSelection()
+    {
+        // workspace-p2qo: the end-to-end lens-click chain BuildWizardLens runs for
+        // label mode — a REAL Playwright click (reaches the renderer, unlike xdotool
+        // under Xvfb) -> PickScript.Poll -> LensPick.Parse -> ToLinkInfo -> the REAL
+        // extracted link. This closes the gap the poll→cursor→label unit tests mock.
+        var page = await ArmedPageAsync();
+
+        await page.ClickAsync("#lead");
+        var json = await page.EvaluateAsync<string>(WireCopy.Infrastructure.Browser.PickScript.Poll);
+
+        var pick = WireCopy.Infrastructure.Browser.CommandHandlers.LensPick.Parse(json);
+        pick.Should().NotBeNull("a click on a link records a pick");
+
+        var extracted = new LinkInfo
+        {
+            Url = "https://publisher.example/big-story",
+            DisplayText = "The Big Story Headline",
+            Type = LinkType.Content,
+            ImportanceScore = 90,
+            ParentSelector = "div.clus.extra",
+        };
+        var resolved = pick!.ToLinkInfo(new List<LinkInfo> { extracted });
+
+        resolved.Should().BeSameAs(extracted,
+            "the clicked href matches an extracted link, so label mode selects that real row");
     }
 
     [SkippableFact]
