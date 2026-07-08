@@ -104,7 +104,6 @@ internal static class SetupWizard
         byte[]? screenshot,
         ModelRoundTripBudget budget,
         Func<CancellationToken, Task<string?>> freeTextPrompt,
-        Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
         Lens? lens,
         CancellationToken ct,
@@ -154,7 +153,6 @@ internal static class SetupWizard
                 confirmQuestion: labeled.ConfirmQuestion,
                 budget,
                 freeTextPrompt,
-                pickLeadFromTree,
                 applyPreview,
                 lens,
                 ct,
@@ -187,7 +185,6 @@ internal static class SetupWizard
                 confirmQuestion: null,
                 budget,
                 freeTextPrompt,
-                pickLeadFromTree,
                 applyPreview,
                 lens,
                 ct,
@@ -313,7 +310,6 @@ internal static class SetupWizard
             confirmQuestion,
             budget,
             freeTextPrompt,
-            pickLeadFromTree,
             applyPreview,
             lens,
             ct,
@@ -1470,7 +1466,6 @@ internal static class SetupWizard
         SetupQuestion? confirmQuestion,
         ModelRoundTripBudget budget,
         Func<CancellationToken, Task<string?>> freeTextPrompt,
-        Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         Func<SiteHierarchyConfig, CancellationToken, Task>? applyPreview,
         Lens? lens,
         CancellationToken ct,
@@ -1550,7 +1545,6 @@ internal static class SetupWizard
                     config,
                     budget,
                     freeTextPrompt,
-                    pickLeadFromTree,
                     lens,
                     ct,
                     BuildFailureCardShape(config, links, budget),
@@ -1796,7 +1790,6 @@ internal static class SetupWizard
                         config,
                         budget,
                         freeTextPrompt,
-                        pickLeadFromTree,
                         lens,
                         ct,
                         shape: null,
@@ -1910,7 +1903,6 @@ internal static class SetupWizard
         SiteHierarchyConfig currentConfig,
         ModelRoundTripBudget budget,
         Func<CancellationToken, Task<string?>> freeTextPrompt,
-        Func<CancellationToken, Task<LinkInfo?>>? pickLeadFromTree,
         Lens? lens,
         CancellationToken ct,
         AdjustCardShape? shape = null,
@@ -1945,7 +1937,6 @@ internal static class SetupWizard
             return null;
         }
 
-        var allowPick = pickLeadFromTree != null;
         var allowUrl = promptLeadUrl != null;
 
         // workspace-5vqk.6: once the layout already carries a pick-derived river, a
@@ -1953,7 +1944,6 @@ internal static class SetupWizard
         // can teach podcasts/events as their own sections rather than replacing news.
         var addsAnother = currentConfig.Sections.Any(s => IsPickRiverName(s.Name));
         var options = new List<SetupWizardOverlay.CardOption>();
-        var pickIndex = -1;
         var urlIndex = -1;
 
         // workspace-t1ok.5: hand-labeling is the FIRST adjust tool — deterministic,
@@ -1975,17 +1965,6 @@ internal static class SetupWizard
             options.Add(new SetupWizardOverlay.CardOption
             {
                 Label = $"Generalize from your {n} mark{(n == 1 ? string.Empty : "s")} with AI — build the full layout",
-            });
-        }
-
-        if (allowPick)
-        {
-            pickIndex = options.Count;
-            options.Add(new SetupWizardOverlay.CardOption
-            {
-                Label = addsAnother
-                    ? "Point at another story — adds a co-equal section"
-                    : "Point at the top story — click it in the browser",
             });
         }
 
@@ -2049,16 +2028,7 @@ internal static class SetupWizard
         SetupAnswer? adjustment = null;
         string? instruction = null;
         LinkInfo? resolvedLead = null;
-        if (allowPick && choice == pickIndex)
-        {
-            resolvedLead = await pickLeadFromTree!(ct).ConfigureAwait(false);
-            if (resolvedLead != null)
-            {
-                adjustment = LeadOverrideAnswer(resolvedLead);
-                instruction = LeadInstruction(resolvedLead);
-            }
-        }
-        else if (allowUrl && choice == urlIndex)
+        if (allowUrl && choice == urlIndex)
         {
             var urlText = await promptLeadUrl!(ct).ConfigureAwait(false);
             if (!string.IsNullOrWhiteSpace(urlText))

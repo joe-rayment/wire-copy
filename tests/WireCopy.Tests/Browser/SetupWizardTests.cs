@@ -127,7 +127,6 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, Render, overlay, Links(), "https://x.com/", screenshot: null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null,
             applyPreview: null,
             lens: null,
             CancellationToken.None);
@@ -170,7 +169,7 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, Render, overlay, Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
         budget.Used.Should().Be(2);
@@ -189,7 +188,6 @@ public class SetupWizardTests
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null,
             applyPreview: (config, _) => { previewed.Add(config); return Task.CompletedTask; },
             lens: null,
             CancellationToken.None);
@@ -210,7 +208,7 @@ public class SetupWizardTests
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Cancelled.Should().BeTrue("Esc on the preview must not save the config");
         result.Config.Should().BeNull();
@@ -227,7 +225,7 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, spent, _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Cancelled.Should().BeTrue();
         await analyzer.DidNotReceive().ProposeSetupQuestionsAsync(
@@ -259,87 +257,6 @@ public class SetupWizardTests
     {
         var header = LinkInfo.CreateSubSectionHeader("Top Story", LinkType.Content);
         SetupWizard.SectionFromPickedLink(header, "Top Story").Should().BeNull();
-    }
-
-    [Fact]
-    public async Task Adjust_PickLead_PerformsExactlyOneExtraRoundTrip()
-    {
-        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
-
-        // Preview: Space (adjust) → adjust card Down past "Fix links by hand"
-        // (workspace-t1ok.5: label mode is option 0) → Enter on the pick option
-        // → re-infer → preview again → 's' saves.
-        var input = InputSequence(
-            CommandType.ToggleSelection,
-            CommandType.MoveDown,
-            CommandType.ActivateLink,
-            CommandType.SaveToCollection);
-
-        var pickedLink = new LinkInfo
-        {
-            Url = "https://x.com/2026/05/30/the-real-lead",
-            DisplayText = "The real lead",
-            Type = LinkType.Content,
-            ImportanceScore = 99,
-            ParentSelector = "main section.hero a",
-        };
-
-        var budget = new ModelRoundTripBudget();
-        var result = await SetupWizard.RunAsync(
-            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
-            Links(), "https://x.com/", null, budget,
-            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(pickedLink),
-            applyPreview: null,
-            lens: null,
-            CancellationToken.None);
-
-        result.Config.Should().NotBeNull();
-        budget.Used.Should().Be(3, "silent propose + infer + one refine for the pick");
-
-        // workspace-9k27.4: a normal preview adjustment REFINES the current
-        // layout (RefineLayoutAsync) — it must NOT regenerate from the proposal
-        // (the old `shape ??=` bug sent every adjustment through re-inference).
-        await analyzer.Received(1).RefineLayoutAsync(
-            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-            Arg.Any<SiteHierarchyConfig>(), Arg.Is<string>(i => i.Contains("The real lead")), Arg.Any<CancellationToken>());
-        await analyzer.Received(1).InferPatternFromAnswersAsync(
-            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-            Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task Adjust_HeaderPick_DoesNotReInfer_KeepsBaseConfig()
-    {
-        var analyzer = AnalyzerReturning(ProposalWith(questionCount: 0), SomeConfig());
-
-        // Space → adjust card: Down past "Mark links…" (option 0 since t1ok.5)
-        // to the pick option → Enter → the header pick is rejected → 's' saves.
-        // (Before workspace-nbvb this test lacked the Down and silently ran the
-        // LABEL flow instead of the pick — passing for the wrong reason.)
-        var input = InputSequence(
-            CommandType.ToggleSelection,
-            CommandType.MoveDown,
-            CommandType.ActivateLink,
-            CommandType.SaveToCollection);
-
-        var header = LinkInfo.CreateSubSectionHeader("Top Story", LinkType.Content);
-        var budget = new ModelRoundTripBudget();
-
-        var result = await SetupWizard.RunAsync(
-            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
-            Links(), "https://x.com/", null, budget,
-            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(header),
-            applyPreview: null,
-            lens: null,
-            CancellationToken.None);
-
-        result.Config.Should().NotBeNull("a rejected pick keeps the base config");
-        budget.Used.Should().Be(2, "a header pick is rejected before any re-inference");
-        await analyzer.Received(1).InferPatternFromAnswersAsync(
-            Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-            Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -382,7 +299,6 @@ public class SetupWizardTests
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>("hide the opinion pieces"),
-            pickLeadFromTree: null,
             applyPreview: null,
             lens: null,
             CancellationToken.None);
@@ -413,7 +329,7 @@ public class SetupWizardTests
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
         budget.Used.Should().Be(2, "backing out of the adjust card costs nothing");
@@ -532,7 +448,7 @@ public class SetupWizardTests
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
         captured.Should().BeEmpty("the proposal's questions are discarded, never asked");
@@ -601,7 +517,7 @@ public class SetupWizardTests
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
         result.Config!.Sections[0].Name.Should().Be("Top Story", "the repaired config is what previews and saves");
@@ -634,7 +550,6 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, Render, overlay, Links(), "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null,
             applyPreview: (_, _) => { previewApplied++; return Task.CompletedTask; },
             lens: null,
             CancellationToken.None);
@@ -646,53 +561,6 @@ public class SetupWizardTests
         titles.Should().Contain("No reliable pattern found");
         titles.Should().NotContain("Your new layout");
     }
-
-    [Fact]
-    public async Task FailureCard_PickStory_RecoversToPreviewAndSaves()
-    {
-        var analyzer = Substitute.For<IHierarchyAnalyzer>();
-        analyzer.ProposeSetupQuestionsAsync(Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(ProposalWith(questionCount: 0));
-
-        var inferCalls = 0;
-        analyzer.InferPatternFromAnswersAsync(
-                Arg.Any<byte[]?>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(),
-                Arg.Any<SiteSetupProposal>(), Arg.Any<IReadOnlyList<SetupAnswer>>(), Arg.Any<CancellationToken>())
-            .Returns(_ => new InferredPattern { Config = ++inferCalls <= 2 ? MismatchedConfig() : SomeConfig() });
-
-        // infer #1 degenerate → auto-repair infer #2 still degenerate → failure
-        // card: Down past "Fix links by hand" (workspace-t1ok.5) → Enter on the
-        // pick option → pick → infer #3 good → preview → 's' saves.
-        var input = InputSequence(
-            CommandType.MoveDown,
-            CommandType.ActivateLink,
-            CommandType.SaveToCollection);
-
-        var pickedLink = new LinkInfo
-        {
-            Url = "https://x.com/2026/06/11/lead",
-            DisplayText = "The lead",
-            Type = LinkType.Content,
-            ImportanceScore = 95,
-            ParentSelector = "main section.hero a",
-        };
-
-        var budget = new ModelRoundTripBudget();
-        var result = await SetupWizard.RunAsync(
-            analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
-            Links(), "https://x.com/", null, budget,
-            freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: _ => Task.FromResult<LinkInfo?>(pickedLink),
-            applyPreview: null,
-            lens: null,
-            CancellationToken.None);
-
-        result.Config.Should().NotBeNull();
-        result.Config!.Sections[0].Name.Should().Be("Top Story");
-        budget.Used.Should().Be(4, "silent propose + infer + auto-repair + pick-driven re-inference");
-    }
-
-    // ---- workspace-wylw: live lens confirmation ----
 
     [Fact]
     public void CssForIdentifier_BuildsDescendantAndHrefSelectors()
@@ -795,7 +663,6 @@ public class SetupWizardTests
         var result = await SetupWizard.RunAsync(
             analyzer, input, Render, overlay, Links(), "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null,
             applyPreview: null,
             lens: lens,
             CancellationToken.None);
@@ -1041,7 +908,7 @@ public class SetupWizardTests
             analyzer, InputSequence(CommandType.SaveToCollection), _ => Task.CompletedTask,
             new SetupWizardOverlay.State(), links, "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
         result.Config!.Kind.Should().Be(LayoutKind.DocumentOrder, "the never-block guardrail saved the flat ordered list");
@@ -1158,7 +1025,7 @@ public class SetupWizardTests
             analyzer, input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
             links, "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null,
+            applyPreview: null, lens: null,
             CancellationToken.None, existingConfig: config);
 
         result.Config.Should().NotBeNull();
@@ -1218,7 +1085,7 @@ public class SetupWizardTests
             Substitute.For<IHierarchyAnalyzer>(), InputCommands(commands), Render, overlay,
             links, "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null,
+            applyPreview: null, lens: null,
             CancellationToken.None, existingConfig: config);
         return (result, focus, footnotes);
     }
@@ -1462,7 +1329,7 @@ public class SetupWizardTests
                 new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' }),
             _ => Task.CompletedTask, overlay, links, "https://x.com/", null, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null,
+            applyPreview: null, lens: null,
             CancellationToken.None, existingConfig: config,
             promptSectionName: (_, _) => Task.FromResult<string?>("Tech Talk"));
 
@@ -1506,7 +1373,7 @@ public class SetupWizardTests
                 new NavigationCommand { Type = CommandType.SaveToCollection, RawKeyChar = 's' }),
             _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null,
+            applyPreview: null, lens: null,
             CancellationToken.None, existingConfig: config);
 
         budget.Used.Should().Be(1, "the explicit generalize is exactly one budget-guarded call");
@@ -1582,7 +1449,7 @@ public class SetupWizardTests
             _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/",
             screenshot: new byte[] { 1, 2, 3 }, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
         await analyzer.DidNotReceive().VerifyLeadWithVisionAsync(
@@ -1609,7 +1476,7 @@ public class SetupWizardTests
             _ => Task.CompletedTask, new SetupWizardOverlay.State(), links, "https://x.com/",
             screenshot: new byte[] { 1, 2, 3 }, new ModelRoundTripBudget(),
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         await analyzer.Received(1).VerifyLeadWithVisionAsync(
             Arg.Any<byte[]>(), Arg.Any<List<LinkInfo>>(), Arg.Any<string>(), Arg.Any<CancellationToken>());

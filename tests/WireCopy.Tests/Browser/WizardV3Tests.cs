@@ -567,7 +567,7 @@ public class WizardV3Tests
             analyzer, input, _ => Task.CompletedTask, new Infrastructure.Browser.UI.Components.SetupWizardOverlay.State(),
             links, "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull("'s' saves immediately, question ignored");
         budget.Used.Should().Be(2, "ignoring the question must not spend extra model calls");
@@ -594,7 +594,7 @@ public class WizardV3Tests
             analyzer, input, _ => Task.CompletedTask, new Infrastructure.Browser.UI.Components.SetupWizardOverlay.State(),
             links, "https://x.com/", null, budget,
             freeTextPrompt: _ => Task.FromResult<string?>(string.Empty),
-            pickLeadFromTree: null, applyPreview: null, lens: null, CancellationToken.None);
+            applyPreview: null, lens: null, CancellationToken.None);
 
         result.Config.Should().NotBeNull();
         budget.Used.Should().Be(3, "silent propose + infer + the answered confirm question");

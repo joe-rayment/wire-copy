@@ -463,7 +463,6 @@ internal static class ScheduleCommandHandler
             screenshot: null,
             new ModelRoundTripBudget(),
             c => PromptTextAsync(ctx, palette, "Tell the AI what to change", null, c),
-            pickLeadFromTree: null,
             applyPreview: null,
             lens: null,
             ct).ConfigureAwait(false);
