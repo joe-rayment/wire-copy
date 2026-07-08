@@ -70,7 +70,20 @@ Saved layouts are durable (CSS-selector / URL-pattern based, never tied to speci
 
 ## Audio / Podcast Mode
 
-Generate narrated M4B files from your saved articles. A single **OpenAI** API key powers text-to-speech, the AI site setup, and article extraction.
+Generate narrated M4B files from your saved articles. Narration runs through one of two engines, switchable any time in Settings (`c` → **Narration engine**):
+
+- **OpenAI (cloud)** — best quality, per-request style instructions, a few cents per hour of audio. Needs an OpenAI API key (the same key also powers the AI site setup and article extraction).
+- **Chatterbox (local)** — free, private, offline. Runs on your machine via [`uv`](https://docs.astral.sh/uv/); the first generation downloads the model weights (one-time, a few GB). No API key.
+
+### Local narration (Chatterbox)
+
+Chatterbox (Resemble AI's open-source MIT model) synthesizes audio entirely on your machine — nothing leaves it and there's no per-run cost.
+
+- **Prerequisite:** install `uv` — `curl -LsSf https://astral.sh/uv/install.sh | sh`. Wire Copy launches the worker with `uv run` and manages the Python environment for you; nothing else to install.
+- **Voice cloning:** drop a ~10-second clean, single-speaker clip into `voices/` (gitignored) and pick it in Settings → **Voice sample**. Without a sample, Chatterbox uses its built-in voice.
+- **Tone:** Chatterbox takes **no** text style instructions — the tone comes from your voice sample plus the **Expressiveness** knob (0 = flat, 0.5 = natural, 1 = dramatic). The separate "TTS instructions" setting applies to **OpenAI only**.
+- **Test it:** Settings → **Local engine** row → Enter runs a "Test narration" that generates a short clip through the active engine and plays it, so you can hear the voice before committing to a full run.
+- Output carries Resemble's inaudible [Perth](https://github.com/resemble-ai/perth) watermark.
 
 Press `p` on a reading list. While generating:
 

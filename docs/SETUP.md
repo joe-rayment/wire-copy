@@ -67,6 +67,21 @@ You can provide them in any of three ways. They're checked in this order — lat
 
 Optional: a Google Cloud Storage service account JSON for publishing podcast feeds. See [docs/data-storage.md](data-storage.md).
 
+## Local narration (Chatterbox) — no API key
+
+Podcast narration can run entirely on your machine with the open-source **Chatterbox** engine instead of OpenAI TTS. No key, no per-run cost, nothing leaves the machine.
+
+1. **Install `uv`** (the only prerequisite):
+   ```bash
+   curl -LsSf https://astral.sh/uv/install.sh | sh
+   ```
+   Wire Copy runs the narration worker with `uv run` and manages the Python environment itself.
+2. **Switch engines:** press `c` on the launcher → **Narration engine** → pick **Chatterbox (local)**.
+3. **(Optional) clone a voice:** drop a ~10-second clean, single-speaker clip (wav/mp3/flac/m4a/ogg) into `voices/` (gitignored), then Settings → **Voice sample** → type the filename. Without a sample, Chatterbox uses its built-in voice. Tone is set by the sample plus the **Expressiveness** knob — Chatterbox takes no text style instructions (those apply to OpenAI only).
+4. **Test it:** Settings → **Local engine** row → Enter. The first run downloads the model weights (one-time, a few GB); after that it generates a short clip and plays it so you can hear the voice.
+
+Then press `p` on a reading list as usual — generation is local and free.
+
 ## Site logins (paywalled content)
 
 For sites requiring authentication, paste a session cookie when prompted on first navigation. The cookie is encrypted with ASP.NET DataProtection and stored in the local SQLite database. Details in [docs/cookie-encryption.md](cookie-encryption.md).
@@ -88,7 +103,11 @@ Audio generation will fail at the assembly step. Install via your package manage
 
 ### Audio costs
 
-Both `OpenAiTts` and `Anthropic` configurations have a `MaxBudgetUsd` per session in `appsettings.json`. The defaults (`$1.00` and `$0.10` respectively) are conservative; bump them if you're generating long podcasts. Generated audio is cached on disk by content + voice + model so re-runs are free.
+Both `OpenAiTts` and `Anthropic` configurations have a `MaxBudgetUsd` per session in `appsettings.json`. The defaults (`$1.00` and `$0.10` respectively) are conservative; bump them if you're generating long podcasts. Generated audio is cached on disk by content + engine + voice/sample + model so re-runs are free. (The **Chatterbox** local engine is always `$0.00` — its cost is time, not money.)
+
+### Local narration fails with "'NoneType' object is not callable"
+
+Chatterbox's Perth watermarker imports `pkg_resources`, which `setuptools` 81+ removed. Wire Copy pins `setuptools<81` in the worker's `uv` launch line (`Chatterbox:UvArgs` in `appsettings.json`) to avoid this — if you've overridden `UvArgs`, keep the `--with "setuptools<81"` fragment.
 
 ## Security notes
 
