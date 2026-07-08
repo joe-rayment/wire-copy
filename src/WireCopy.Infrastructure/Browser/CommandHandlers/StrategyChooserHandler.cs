@@ -501,7 +501,16 @@ internal static class StrategyChooserHandler
         bool startWithLabelMode = false)
     {
         var analyzer = scope.ServiceProvider.GetService<IHierarchyAnalyzer>();
-        if (analyzer == null || !analyzer.IsConfigured)
+
+        // workspace-ss5y: label-first hand-labeling is fully deterministic
+        // (LabelDerivation.DeriveConfig → preview → save); the analyzer is only
+        // touched by the OPTIONAL generalize fallback, which budget-guards and
+        // catch-all fail-safes to "the deterministic result stands". So the
+        // OpenAI-key requirement gates the AI-first entries ONLY — a keyless user
+        // can still mark links by hand. (analyzer is still required non-null:
+        // SetupWizard.RunAsync needs the instance even when the model never fires.)
+        if (analyzer == null
+            || ChooserEntry.WizardBlockedWithoutKey(analyzerPresent: true, analyzer.IsConfigured, startWithLabelMode))
         {
             ctx.NavigationService.SetStatusMessage("AI Curated needs an OpenAI key · press c on the launcher");
             return new SetupWizard.Result { Cancelled = true };

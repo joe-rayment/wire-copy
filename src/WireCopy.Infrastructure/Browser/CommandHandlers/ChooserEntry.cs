@@ -34,6 +34,17 @@ internal static class ChooserEntry
     public static bool AiSetupAvailable(bool aiConfigured, int contentLinkCount)
         => aiConfigured && contentLinkCount >= 3;
 
+    /// <summary>
+    /// workspace-ss5y: whether the setup wizard must refuse to run for lack of an
+    /// OpenAI key. Hand-labeling (label-first mode) is fully deterministic — its
+    /// only model call is an optional, catch-all-guarded generalize fallback — so a
+    /// keyless user CAN mark links by hand; the key gate applies to the AI-first
+    /// entries only. The analyzer instance is still required (SetupWizard needs it
+    /// even when the model never fires), so an absent analyzer always blocks.
+    /// </summary>
+    public static bool WizardBlockedWithoutKey(bool analyzerPresent, bool analyzerConfigured, bool startWithLabelMode)
+        => !analyzerPresent || (!analyzerConfigured && !startWithLabelMode);
+
     /// <summary>One-line description of the current saved layout for the summary card.</summary>
     public static string DescribeConfig(SiteHierarchyConfig config)
     {

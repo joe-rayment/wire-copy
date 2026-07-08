@@ -48,6 +48,18 @@ public class ChooserEntryTests
     public void AiSetupAvailable_RequiresKeyAndEnoughLinks(bool configured, int links, bool expected)
         => ChooserEntry.AiSetupAvailable(configured, links).Should().Be(expected);
 
+    [Theory]
+    // analyzerPresent, analyzerConfigured, startWithLabelMode -> blocked?
+    [InlineData(true, true, false, false)]   // configured, AI entry -> proceeds
+    [InlineData(true, true, true, false)]    // configured, label mode -> proceeds
+    [InlineData(true, false, false, true)]   // no key, AI entry -> BLOCKED (key required)
+    [InlineData(true, false, true, false)]   // no key, label mode -> PROCEEDS (deterministic, ss5y fix)
+    [InlineData(false, false, true, true)]   // no analyzer at all -> blocked even in label mode
+    [InlineData(false, true, true, true)]    // no analyzer instance -> blocked regardless
+    public void WizardBlockedWithoutKey_GatesAiEntriesOnly(
+        bool present, bool configured, bool labelMode, bool expectedBlocked)
+        => ChooserEntry.WizardBlockedWithoutKey(present, configured, labelMode).Should().Be(expectedBlocked);
+
     [Fact]
     public void DescribeConfig_PatternConfig_SaysPatternBased()
         => ChooserEntry.DescribeConfig(Config(sections: 2)).Should().Contain("pattern-based");
