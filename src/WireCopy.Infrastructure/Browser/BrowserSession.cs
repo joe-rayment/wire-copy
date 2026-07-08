@@ -2085,7 +2085,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             await EnsureWindowRestoredForDockAsync(front, cdp, windowId).ConfigureAwait(false);
 
             var placement = await SidecarDocker.PlaceAsync(
-                geo, _browserConfig.DockSide, _browserConfig.DockWidthPx, _browserConfig.DockFraction, _logger, anchor)
+                geo,
+                _browserConfig.DockSide,
+                _browserConfig.DockWidthPx,
+                _browserConfig.DockFraction,
+                _logger,
+                anchor,
+                displayOverride: _realDisplay)
                 .ConfigureAwait(false);
 
             if (placement is { } p)

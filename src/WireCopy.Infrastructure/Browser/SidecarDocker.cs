@@ -28,19 +28,31 @@ internal static class SidecarDocker
         int requestedWidthPx,
         double dockFraction,
         ILogger? logger = null,
-        (int X, int Y)? anchor = null)
+        (int X, int Y)? anchor = null,
+        SidecarGeometry.DisplayInfo? displayOverride = null)
     {
         await geo.NormalizeAsync().ConfigureAwait(false);
 
-        // Anchor the window so its work-area read resolves to a REAL display (a window still
-        // parked off-screen reports a phantom/empty work area → far-left/full-width placement).
-        // workspace-9k27.8: anchor at the TERMINAL's position when known — the global origin
-        // is always the PRIMARY display, which yanked the dock (and the terminal tile) onto
-        // the wrong monitor whenever the terminal lived on a secondary display.
-        var (anchorX, anchorY) = anchor ?? (0, 0);
-        await geo.MoveAsync(anchorX, anchorY).ConfigureAwait(false);
+        // workspace-4vqv: prefer the display work area captured at launch BEFORE viewport
+        // emulation. The fetch page carries an explicit 1280x720 viewport for extraction parity,
+        // so its JS screen metrics report 1280x720 — NOT the real screen — and placing within that
+        // box left the dock short of the right edge on any display wider than 1280 (the user's Mac
+        // included). The override is the same _realDisplay CornerParker already consumes.
+        SidecarGeometry.DisplayInfo? display = displayOverride is { IsPlausible: true } ? displayOverride : null;
 
-        var display = await ReadStableDisplayAsync(geo).ConfigureAwait(false);
+        if (display is null)
+        {
+            // Anchor the window so its work-area read resolves to a REAL display (a window still
+            // parked off-screen reports a phantom/empty work area → far-left/full-width placement).
+            // workspace-9k27.8: anchor at the TERMINAL's position when known — the global origin
+            // is always the PRIMARY display, which yanked the dock (and the terminal tile) onto
+            // the wrong monitor whenever the terminal lived on a secondary display.
+            var (anchorX, anchorY) = anchor ?? (0, 0);
+            await geo.MoveAsync(anchorX, anchorY).ConfigureAwait(false);
+
+            display = await ReadStableDisplayAsync(geo).ConfigureAwait(false);
+        }
+
         if (display is null)
         {
             logger?.LogWarning(

@@ -65,6 +65,41 @@ public class SidecarDockerTests
     }
 
     [Fact]
+    public async Task Place_WithDisplayOverride_UsesRealDisplay_NotEmulatedViewport()
+    {
+        // workspace-4vqv: the fetch page's JS screen metrics report the emulated 1280x720
+        // viewport, not the real screen. When the real work area (1600x900, captured pre-
+        // emulation) is passed as the override, the dock must land flush at 1600 — NOT 1280 —
+        // and NO anchor-move/display-read should happen (the override short-circuits it).
+        var moves = new List<(int X, int Y)>();
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 0, onMove: (x, y) => moves.Add((x, y)));
+
+        var result = await SidecarDocker.PlaceAsync(
+            geo, DockSide.Right, requestedWidthPx: 390, dockFraction: 0.5,
+            displayOverride: D(0, 0, 1600, 900));
+
+        result.Should().NotBeNull();
+        result!.Value.Display.Should().Be(D(0, 0, 1600, 900), "the real display drove placement, not the emulated read");
+        var b = result.Value.Browser;
+        (b.X + b.Width).Should().Be(1600, "the dock is flush at the REAL right edge, not the emulated 1280");
+        moves.Should().BeEmpty("with a plausible override there is no need to anchor-and-read the display");
+    }
+
+    [Fact]
+    public async Task Place_WithImplausibleOverride_FallsBackToReadingDisplay()
+    {
+        // A zero-size override is not plausible → the docker falls back to the anchor+read path.
+        var geo = new FakeGeo([D(0, 0, 1280, 720)], minWidthClamp: 0);
+
+        var result = await SidecarDocker.PlaceAsync(
+            geo, DockSide.Right, requestedWidthPx: 390, dockFraction: 0.5,
+            displayOverride: D(0, 0, 0, 0));
+
+        result.Should().NotBeNull();
+        (result!.Value.Browser.X + result.Value.Browser.Width).Should().Be(1280, "fell back to the read display");
+    }
+
+    [Fact]
     public async Task Place_RecoversFromPhantomFirstRead()
     {
         // First read is a phantom from the still-off-screen window (implausible), then the real
