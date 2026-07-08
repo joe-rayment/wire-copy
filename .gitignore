@@ -190,3 +190,7 @@ creds/
 
 # Build artifacts
 dist/
+
+# Local narration voice samples (user-supplied, never committed)
+voices/*
+!voices/README.md
