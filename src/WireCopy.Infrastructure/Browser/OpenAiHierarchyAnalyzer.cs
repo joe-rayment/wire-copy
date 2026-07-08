@@ -1850,14 +1850,22 @@ internal sealed class OpenAiHierarchyAnalyzer : IHierarchyAnalyzer
                 continue; // no durable identifier — skip this section
             }
 
-            // workspace-q77e: a sponsor / podcast / promo / calendar rail is NOT
-            // a section — the model keeps trying to "hide" it as a collapsed
+            // workspace-q77e/ycdc: a sponsor / podcast / promo / calendar rail is
+            // NOT a section — the model keeps trying to "hide" it as a collapsed
             // low-priority section (it even names them "promos", "Featured
-            // podcasts", "(keep out)"), which still renders the junk. When the
-            // model's own name marks a section as such a rail, route its durable
-            // identifiers to the exclude lists instead. Never demote the lead
-            // (the first kept section), so a real layout always survives.
-            if (sections.Count > 0 && IsNonStoryRailSectionName(s.Name))
+            // podcasts", "(keep out)"), which still renders the junk. Route its
+            // durable identifiers to the exclude lists instead.
+            //
+            // workspace-ycdc: this demotion is now UNCONDITIONAL. The old
+            // never-demote-the-first-kept-section guard leaked a rail-named LEAD
+            // whenever the model's ONLY section was a rail (techmeme first-shot
+            // variance: a sole "From Mediagazer / Promos" section rendered as the
+            // layout, coverage 44/132). A rail-named sole section is a DEGENERATE
+            // signal, not a lead — demoting it to the excludes leaves zero real
+            // sections, and HierarchyRouteResolver falls to the flat document-order
+            // guardrail (all stories, rails excluded) instead of a junk lead. The
+            // narrow whole-word rail regex keeps false positives off real feeds.
+            if (IsNonStoryRailSectionName(s.Name))
             {
                 railExcludeSelectors.AddRange(selectors);
                 railExcludeUrlPatterns.AddRange(urlPatterns);

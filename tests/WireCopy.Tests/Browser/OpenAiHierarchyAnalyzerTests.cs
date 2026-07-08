@@ -244,6 +244,75 @@ public class OpenAiHierarchyAnalyzerTests
         result.Config.Sections[0].MaxLinks.Should().BeNull("a pick seeds a co-equal river, never a single pinned lead");
     }
 
+    [Fact]
+    public void ParsePatternFromAnswers_RailNamedFirstSection_DemotedWhenARealSectionFollows()
+    {
+        // workspace-ycdc: a rail-named FIRST section used to be protected by the
+        // never-demote-the-lead guard, so a "Promos" lead leaked ahead of the real
+        // feed. It must now be demoted to the excludes and the real section leads.
+        var links = StoryLinks(4, score: 90, parent: "div.main > div.item");
+        links.Add(links[0] with { Url = "https://x.com/r2/promo", ParentSelector = "div.promocol > div.ad" });
+        var json =
+            "{\"sections\":[" +
+            "{\"name\":\"From Mediagazer / Promos\",\"parent_selectors\":[\"div.promocol\"],\"url_patterns\":[],\"story_indices\":[4],\"start_collapsed\":false}," +
+            "{\"name\":\"Headlines\",\"parent_selectors\":[\"div.main\"],\"url_patterns\":[],\"story_indices\":[0,1,2,3],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections.Should().ContainSingle("the rail-named section was demoted, leaving the real feed");
+        result.Config.Sections[0].ParentSelectors.Should().Contain("div.main", "the real Headlines feed is the lead now");
+        result.Config.Sections.Should().NotContain(s => s.ParentSelectors.Contains("div.promocol"),
+            "the rail must never render as a section, lead or otherwise");
+        result.Config.ExcludeSelectors.Should().Contain("div.promocol", "the demoted rail's identifier is excluded");
+    }
+
+    [Fact]
+    public void ParsePatternFromAnswers_RailNamedSoleSection_IsDegenerate_FallsToFlat()
+    {
+        // workspace-ycdc: the 44/132 techmeme run — the model's ONLY section was
+        // rail-named (it ignored the real feed). Rather than render that junk as the
+        // layout, demote it: zero real sections -> HierarchyRouteResolver falls to
+        // the flat document-order guardrail (all real stories in page order), with
+        // the surgical rail identifier excluded. The real stories exist as links the
+        // model failed to section — exactly the field case.
+        var links = StoryLinks(6, score: 90, parent: "div.main > div.item"); // the real feed the model ignored
+        links.Add(new LinkInfo
+        {
+            Url = "https://x.com/r2/promo-widget",
+            DisplayText = "Sponsored promo",
+            Type = LinkType.Content,
+            ImportanceScore = 40, // a rail widget, not a high-importance story
+            ParentSelector = "div.promocol > div.ad",
+        });
+        var json =
+            "{\"sections\":[" +
+            "{\"name\":\"From Mediagazer / Promos\",\"parent_selectors\":[\"div.promocol\"],\"url_patterns\":[],\"story_indices\":[6],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections.Should().BeEmpty("a rail-named sole section is degenerate — no junk lead renders");
+        result.Config.ExcludeSelectors.Should().Contain("div.promocol",
+            "the surgical rail identifier (hits no high-importance story) is routed to the excludes");
+    }
+
+    [Fact]
+    public void ParsePatternFromAnswers_RealSections_NotDemoted()
+    {
+        // Guard against over-demotion: genuine story sections must survive.
+        var links = StoryLinks(4, score: 90, parent: "div.main > div.item");
+        var json =
+            "{\"sections\":[" +
+            "{\"name\":\"Lead story\",\"parent_selectors\":[\"div.lead\"],\"url_patterns\":[],\"story_indices\":[0],\"start_collapsed\":false}," +
+            "{\"name\":\"Top headlines\",\"parent_selectors\":[\"div.main\"],\"url_patterns\":[],\"story_indices\":[1,2,3],\"start_collapsed\":false}]," +
+            "\"exclude_selectors\":[],\"exclude_url_patterns\":[],\"exclude_indices\":[],\"confidence\":0.9,\"confirm_question\":null}";
+
+        var result = OpenAiHierarchyAnalyzer.ParsePatternFromAnswers(json, links, "https://x.com/", "gpt-5-mini");
+
+        result.Config.Sections.Should().HaveCount(2, "neither real section trips the rail regex");
+    }
+
     [Theory]
     [InlineData("top_story", "Top stories")]      // schema-key at index 0 -> positional default
     [InlineData("", "Top stories")]               // empty -> positional default
