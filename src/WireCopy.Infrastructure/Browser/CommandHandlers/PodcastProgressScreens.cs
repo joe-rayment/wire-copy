@@ -1433,6 +1433,16 @@ internal static class PodcastProgressScreens
     {
         var suggestions = new List<string>();
 
+        // workspace-2xej.10: local-engine failures must never advise checking
+        // platform.openai.com — key on the sentinel FIRST.
+        if (errorMessage.StartsWith("Local narration: ", StringComparison.Ordinal))
+        {
+            suggestions.Add("Run the Test in Settings (c → Local engine) to see details");
+            suggestions.Add("If this is the first run, the model download may have been interrupted — just retry");
+            suggestions.Add("uv installed? → curl -LsSf https://astral.sh/uv/install.sh | sh");
+            return suggestions;
+        }
+
         if (errorMessage.Contains("No readable articles", StringComparison.OrdinalIgnoreCase))
         {
             suggestions.Add("Open articles in the browser first to populate the page cache");

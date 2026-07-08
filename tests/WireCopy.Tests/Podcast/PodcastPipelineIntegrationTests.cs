@@ -117,7 +117,7 @@ public class PodcastPipelineIntegrationTests : IDisposable
         var result = await orchestrator.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("TTS service is not configured");
+        result.ErrorMessage.Should().Contain("Narration isn't ready");
     }
 
     private IServiceProvider BuildServiceProvider()

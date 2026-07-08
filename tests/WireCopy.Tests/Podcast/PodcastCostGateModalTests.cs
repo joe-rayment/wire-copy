@@ -136,6 +136,20 @@ public class PodcastCostGateModalTests
     }
 
     [Fact]
+    public void BuildSummaryLine_LocalEngine_ReadsFreeAndTimeBoundNotScary()
+    {
+        var analysis = AnalysisOf(cached: 0, uncached: 3, cost: 0m);
+
+        var line = PodcastCostGateModal.BuildSummaryLine(analysis, engineIsLocal: true);
+
+        line.Should().Contain("Generate 3 articles");
+        line.Should().Contain("$0.00");
+        line.Should().Contain("locally (Chatterbox)");
+        line.Should().Contain("CPU", "the local run's cost is time, not money — set that expectation");
+        line.Should().NotContain("est.", "a local run has a known $0.00, not an estimate");
+    }
+
+    [Fact]
     public void LoadCostGateConfig_NoSettings_ReturnsDefaults()
     {
         var store = Substitute.For<IUserSettingsStore>();

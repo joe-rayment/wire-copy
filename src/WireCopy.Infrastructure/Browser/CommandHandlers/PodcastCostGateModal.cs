@@ -59,7 +59,8 @@ internal static class PodcastCostGateModal
         RenderOptions options,
         CacheAnalysis analysis,
         PodcastCostGateConfig config,
-        CancellationToken ct)
+        CancellationToken ct,
+        bool engineIsLocal = false)
     {
         ArgumentNullException.ThrowIfNull(ctx);
         ArgumentNullException.ThrowIfNull(analysis);
@@ -71,7 +72,7 @@ internal static class PodcastCostGateModal
         }
 
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-        var summary = BuildSummaryLine(analysis);
+        var summary = BuildSummaryLine(analysis, engineIsLocal);
         var hint = $"{palette.GetAccentFg().AnsiFg}[Enter]{Reset} {palette.PrimaryText.AnsiFg}go{Reset}  " +
                    $"{palette.GetAccentFg().AnsiFg}[Esc]{Reset} {palette.PrimaryText.AnsiFg}cancel{Reset}";
         var hintPlain = "[Enter] go  [Esc] cancel";
@@ -124,7 +125,7 @@ internal static class PodcastCostGateModal
         }
     }
 
-    internal static string BuildSummaryLine(CacheAnalysis analysis)
+    internal static string BuildSummaryLine(CacheAnalysis analysis, bool engineIsLocal = false)
     {
         var totalArticles = analysis.TotalArticles;
         var cached = analysis.CachedArticles;
@@ -134,6 +135,14 @@ internal static class PodcastCostGateModal
         var durationStr = minutes <= 1 ? "~1 min" : $"~{minutes.ToString(CultureInfo.InvariantCulture)} min";
 
         var article = totalArticles == 1 ? "article" : "articles";
+
+        // workspace-2xej.10: a local run costs nothing — say so honestly rather
+        // than showing a bare "$0.00" that reads like a bug, and set expectations
+        // that local generation is time-bound, not money-bound.
+        if (engineIsLocal)
+        {
+            return $"Generate {totalArticles} {article} · $0.00 — generated locally (Chatterbox) · takes roughly the audio's length on a GPU, longer on CPU";
+        }
 
         // When cached articles dominate, surface the cache savings inline so
         // the user sees they're not actually paying for the whole list.

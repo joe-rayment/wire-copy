@@ -82,6 +82,19 @@ internal static class PodcastFailureClassifier
         var error = errorMessage ?? string.Empty;
         var firstFailureReason = failedArticles.Count > 0 ? failedArticles[0].Reason : string.Empty;
 
+        // ---- Local narration engine (Chatterbox) — keyed on the sentinel prefix
+        // ChatterboxTtsService stamps on every failure (workspace-2xej.10). Must
+        // come FIRST so a local failure never advises checking platform.openai.com. ----
+        if (error.StartsWith("Local narration: ", StringComparison.Ordinal))
+        {
+            var detail = error["Local narration: ".Length..];
+            return new PodcastFailureClassification(
+                Step: "Local narration (Chatterbox)",
+                Reason: string.IsNullOrWhiteSpace(detail) ? "The local voice engine failed" : detail,
+                Fix: "Run the Test in Settings (c → Local engine) to see details; if it's the first run the model download may have been interrupted — just retry. uv installed? → curl -LsSf https://astral.sh/uv/install.sh | sh",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.ChatterboxStatus);
+        }
+
         // ---- Pre-flight failures (FFmpeg, missing API key) ----
         if (error.Contains("FFmpeg", StringComparison.OrdinalIgnoreCase) ||
             error.Contains("ffmpeg", StringComparison.Ordinal))
@@ -90,6 +103,17 @@ internal static class PodcastFailureClassifier
                 Step: "Pre-flight (audio assembly)",
                 Reason: "FFmpeg is not installed or not on PATH",
                 Fix: "Install ffmpeg: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)");
+        }
+
+        // Engine-neutral orchestrator preflight copy (workspace-2xej.10) — the
+        // active engine is unknown here, so point at the engine picker.
+        if (error.Contains("Narration isn't ready", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: "Pre-flight (narration)",
+                Reason: "The narration engine isn't ready yet",
+                Fix: "Open Settings (c) → Narration engine to finish setup, then press p again",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.NarrationEngine);
         }
 
         if (error.Contains("API key", StringComparison.OrdinalIgnoreCase) ||

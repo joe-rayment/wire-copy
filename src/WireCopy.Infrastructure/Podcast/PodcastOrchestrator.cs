@@ -142,7 +142,10 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         // would duplicate string-pattern-matching with no user-visible gain.
         if (!_ttsService.IsConfigured)
         {
-            return PodcastResult.Failure("TTS service is not configured. Set an OpenAI API key.");
+            // Engine-neutral (workspace-2xej.10): the orchestrator has no engine
+            // context, and the copy must be true for both OpenAI and the local
+            // engine. The per-engine specifics live in the p-flow preflight.
+            return PodcastResult.Failure("Narration isn't ready — press c (Settings) → Narration engine to finish setup.");
         }
 
         // workspace-pvr6: untyped — classifier's "FFmpeg" pattern produces the

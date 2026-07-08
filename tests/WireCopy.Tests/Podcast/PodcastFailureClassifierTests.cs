@@ -44,6 +44,44 @@ public class PodcastFailureClassifierTests
     }
 
     [Fact]
+    public void Classify_LocalNarrationSentinel_ClassifiesAsLocalEngine()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            "Local narration: engine not ready — uv is not installed",
+            NoFailures);
+
+        c.Step.Should().Contain("Local narration");
+        c.Reason.Should().Contain("uv is not installed");
+        c.Fix.Should().Contain("Test in Settings");
+        c.Fix.Should().Contain("curl -LsSf https://astral.sh/uv/install.sh");
+        c.Fix.Should().NotContain("platform.openai.com", "a local failure must never advise checking OpenAI");
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.ChatterboxStatus);
+    }
+
+    [Fact]
+    public void Classify_NeutralNarrationPreflight_PointsAtEngineRow()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            "Narration isn't ready — press c (Settings) → Narration engine to finish setup.",
+            NoFailures);
+
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.NarrationEngine);
+        c.Fix.Should().Contain("Narration engine");
+    }
+
+    [Fact]
+    public void GetSuggestionsForError_LocalNarration_NeverAdvisesOpenAi()
+    {
+        var suggestions = PodcastProgressScreens.GetSuggestionsForError(
+            "Local narration: the worker crashed", NoFailures);
+
+        suggestions.Should().Contain(s => s.Contains("Test in Settings"));
+        suggestions.Should().Contain(s => s.Contains("astral.sh/uv"));
+        suggestions.Should().NotContain(s => s.Contains("platform.openai.com"));
+        suggestions.Should().NotContain(s => s.Contains("OpenAI API key"));
+    }
+
+    [Fact]
     public void Classify_RateLimit429_PointsAtUsagePage()
     {
         var c = PodcastFailureClassifier.Classify(

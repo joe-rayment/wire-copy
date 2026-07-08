@@ -212,6 +212,31 @@ internal static class PodcastCommandHandler
                 }
             }
 
+            // workspace-2xej.10: the missing-config path assumes the missing piece
+            // is the OpenAI key, so it must only run for the OpenAI engine. When
+            // the local engine is active but not ready (uv/worker/sample), the
+            // API-key modal would be a lie — instead surface ValidateApiKeyAsync's
+            // engine-specific message and send the user to Settings.
+            var engineIsChatterbox = string.Equals(
+                settingsStore.Get(SettingsCommandHandler.KeyTtsEngine), "chatterbox", StringComparison.OrdinalIgnoreCase);
+
+            if (engineIsChatterbox && !ttsService.IsConfigured)
+            {
+                var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
+
+                // Sentinel-prefix the message so the failure classifier renders
+                // the local-engine troubleshooting (Test in Settings, uv install)
+                // and points the 's' deep-link at the Local engine row.
+                await PodcastProgressScreens.ShowErrorScreenAsync(
+                    ctx,
+                    options,
+                    "Local narration: " + (validation.ErrorMessage ?? "engine not ready — fix it in Settings → Narration engine, then press p again."),
+                    Array.Empty<ArticleFailure>(),
+                    ct).ConfigureAwait(false);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return false;
+            }
+
             // workspace-yib5 Phase 5: pre-cache-analysis missing-key modal.
             // When the user pressed `p` without an OpenAI key, surface a
             // one-line modal BEFORE the slow cache-analysis + cost-gate so
@@ -220,7 +245,7 @@ internal static class PodcastCommandHandler
             // resume callback that re-enters the generate flow on save
             // success, satisfying the bead's "zero extra keystrokes beyond
             // the actual key paste + Enter" acceptance criterion.
-            if (!ttsService.IsConfigured)
+            if (!engineIsChatterbox && !ttsService.IsConfigured)
             {
                 var choice = await PodcastMissingKeyModal.ShowAsync(ctx, options, ct).ConfigureAwait(false);
                 if (choice == PodcastMissingKeyModal.Outcome.Cancel)
@@ -345,7 +370,7 @@ internal static class PodcastCommandHandler
                 if (costGateConfig.ShouldShowGate(analysis))
                 {
                     var proceed = await PodcastCostGateModal
-                        .ShowAsync(ctx, options, analysis, costGateConfig, ct)
+                        .ShowAsync(ctx, options, analysis, costGateConfig, ct, engineIsLocal: engineIsChatterbox)
                         .ConfigureAwait(false);
                     if (!proceed)
                     {
