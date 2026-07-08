@@ -9,6 +9,7 @@ using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Configuration.Validation;
 using WireCopy.Infrastructure.Podcast.Cache;
+using WireCopy.Infrastructure.Podcast.Chatterbox;
 
 namespace WireCopy.Infrastructure.Podcast;
 
@@ -57,6 +58,7 @@ public static class PodcastDependencyInjection
 
         // Register services
         services.AddSingleton<ITtsService, OpenAiTtsService>();
+        services.AddSingleton<IChatterboxSidecar, ChatterboxSidecar>();
         services.AddSingleton<IAudioAssembler, M4bAudioAssembler>();
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
