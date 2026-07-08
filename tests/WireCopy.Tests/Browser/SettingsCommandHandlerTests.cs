@@ -57,6 +57,18 @@ public class SettingsCommandHandlerTests
         serviceProvider.GetService(typeof(IOptions<OpenAiTtsConfiguration>)).Returns(ttsOptions);
         serviceProvider.GetService(typeof(IOptions<OpenAiHierarchyConfiguration>)).Returns(hierarchyOptions);
         serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>)).Returns(podcastOptions);
+
+        // workspace-2xej.7: the config screen resolves the local engine for the
+        // narration rows' readiness values on every render frame.
+        var chatterboxConfig = Options.Create(new ChatterboxConfiguration());
+        serviceProvider.GetService(typeof(WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxTtsService)).Returns(
+            new WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxTtsService(
+                new WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxSidecar(
+                    chatterboxConfig,
+                    Microsoft.Extensions.Logging.Abstractions.NullLogger<WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxSidecar>.Instance),
+                chatterboxConfig,
+                Microsoft.Extensions.Logging.Abstractions.NullLogger<WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxTtsService>.Instance,
+                _settingsStore));
         scope.ServiceProvider.Returns(serviceProvider);
         scopeFactory.CreateScope().Returns(scope);
 

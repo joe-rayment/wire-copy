@@ -292,6 +292,9 @@ internal sealed class ChatterboxTtsService : ITtsService
 
     /// <summary>Bound cfg weight (config-only knob) for the engine-aware cache key (workspace-2xej.5).</summary>
     internal float GetCfgWeight() => _config.CfgWeight;
+
+    /// <summary>Cached uv PATH probe for Settings-row readiness (workspace-2xej.7).</summary>
+    internal bool IsUvAvailable() => UvAvailable();
 #pragma warning restore SA1202
 
     /// <summary>

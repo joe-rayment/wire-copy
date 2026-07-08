@@ -3,6 +3,7 @@
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
+using WireCopy.Application.DTOs;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces;
@@ -14,6 +15,7 @@ using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast;
+using WireCopy.Infrastructure.Podcast.Chatterbox;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -82,6 +84,12 @@ internal static class SettingsCommandHandler
         AutoPurgeHours,
         CostGateAlwaysShow,
         LayoutModel,
+
+        // workspace-2xej.7: narration engine picker + Chatterbox (local) rows.
+        NarrationEngine,
+        ChatterboxSample,
+        ChatterboxExaggeration,
+        ChatterboxStatus,
     }
 
     /// <summary>
@@ -130,25 +138,19 @@ internal static class SettingsCommandHandler
         CancellationToken ct,
         bool showWelcomeBanner = false)
     {
-        var rows = new[]
-        {
-            SetupRow.OpenAiKey,
-            SetupRow.LayoutModel,
-            SetupRow.GcsKey,
-            SetupRow.GcsBucket,
-            SetupRow.OutputFolder,
-            SetupRow.Voice,
-            SetupRow.Model,
-            SetupRow.TtsInstructions,
-            SetupRow.AutoPurgeHours,
-            SetupRow.CostGateAlwaysShow,
-        };
         var selectedIndex = 0;
 
         while (!ct.IsCancellationRequested)
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+
+            // workspace-2xej.7: the row list depends on the active narration engine,
+            // so it is rebuilt every iteration — only the active engine's rows show.
+            var engineIsChatterbox = string.Equals(
+                settingsStore.Get(KeyTtsEngine), "chatterbox", StringComparison.OrdinalIgnoreCase);
+            var rows = BuildSetupRows(engineIsChatterbox);
+            selectedIndex = Math.Min(selectedIndex, rows.Length - 1);
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
             var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
             helpers.Clear();
@@ -196,6 +198,38 @@ internal static class SettingsCommandHandler
             var layoutIsLocal = !string.IsNullOrWhiteSpace(layoutEndpoint);
             var layoutModelName = settingsStore.Get(KeyLayoutModel) ?? "gpt-5-nano";
             var layoutDisplay = layoutIsLocal ? $"Local · {layoutModelName}" : $"OpenAI · {layoutModelName}";
+
+            // workspace-2xej.7: Chatterbox (local narration) row values. Filesystem/
+            // PATH checks only — never spawn the sidecar from the render path.
+            var chatterboxTts = scope.ServiceProvider.GetRequiredService<ChatterboxTtsService>();
+            var samplePath = chatterboxTts.GetConfiguredSamplePath();
+            var sampleExists = samplePath is not null && File.Exists(samplePath);
+            var uvOk = chatterboxTts.IsUvAvailable();
+            var workerOk = File.Exists(chatterboxTts.GetWorkerPath());
+            var exaggerationDisplay = chatterboxTts.GetEffectiveExaggeration()
+                .ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture);
+            var chatterboxStatusWarning = !uvOk || !workerOk;
+            string chatterboxStatusValue;
+            if (!uvOk)
+            {
+                chatterboxStatusValue = "uv not installed — Enter shows how";
+            }
+            else if (!workerOk)
+            {
+                chatterboxStatusValue = "worker script missing (rebuild)";
+            }
+            else if (DateTime.TryParse(
+                settingsStore.Get(KeyChatterboxLastTestOk),
+                System.Globalization.CultureInfo.InvariantCulture,
+                System.Globalization.DateTimeStyles.RoundtripKind,
+                out var lastTestAt))
+            {
+                chatterboxStatusValue = $"ready ✓ tested {FormatRelativeTime(DateTime.UtcNow - lastTestAt.ToUniversalTime())}";
+            }
+            else
+            {
+                chatterboxStatusValue = "ready — first use installs";
+            }
 
             // ---- Credentials (single OpenAI key powers both TTS and AI Curated) ----
             helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Credentials{Reset}");
@@ -257,6 +291,133 @@ internal static class SettingsCommandHandler
                 hasBucket ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 hasBucket ? "Change" : "Set up");
 
+            // ---- Podcast narration (workspace-2xej.7) ----
+            helpers.WriteLine();
+            helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Podcast — narration{Reset}");
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.NarrationEngine,
+                "●",
+                palette.PromptFg.AnsiFg,
+                "Narration engine",
+                engineIsChatterbox ? "Chatterbox (local)" : "OpenAI (cloud)",
+                palette.PromptFg.AnsiFg,
+                "Change",
+                helperText: "Generate audio via the OpenAI API or locally with Chatterbox");
+
+            if (engineIsChatterbox)
+            {
+                string sampleValue;
+                if (samplePath is null)
+                {
+                    sampleValue = "built-in voice";
+                }
+                else
+                {
+                    sampleValue = Path.GetFileName(samplePath) + (sampleExists ? " ✓" : string.Empty);
+                }
+
+                RenderRow(
+                    helpers,
+                    palette,
+                    width,
+                    rows,
+                    selectedIndex,
+                    SetupRow.ChatterboxSample,
+                    samplePath is null ? "○" : "●",
+                    samplePath is null ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
+                    "Voice sample",
+                    sampleValue,
+                    samplePath is null ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
+                    "Change",
+                    helperText: "~10 s clean clip to clone — drop files in voices/ (gitignored). Tone comes from this sample.",
+                    warningText: samplePath is not null && !sampleExists ? "file not found — Enter to fix" : null,
+                    isWarning: samplePath is not null && !sampleExists);
+
+                RenderRow(
+                    helpers,
+                    palette,
+                    width,
+                    rows,
+                    selectedIndex,
+                    SetupRow.ChatterboxExaggeration,
+                    "●",
+                    palette.PromptFg.AnsiFg,
+                    "Expressiveness",
+                    exaggerationDisplay,
+                    palette.PromptFg.AnsiFg,
+                    "Change",
+                    helperText: "0 = flat · 0.5 = natural · 1 = dramatic (Chatterbox exaggeration)");
+
+                RenderRow(
+                    helpers,
+                    palette,
+                    width,
+                    rows,
+                    selectedIndex,
+                    SetupRow.ChatterboxStatus,
+                    chatterboxStatusWarning ? "○" : "●",
+                    chatterboxStatusWarning ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
+                    "Local engine",
+                    chatterboxStatusValue,
+                    chatterboxStatusWarning ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
+                    "Test",
+                    helperText: "Runs on your machine via uv · first generation downloads model weights (one-time, a few GB)",
+                    isWarning: chatterboxStatusWarning);
+            }
+            else
+            {
+                RenderRow(
+                    helpers,
+                    palette,
+                    width,
+                    rows,
+                    selectedIndex,
+                    SetupRow.Voice,
+                    "●",
+                    palette.PromptFg.AnsiFg,
+                    "TTS voice",
+                    voice,
+                    palette.PromptFg.AnsiFg,
+                    "Change");
+
+                RenderRow(
+                    helpers,
+                    palette,
+                    width,
+                    rows,
+                    selectedIndex,
+                    SetupRow.Model,
+                    "●",
+                    palette.PromptFg.AnsiFg,
+                    "TTS model",
+                    model,
+                    palette.PromptFg.AnsiFg,
+                    "Change");
+
+                var instructionsValue = string.IsNullOrWhiteSpace(instructions)
+                    ? "(none)"
+                    : TruncateMiddle(instructions, Math.Max(20, width - 40));
+                RenderRow(
+                    helpers,
+                    palette,
+                    width,
+                    rows,
+                    selectedIndex,
+                    SetupRow.TtsInstructions,
+                    string.IsNullOrWhiteSpace(instructions) ? "○" : "●",
+                    string.IsNullOrWhiteSpace(instructions) ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
+                    "TTS instructions",
+                    instructionsValue,
+                    palette.PromptFg.AnsiFg,
+                    "Change",
+                    helperText: "Style hint sent with each request (gpt-4o-mini-tts only)");
+            }
+
             // ---- Podcast output ----
             helpers.WriteLine();
             helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Podcast — output{Reset}");
@@ -274,52 +435,6 @@ internal static class SettingsCommandHandler
                 folderDisplay,
                 palette.PromptFg.AnsiFg,
                 "Change");
-
-            RenderRow(
-                helpers,
-                palette,
-                width,
-                rows,
-                selectedIndex,
-                SetupRow.Voice,
-                "●",
-                palette.PromptFg.AnsiFg,
-                "TTS voice",
-                voice,
-                palette.PromptFg.AnsiFg,
-                "Change");
-
-            RenderRow(
-                helpers,
-                palette,
-                width,
-                rows,
-                selectedIndex,
-                SetupRow.Model,
-                "●",
-                palette.PromptFg.AnsiFg,
-                "TTS model",
-                model,
-                palette.PromptFg.AnsiFg,
-                "Change");
-
-            var instructionsValue = string.IsNullOrWhiteSpace(instructions)
-                ? "(none)"
-                : TruncateMiddle(instructions, Math.Max(20, width - 40));
-            RenderRow(
-                helpers,
-                palette,
-                width,
-                rows,
-                selectedIndex,
-                SetupRow.TtsInstructions,
-                string.IsNullOrWhiteSpace(instructions) ? "○" : "●",
-                string.IsNullOrWhiteSpace(instructions) ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
-                "TTS instructions",
-                instructionsValue,
-                palette.PromptFg.AnsiFg,
-                "Change",
-                helperText: "Style hint sent with each request (gpt-4o-mini-tts only)");
 
             RenderRow(
                 helpers,
@@ -405,7 +520,24 @@ internal static class SettingsCommandHandler
                 // After the first interactive edit the welcome banner has done its
                 // job — drop it so the screen reads as a regular settings page.
                 showWelcomeBanner = false;
-                await DispatchRowAsync(ctx, options, rows[selectedIndex], ct).ConfigureAwait(false);
+                var dispatched = rows[selectedIndex];
+                await DispatchRowAsync(ctx, options, dispatched, ct).ConfigureAwait(false);
+
+                // An engine switch swaps the contextual rows out from under the
+                // cursor — keep it on the engine row instead of an unrelated one.
+                if (dispatched == SetupRow.NarrationEngine)
+                {
+                    selectedIndex = Array.IndexOf(rows, SetupRow.NarrationEngine);
+                }
+
+                continue;
+            }
+
+            // workspace-2xej.9: 't' on the Narration engine row tests the ACTIVE
+            // engine (parity with Enter on the Local engine row).
+            if (command.RawKeyChar == 't' && rows[selectedIndex] == SetupRow.NarrationEngine)
+            {
+                await RunNarrationTestAsync(ctx, options, ct).ConfigureAwait(false);
                 continue;
             }
 
@@ -494,7 +626,80 @@ internal static class SettingsCommandHandler
             case SetupRow.CostGateAlwaysShow:
                 HandleToggleCostGateAlwaysShow(ctx);
                 return;
+
+            case SetupRow.NarrationEngine:
+                await HandlePickEngineAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
+
+            case SetupRow.ChatterboxSample:
+                await HandleSetChatterboxSampleAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
+
+            case SetupRow.ChatterboxExaggeration:
+                await HandleSetChatterboxExaggerationAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
+
+            case SetupRow.ChatterboxStatus:
+                await RunNarrationTestAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
         }
+    }
+
+    /// <summary>
+    /// The Setup screen's row list for the active narration engine — credentials
+    /// first, then the narration section (engine row + the active engine's three
+    /// rows), then the output rows (workspace-2xej.7).
+    /// </summary>
+    internal static SetupRow[] BuildSetupRows(bool engineIsChatterbox)
+    {
+        var rowList = new List<SetupRow>
+        {
+            SetupRow.OpenAiKey,
+            SetupRow.LayoutModel,
+            SetupRow.GcsKey,
+            SetupRow.GcsBucket,
+            SetupRow.NarrationEngine,
+        };
+        rowList.AddRange(engineIsChatterbox
+            ? new[] { SetupRow.ChatterboxSample, SetupRow.ChatterboxExaggeration, SetupRow.ChatterboxStatus }
+            : new[] { SetupRow.Voice, SetupRow.Model, SetupRow.TtsInstructions });
+        rowList.AddRange(new[] { SetupRow.OutputFolder, SetupRow.AutoPurgeHours, SetupRow.CostGateAlwaysShow });
+        return [.. rowList];
+    }
+
+    /// <summary>
+    /// Pure readiness lines for the engine picker (workspace-2xej.7) — extracted
+    /// so tests cover every branch without driving the render loop.
+    /// </summary>
+    internal static (string OpenAi, string Chatterbox) BuildEngineReadiness(
+        bool hasOpenAiKey,
+        string voice,
+        bool uvAvailable,
+        bool workerExists,
+        string? sampleFileName)
+    {
+        var openAi = hasOpenAiKey
+            ? $"ready — key configured · voice {voice}"
+            : "needs API key — you'll be asked next";
+        string chatterbox;
+        if (!uvAvailable)
+        {
+            chatterbox = "needs uv — not installed";
+        }
+        else if (!workerExists)
+        {
+            chatterbox = "broken install — worker script missing";
+        }
+        else if (sampleFileName is not null)
+        {
+            chatterbox = $"ready · sample {sampleFileName}";
+        }
+        else
+        {
+            chatterbox = "ready · built-in voice (add a sample for your own)";
+        }
+
+        return (openAi, chatterbox);
     }
 
     /// <summary>
@@ -2012,6 +2217,531 @@ internal static class SettingsCommandHandler
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
+
+    /// <summary>
+    /// Enter on the Narration engine row (workspace-2xej.7): shows the two-engine
+    /// picker with live readiness lines, persists the choice, then GUIDES rather
+    /// than traps — OpenAI without a key chains into the key flow; Chatterbox
+    /// without uv gets the install hint as a status message. The engine switch
+    /// sticks regardless of whether the follow-up completes.
+    /// </summary>
+    private static async Task HandlePickEngineAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var openAiTts = scope.ServiceProvider.GetRequiredService<OpenAiTtsService>();
+        var chatterboxTts = scope.ServiceProvider.GetRequiredService<ChatterboxTtsService>();
+
+        var currentIsChatterbox = string.Equals(
+            settingsStore.Get(KeyTtsEngine), "chatterbox", StringComparison.OrdinalIgnoreCase);
+        var voice = settingsStore.Get(KeyOpenAiTtsVoice) ?? ResolveTtsDefault(scope, c => c.Voice, "coral");
+        var uvAvailable = chatterboxTts.IsUvAvailable();
+        var workerExists = File.Exists(chatterboxTts.GetWorkerPath());
+        var samplePath = chatterboxTts.GetConfiguredSamplePath();
+        var (openAiReadiness, chatterboxReadiness) = BuildEngineReadiness(
+            openAiTts.IsConfigured,
+            voice,
+            uvAvailable,
+            workerExists,
+            samplePath is not null ? Path.GetFileName(samplePath) : null);
+
+        var picked = await PodcastSetupHelpers.PromptAndPickEngineAsync(
+            ctx, options, settingsStore, currentIsChatterbox, openAiReadiness, chatterboxReadiness, ct)
+            .ConfigureAwait(false);
+
+        if (picked == "openai" && !openAiTts.IsConfigured)
+        {
+            await HandleSetApiKey(ctx, options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (picked == "chatterbox" && !uvAvailable)
+        {
+            ctx.NavigationService.SetStatusMessage(
+                "Install uv to enable local narration: curl -LsSf https://astral.sh/uv/install.sh | sh",
+                StatusSeverity.Error);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Enter on the Voice sample row (workspace-2xej.8): prompts for a clip path
+    /// with ~ expansion + voices/ resolution, validates extension/size, probes the
+    /// duration as an advisory, and persists the RESOLVED absolute path. 'none'
+    /// reverts to the built-in voice. The file itself is never copied or moved.
+    /// </summary>
+    private static async Task HandleSetChatterboxSampleAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var current = settingsStore.Get(KeyChatterboxVoiceSample);
+
+        var prompt = string.IsNullOrWhiteSpace(current)
+            ? "Voice sample path — ~10s wav/mp3 of the voice to clone (drop it in voices/, Enter blank to keep built-in): "
+            : $"Voice sample [{Path.GetFileName(current)}] (blank=keep, 'none'=built-in voice, path=replace): ";
+
+        var input = await ctx.InputHandler.PromptForInputAsync(prompt, ct).ConfigureAwait(false);
+
+        if (input is null || string.IsNullOrWhiteSpace(input))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var trimmed = input.Trim();
+        if (trimmed.Equals("none", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("clear", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("builtin", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                settingsStore.Remove(KeyChatterboxVoiceSample);
+                ctx.NavigationService.SetStatusMessage("Voice sample → built-in voice");
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to clear voice sample");
+                ctx.NavigationService.SetStatusMessage("Failed to clear voice sample", StatusSeverity.Error);
+            }
+
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var resolved = ResolveSampleInput(trimmed, Environment.CurrentDirectory, home, File.Exists);
+        if (resolved is null)
+        {
+            ctx.NavigationService.SetStatusMessage(
+                $"Not found: {trimmed} — looked in ., voices/",
+                StatusSeverity.Error);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var validationError = ValidateSampleFile(resolved, new FileInfo(resolved).Length);
+        if (validationError is not null)
+        {
+            ctx.NavigationService.SetStatusMessage(validationError, StatusSeverity.Error);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            settingsStore.Set(KeyChatterboxVoiceSample, resolved);
+
+            // Duration advisory (never blocks): a ~10 s clean clip clones best.
+            var durationNote = await ProbeSampleDurationNoteAsync(resolved, ctx.Logger).ConfigureAwait(false);
+            ctx.NavigationService.SetStatusMessage(
+                durationNote ?? $"Voice sample → {Path.GetFileName(resolved)}");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist voice sample path");
+            ctx.NavigationService.SetStatusMessage("Failed to save voice sample", StatusSeverity.Error);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Enter on the Expressiveness row (workspace-2xej.8): 0.0–2.0 float with
+    /// invariant parsing (',' normalized to '.'), 'reset' reverts to the config
+    /// default, very high values get a pacing warning appended.
+    /// </summary>
+    private static async Task HandleSetChatterboxExaggerationAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var input = await ctx.InputHandler.PromptForInputAsync(
+            "Expressiveness 0.0–2.0 (0=flat, 0.5=natural, 1=dramatic; 'reset' for default): ",
+            ct).ConfigureAwait(false);
+
+        if (input is null || string.IsNullOrWhiteSpace(input))
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var trimmed = input.Trim();
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+
+        if (trimmed.Equals("reset", StringComparison.OrdinalIgnoreCase)
+            || trimmed.Equals("default", StringComparison.OrdinalIgnoreCase))
+        {
+            try
+            {
+                settingsStore.Remove(KeyChatterboxExaggeration);
+                ctx.NavigationService.SetStatusMessage("Expressiveness reset to default");
+            }
+            catch (Exception ex)
+            {
+                ctx.Logger.LogWarning(ex, "Failed to clear expressiveness override");
+                ctx.NavigationService.SetStatusMessage("Failed to reset expressiveness", StatusSeverity.Error);
+            }
+
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var (ok, value, error) = ParseExaggeration(trimmed);
+        if (!ok)
+        {
+            ctx.NavigationService.SetStatusMessage(error!, StatusSeverity.Error);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            settingsStore.Set(
+                KeyChatterboxExaggeration,
+                value.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture));
+
+            // Chatterbox docs: high exaggeration speeds speech up noticeably.
+            var suffix = value > 1.2f ? " — very high values can rush the pacing" : string.Empty;
+            ctx.NavigationService.SetStatusMessage(
+                $"Expressiveness → {value.ToString("0.0###", System.Globalization.CultureInfo.InvariantCulture)}{suffix}");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to persist expressiveness");
+            ctx.NavigationService.SetStatusMessage("Failed to save expressiveness", StatusSeverity.Error);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Resolves the user's sample input to an existing absolute path: ~ expands to
+    /// home; relative inputs try the cwd, then cwd/voices/ (so typing just
+    /// "mine.wav" finds voices/mine.wav). Null when nothing exists.
+    /// </summary>
+    internal static string? ResolveSampleInput(string input, string cwd, string home, Func<string, bool> fileExists)
+    {
+        var candidate = input.Trim();
+        if (candidate.StartsWith('~'))
+        {
+            candidate = Path.Combine(home, candidate.TrimStart('~', '/', '\\'));
+        }
+
+        if (Path.IsPathRooted(candidate))
+        {
+            return fileExists(candidate) ? Path.GetFullPath(candidate) : null;
+        }
+
+        var inCwd = Path.GetFullPath(Path.Combine(cwd, candidate));
+        if (fileExists(inCwd))
+        {
+            return inCwd;
+        }
+
+        var inVoices = Path.GetFullPath(Path.Combine(cwd, "voices", candidate));
+        return fileExists(inVoices) ? inVoices : null;
+    }
+
+    /// <summary>Null when acceptable; otherwise the status-line error text.</summary>
+    internal static string? ValidateSampleFile(string path, long sizeBytes)
+    {
+        var ext = Path.GetExtension(path).ToLowerInvariant();
+        if (ext is not (".wav" or ".mp3" or ".flac" or ".m4a" or ".ogg"))
+        {
+            return $"Unsupported extension '{ext}' — use wav, mp3, flac, m4a, or ogg";
+        }
+
+        const long maxBytes = 50L * 1024 * 1024;
+        if (sizeBytes > maxBytes)
+        {
+            return $"That's not a short clip ({sizeBytes / (1024 * 1024)} MB) — use a ~10s sample under 50 MB";
+        }
+
+        return null;
+    }
+
+    /// <summary>Parses the expressiveness input: invariant float, ','→'.', range [0,2].</summary>
+    internal static (bool Ok, float Value, string? Error) ParseExaggeration(string input)
+    {
+        var normalized = input.Trim().Replace(',', '.');
+        if (!float.TryParse(
+                normalized,
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var value)
+            || float.IsNaN(value)
+            || float.IsInfinity(value)
+            || value < 0f
+            || value > 2f)
+        {
+            return (false, 0f, "Enter a number between 0.0 and 2.0");
+        }
+
+        return (true, value, null);
+    }
+
+    /// <summary>"just now" / "5m ago" / "2h ago" / "3d ago" for the tested-at stamp.</summary>
+    internal static string FormatRelativeTime(TimeSpan age)
+    {
+        if (age < TimeSpan.Zero)
+        {
+            age = TimeSpan.Zero;
+        }
+
+        if (age.TotalMinutes < 1)
+        {
+            return "just now";
+        }
+
+        if (age.TotalHours < 1)
+        {
+            return $"{(int)age.TotalMinutes}m ago";
+        }
+
+        return age.TotalDays < 1 ? $"{(int)age.TotalHours}h ago" : $"{(int)age.TotalDays}d ago";
+    }
+
+    /// <summary>
+    /// Advisory duration probe for a just-saved sample. Returns a warning status
+    /// line when the clip is shorter than 3 s or longer than 30 s, null when the
+    /// duration is fine or ffprobe is unavailable (silently skipped).
+    /// </summary>
+    private static async Task<string?> ProbeSampleDurationNoteAsync(string path, ILogger logger)
+    {
+        try
+        {
+            var info = await FFMpegCore.FFProbe.AnalyseAsync(path).ConfigureAwait(false);
+            var seconds = info.Duration.TotalSeconds;
+            if (seconds is > 0 and (< 3 or > 30))
+            {
+                return $"Saved — {seconds:0}s clip; ~10s of clean speech clones best";
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogDebug(ex, "ffprobe unavailable/failed for sample duration advisory — skipping");
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// "Test narration" (workspace-2xej.9): generates a fixed sentence via the
+    /// ACTIVE engine in an inline panel that streams TtsProgress lines (for
+    /// Chatterbox's first run that's the uv env build + model download), saves
+    /// narration-test.m4a to the output folder, opens it in the OS player, and
+    /// stamps ChatterboxLastTestOk on local success. Esc cancels cleanly.
+    /// </summary>
+    private static async Task RunNarrationTestAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        CancellationToken ct,
+        Action<string>? openFile = null)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
+        var engineIsChatterbox = string.Equals(
+            settingsStore.Get(KeyTtsEngine), "chatterbox", StringComparison.OrdinalIgnoreCase);
+        var outputFolder = settingsStore.Get(KeyPodcastOutputFolder) ?? ResolveDefaultOutputFolder();
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        // Inline panel — no Console.Clear, Settings rows stay visible around it.
+        var panelRow = Math.Max(1, (options.TerminalHeight / 2) - 3);
+        var panelWidth = Math.Max(40, Math.Min(options.TerminalWidth - 4, 100));
+
+        void WritePanelLine(int row, string text)
+        {
+            try
+            {
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 2, panelRow + row);
+                Console.Write(new string(' ', panelWidth));
+                Console.SetCursorPosition(UI.OverlayViewport.Left + 2, panelRow + row);
+                Console.Write(text);
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Terminal shrank mid-test — skip the paint, never crash the panel.
+            }
+        }
+
+        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        try
+        {
+            var engineLabel = engineIsChatterbox ? "Chatterbox (local)" : "OpenAI (cloud)";
+            var expectation = engineIsChatterbox
+                ? "First run installs the local engine (a few GB, one-time). The clip itself takes seconds on GPU, up to a few minutes on CPU."
+                : "Costs well under a cent.";
+            WritePanelLine(0, $"{palette.GetAccentFg().AnsiFg}Test narration — {engineLabel}{Reset}");
+            WritePanelLine(1, $"{palette.SecondaryText.AnsiFg}{RenderHelpers.TruncateText(expectation, panelWidth - 4)}{Reset}");
+            WritePanelLine(2, $"{palette.SecondaryText.AnsiFg}Esc cancels.{Reset}");
+            WritePanelLine(4, $"{palette.PrimaryText.AnsiFg}Generating…{Reset}");
+
+            var progress = new Progress<TtsProgress>(p =>
+            {
+                var line = RenderHelpers.TruncateText(p.Message, panelWidth - 4);
+                WritePanelLine(4, $"{palette.PrimaryText.AnsiFg}{line}{Reset}");
+            });
+
+            var genTask = ExecuteNarrationTestAsync(ttsService, outputFolder, progress, cts.Token);
+
+            // Race generation against Esc; a pending input wait doubles as the
+            // final "press any key" consumer so no keystroke is ever swallowed.
+            Task<NavigationCommand>? pendingInput = null;
+            while (!genTask.IsCompleted)
+            {
+                pendingInput ??= ctx.InputHandler.WaitForInputAsync(cts.Token);
+                var finished = await Task.WhenAny(genTask, pendingInput).ConfigureAwait(false);
+                if (finished == pendingInput)
+                {
+                    NavigationCommand cmd;
+                    try
+                    {
+                        cmd = await pendingInput.ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+
+                    pendingInput = null;
+                    if (cmd.Type is CommandType.GoBack or CommandType.Quit)
+                    {
+                        await cts.CancelAsync().ConfigureAwait(false);
+                        break;
+                    }
+                }
+            }
+
+            NarrationTestOutcome outcome;
+            try
+            {
+                outcome = await genTask.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                outcome = new NarrationTestOutcome(false, null, "cancelled");
+            }
+
+            if (outcome.Success && outcome.FilePath is not null)
+            {
+                if (engineIsChatterbox)
+                {
+                    settingsStore.Set(KeyChatterboxLastTestOk, DateTime.UtcNow.ToString("O"));
+                }
+
+                var secondsNote = string.Empty;
+                try
+                {
+                    var probed = await FFMpegCore.FFProbe.AnalyseAsync(outcome.FilePath).ConfigureAwait(false);
+                    secondsNote = $" ({probed.Duration.TotalSeconds:0.#}s of audio)";
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogDebug(ex, "ffprobe unavailable for narration-test duration");
+                }
+
+                var opened = TryOpenFile(outcome.FilePath, openFile, ctx.Logger);
+                WritePanelLine(4, $"{palette.PromptFg.AnsiFg}✓ Saved{(opened ? " and opened" : string.Empty)} {NarrationTestFileName}{secondsNote} — press any key{Reset}");
+            }
+            else if (outcome.Error == "cancelled")
+            {
+                WritePanelLine(4, $"{palette.SecondaryText.AnsiFg}Cancelled — press any key{Reset}");
+            }
+            else
+            {
+                WritePanelLine(4, $"{palette.ErrorFg.AnsiFg}{RenderHelpers.TruncateText(outcome.Error ?? "Narration test failed", panelWidth - 4)}{Reset}");
+                WritePanelLine(5, $"{palette.SecondaryText.AnsiFg}Press any key{Reset}");
+            }
+
+            try
+            {
+                if (pendingInput is not null)
+                {
+                    _ = await pendingInput.ConfigureAwait(false);
+                }
+                else
+                {
+                    _ = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation raced the dismiss key — fine, we're leaving anyway.
+            }
+
+            ctx.InputHandler.DrainBufferedInput();
+        }
+        finally
+        {
+            for (var i = 0; i < 7; i++)
+            {
+                try
+                {
+                    Console.SetCursorPosition(UI.OverlayViewport.Left, panelRow + i);
+                }
+                catch (ArgumentOutOfRangeException)
+                {
+                    break;
+                }
+
+                Console.Write(new string(' ', Math.Max(20, UI.OverlayViewport.Width - 1)));
+            }
+        }
+    }
+
+    /// <summary>Fixed sentence every narration test speaks.</summary>
+    internal const string NarrationTestSentence = "This is your Wire Copy narrator. Here's how tonight's stories will sound.";
+
+    /// <summary>Filename the narration test writes into the output folder (overwritten each run).</summary>
+    internal const string NarrationTestFileName = "narration-test.m4a";
+
+    /// <summary>
+    /// The testable core of the narration test: generate via the given engine,
+    /// write the clip into the output folder. No keyboard, no panel.
+    /// </summary>
+    internal static async Task<NarrationTestOutcome> ExecuteNarrationTestAsync(
+        ITtsService ttsService,
+        string outputFolder,
+        IProgress<TtsProgress>? progress,
+        CancellationToken ct)
+    {
+        var result = await ttsService.GenerateAudioAsync(NarrationTestSentence, "Narration test", progress, ct)
+            .ConfigureAwait(false);
+        if (!result.Success || result.AudioData is null)
+        {
+            return new NarrationTestOutcome(false, null, result.ErrorMessage ?? "Narration test failed without an error message");
+        }
+
+        Directory.CreateDirectory(outputFolder);
+        var path = Path.Combine(outputFolder, NarrationTestFileName);
+        await File.WriteAllBytesAsync(path, result.AudioData, ct).ConfigureAwait(false);
+        return new NarrationTestOutcome(true, path, null);
+    }
+
+    private static bool TryOpenFile(string path, Action<string>? openFile, ILogger logger)
+    {
+        try
+        {
+            if (openFile is not null)
+            {
+                openFile(path);
+            }
+            else
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(path) { UseShellExecute = true });
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogInformation(ex, "No OS player available for {Path} — saved without opening", path);
+            return false;
+        }
+    }
+
+    /// <summary>Result of one narration test run (workspace-2xej.9).</summary>
+    internal sealed record NarrationTestOutcome(bool Success, string? FilePath, string? Error);
 
     private static async Task HandleClearApiKey(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {

@@ -18,8 +18,12 @@ public class ChatterboxConfiguration
     /// <summary>
     /// Gets the arguments prepended before the worker script path. Empty/whitespace
     /// means the worker path is the only argument (the test seam for the fake worker).
+    /// <c>setuptools&lt;81</c> is required because Chatterbox's Perth watermarker imports
+    /// <c>pkg_resources</c>, which setuptools 81+ removed — without it the model init
+    /// throws "'NoneType' object is not callable" (the watermarker class silently
+    /// imports as None).
     /// </summary>
-    public string UvArgs { get; init; } = "run --python 3.11 --with chatterbox-tts==0.1.7";
+    public string UvArgs { get; init; } = "run --python 3.11 --with chatterbox-tts==0.1.7 --with \"setuptools<81\"";
 
     /// <summary>
     /// Gets the worker script path, resolved against <see cref="AppContext.BaseDirectory"/>.

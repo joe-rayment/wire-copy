@@ -611,6 +611,119 @@ internal static class PodcastSetupHelpers
     }
 
     /// <summary>
+    /// Two-entry narration-engine picker (workspace-2xej.7). Each entry renders
+    /// TWO lines — the name + live readiness, then a fixed trade-off note — so the
+    /// user can judge both engines before switching. Enter persists TtsEngine and
+    /// returns "openai"/"chatterbox"; Esc returns null (no change). Cloned from
+    /// RunListPickerAsync's loop/keys rather than reusing it because that picker
+    /// has no per-option status line.
+    /// </summary>
+    internal static async Task<string?> PromptAndPickEngineAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        IUserSettingsStore settingsStore,
+        bool currentIsChatterbox,
+        string openAiReadiness,
+        string chatterboxReadiness,
+        CancellationToken ct)
+    {
+        var entries = new (string Value, string Name, string Readiness, string Note)[]
+        {
+            ("openai", "OpenAI (cloud)", openAiReadiness,
+                "Best quality + tone instructions · a few cents per hour of audio · needs API key"),
+            ("chatterbox", "Chatterbox (local)", chatterboxReadiness,
+                "Free, private, offline · tone from your voice sample · slower without a GPU"),
+        };
+        var selectedIndex = currentIsChatterbox ? 1 : 0;
+        var currentValue = currentIsChatterbox ? "chatterbox" : "openai";
+
+        while (!ct.IsCancellationRequested)
+        {
+            var p = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            helpers.Clear();
+
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            PodcastCommandHandler.RenderBox(helpers, p, "Narration engine — how podcast audio is generated", width);
+            helpers.WriteLine();
+
+            for (var i = 0; i < entries.Length; i++)
+            {
+                var isSelected = i == selectedIndex;
+                var marker = isSelected ? "▌" : " ";
+                var current = entries[i].Value == currentValue
+                    ? $"  {p.SecondaryText.AnsiFg}(current){Reset}"
+                    : string.Empty;
+                var readiness = RenderHelpers.TruncateText(entries[i].Readiness, Math.Max(10, width - 30));
+
+                if (isSelected)
+                {
+                    helpers.WriteLine(
+                        $"  {p.GetMutedFg().AnsiFg}{marker}{Reset} " +
+                        $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg} {i + 1}. {entries[i].Name,-22}{readiness}{current}{Reset}");
+                }
+                else
+                {
+                    helpers.WriteLine(
+                        $"  {p.GetMutedFg().AnsiFg}{marker}{Reset} " +
+                        $"{p.PrimaryText.AnsiFg}{i + 1}. {entries[i].Name,-22}{p.SecondaryText.AnsiFg}{readiness}{Reset}{current}");
+                }
+
+                helpers.WriteLine(
+                    $"       {p.SecondaryText.AnsiFg}{RenderHelpers.TruncateText(entries[i].Note, Math.Max(10, width - 10))}{Reset}");
+                helpers.WriteLine();
+            }
+
+            helpers.WriteLine(
+                $"  {p.GetAccentFg().AnsiFg}↑↓{Reset}{p.GetDimFg().AnsiFg}:navigate   " +
+                $"{p.GetAccentFg().AnsiFg}Enter{Reset}{p.GetDimFg().AnsiFg}:select   " +
+                $"{p.GetAccentFg().AnsiFg}Esc{Reset}{p.GetDimFg().AnsiFg}:cancel{Reset}");
+
+            helpers.ClearRemainingLines();
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+
+            if (command.Type == CommandType.TerminalResized)
+            {
+                options = ctx.GetCurrentRenderOptions();
+                continue;
+            }
+
+            if (command.Type is CommandType.GoBack or CommandType.Quit)
+            {
+                return null;
+            }
+
+            if (command.Type is CommandType.MoveDown or CommandType.MoveUp)
+            {
+                selectedIndex = (selectedIndex + 1) % entries.Length;
+                continue;
+            }
+
+            if (command.Type == CommandType.ActivateLink)
+            {
+                var picked = entries[selectedIndex].Value;
+                try
+                {
+                    settingsStore.Set(SettingsCommandHandler.KeyTtsEngine, picked);
+                    ctx.NavigationService.SetStatusMessage(
+                        picked == "chatterbox" ? "Narration → Chatterbox (local)" : "Narration → OpenAI (cloud)");
+                }
+                catch (Exception ex)
+                {
+                    ctx.Logger.LogWarning(ex, "Failed to persist narration engine");
+                    ctx.NavigationService.SetStatusMessage("Failed to save narration engine", StatusSeverity.Error);
+                    return null;
+                }
+
+                return picked;
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
     /// Picks a TTS voice from <see cref="AvailableVoices"/> and persists the
     /// selection via <see cref="IUserSettingsStore"/>. Returns the new value or null
     /// when the user cancels.
