@@ -6,6 +6,7 @@ using System.Text.Json;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Podcast;
+using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Infrastructure.Configuration;
 
@@ -15,12 +16,19 @@ namespace WireCopy.Infrastructure.Podcast.Cache;
 /// Disk-based cache for TTS-generated audio files.
 /// Stores audio in {BasePath}/audio/ with a JSON index at {BasePath}/index.json.
 /// Thread-safe via SemaphoreSlim. Atomic writes via .tmp-then-rename.
+///
+/// Keys are engine-aware and computed PER CALL from <see cref="ITtsCacheKeyProvider"/>
+/// (workspace-2xej.6): they deliberately change whenever anything that shapes the
+/// audio changes — engine, voice, model, instructions, voice sample, exaggeration.
+/// Entries under old keys become unreachable and age out via the existing TTL/LRU
+/// eviction — no migration, and do NOT "optimize" back to a ctor-frozen hash: that
+/// froze the BOUND config and served stale audio after runtime voice/instructions
+/// changes, and made engines collide.
 /// </summary>
 public class FileSystemTtsAudioCache : ITtsAudioCache
 {
     private const int ContentHashLength = 16;
     private const int ConfigHashLength = 8;
-    private const decimal CostPerMillionChars = 15.0m;
 
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
@@ -33,7 +41,8 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
     private readonly string _indexPath;
     private readonly long _maxSizeBytes;
     private readonly TimeSpan _ttl;
-    private readonly string _ttsConfigHash;
+    private readonly ITtsCacheKeyProvider _keyProvider;
+    private readonly ITtsService _ttsService;
     private readonly ILogger<FileSystemTtsAudioCache> _logger;
     private readonly SemaphoreSlim _lock = new(1, 1);
 
@@ -42,7 +51,8 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
 
     public FileSystemTtsAudioCache(
         IOptions<TtsAudioCacheConfiguration> cacheConfig,
-        IOptions<OpenAiTtsConfiguration> ttsConfig,
+        ITtsCacheKeyProvider keyProvider,
+        ITtsService ttsService,
         ILogger<FileSystemTtsAudioCache> logger)
     {
         var config = cacheConfig.Value;
@@ -51,16 +61,16 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         _indexPath = Path.Combine(_basePath, "index.json");
         _maxSizeBytes = config.MaxSizeBytes;
         _ttl = config.Ttl;
+        _keyProvider = keyProvider;
+        _ttsService = ttsService;
         _logger = logger;
-
-        var tts = ttsConfig.Value;
-        _ttsConfigHash = ComputeHash($"{tts.Voice}|{tts.Model}|{tts.Speed}|{tts.OutputFormat}")[..ConfigHashLength];
     }
 
     public async Task<TtsAudioCacheEntry?> TryGetAsync(string articleText, string url, CancellationToken cancellationToken = default)
     {
         var contentHash = ComputeHash(articleText)[..ContentHashLength];
-        var cacheKey = $"{contentHash}_{_ttsConfigHash}";
+        var configHash = ComputeConfigHash();
+        var cacheKey = $"{contentHash}_{configHash}";
 
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -105,7 +115,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
                 FileSizeBytes = entry.FileSizeBytes,
                 CachedAtUtc = entry.CachedAtUtc,
                 ContentHash = contentHash,
-                TtsConfigHash = _ttsConfigHash,
+                TtsConfigHash = configHash,
             };
         }
         catch (OperationCanceledException)
@@ -126,7 +136,8 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
     public async Task<TtsAudioCacheEntry> PutAsync(string articleText, string url, string title, byte[] audioData, CancellationToken cancellationToken = default)
     {
         var contentHash = ComputeHash(articleText)[..ContentHashLength];
-        var cacheKey = $"{contentHash}_{_ttsConfigHash}";
+        var configHash = ComputeConfigHash();
+        var cacheKey = $"{contentHash}_{configHash}";
 
         await _lock.WaitAsync(cancellationToken).ConfigureAwait(false);
         try
@@ -150,7 +161,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
                 CachedAtUtc = DateTime.UtcNow,
                 LastAccessedAtUtc = DateTime.UtcNow,
                 ContentHash = contentHash,
-                TtsConfigHash = _ttsConfigHash,
+                TtsConfigHash = configHash,
                 Url = url,
                 Title = title,
             };
@@ -167,7 +178,7 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
                 FileSizeBytes = audioData.Length,
                 CachedAtUtc = entry.CachedAtUtc,
                 ContentHash = contentHash,
-                TtsConfigHash = _ttsConfigHash,
+                TtsConfigHash = configHash,
             };
         }
         finally
@@ -183,15 +194,22 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         {
             await EnsureIndexLoadedAsync(cancellationToken).ConfigureAwait(false);
 
+            // One hash for the whole enumeration: consistent keys mid-analysis and
+            // no re-hashing per article.
+            var configHash = ComputeConfigHash();
             var statuses = new List<ArticleCacheStatus>();
             var cachedCount = 0;
 
             foreach (var (url, title, text) in articles)
             {
                 var contentHash = ComputeHash(text)[..ContentHashLength];
-                var cacheKey = $"{contentHash}_{_ttsConfigHash}";
+                var cacheKey = $"{contentHash}_{configHash}";
                 var isCached = _index.ContainsKey(cacheKey);
-                var cost = isCached ? 0m : EstimateCost(text);
+
+                // Rates come from the ACTIVE engine (the router) so a chatterbox run
+                // analyzes to $0.00 and openai analyzes at the effective model's rate —
+                // one rate table, shared with the budget gate.
+                var cost = isCached ? 0m : _ttsService.EstimateCost(text).EstimatedCostUsd;
 
                 if (isCached)
                 {
@@ -384,10 +402,13 @@ public class FileSystemTtsAudioCache : ITtsAudioCache
         return Convert.ToHexString(hashBytes).ToLowerInvariant();
     }
 
-    private static decimal EstimateCost(string text)
-    {
-        return text.Length * CostPerMillionChars / 1_000_000m;
-    }
+    /// <summary>
+    /// The active engine's audio-shaping fingerprint, hashed and truncated. Computed
+    /// per call — a SHA-256 of a short string is negligible, and the provider memoizes
+    /// the expensive voice-sample file hash.
+    /// </summary>
+    private string ComputeConfigHash() =>
+        ComputeHash(_keyProvider.GetTtsConfigCacheComponent())[..ConfigHashLength];
 
     private async Task EnsureIndexLoadedAsync(CancellationToken cancellationToken)
     {

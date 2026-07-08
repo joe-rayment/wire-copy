@@ -4,6 +4,9 @@ using FluentAssertions;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
+using WireCopy.Application.DTOs;
+using WireCopy.Application.Interfaces;
+using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast.Cache;
 using Xunit;
@@ -13,7 +16,10 @@ namespace WireCopy.Tests.Podcast;
 [Trait("Category", "Unit")]
 public class FileSystemTtsAudioCacheTests : IDisposable
 {
+    private const string DefaultComponent = "openai|nova|tts-1|1|aac|";
+
     private readonly string _tempDir;
+    private readonly StubKeyProvider _keyProvider;
     private readonly FileSystemTtsAudioCache _cache;
 
     public FileSystemTtsAudioCacheTests()
@@ -28,16 +34,9 @@ public class FileSystemTtsAudioCacheTests : IDisposable
             Ttl = TimeSpan.FromHours(1),
         });
 
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
-        {
-            Voice = "nova",
-            Model = "tts-1",
-            Speed = 1.0f,
-            OutputFormat = "aac",
-        });
-
+        _keyProvider = new StubKeyProvider(DefaultComponent);
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
-        _cache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+        _cache = new FileSystemTtsAudioCache(cacheConfig, _keyProvider, StubTts(15m), logger);
     }
 
     public void Dispose()
@@ -228,9 +227,8 @@ public class FileSystemTtsAudioCacheTests : IDisposable
             Ttl = TimeSpan.Zero, // Everything is immediately expired
         });
 
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration());
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
-        var shortTtlCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+        var shortTtlCache = new FileSystemTtsAudioCache(cacheConfig, _keyProvider, StubTts(15m), logger);
 
         await shortTtlCache.PutAsync("text", "https://example.com", "Title", new byte[] { 1 });
 
@@ -254,9 +252,8 @@ public class FileSystemTtsAudioCacheTests : IDisposable
             Ttl = TimeSpan.FromHours(1),
         });
 
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration());
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
-        var smallCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+        var smallCache = new FileSystemTtsAudioCache(cacheConfig, _keyProvider, StubTts(15m), logger);
 
         await smallCache.PutAsync("text one", "https://example.com/1", "A1", new byte[] { 1, 2, 3 });
         await smallCache.PutAsync("text two", "https://example.com/2", "A2", new byte[] { 4, 5, 6 });
@@ -307,20 +304,12 @@ public class FileSystemTtsAudioCacheTests : IDisposable
         var text = "persistent article text";
         await _cache.PutAsync(text, "https://example.com", "Title", new byte[] { 1, 2, 3 });
 
-        // Create new instance with same base path AND the same TTS config —
-        // the cache key depends on Voice/Model/Speed/OutputFormat, so a
-        // bare-defaults OpenAiTtsConfiguration would miss the entry written
-        // above (workspace-clsl moved the defaults to gpt-4o-mini-tts/coral).
+        // Create new instance with same base path AND the same key-provider
+        // component — the cache key is derived from it, so a different component
+        // would miss the entry written above.
         var cacheConfig = Options.Create(new TtsAudioCacheConfiguration { BasePath = _tempDir });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
-        {
-            Voice = "nova",
-            Model = "tts-1",
-            Speed = 1.0f,
-            OutputFormat = "aac",
-        });
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
-        var newCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+        var newCache = new FileSystemTtsAudioCache(cacheConfig, new StubKeyProvider(DefaultComponent), StubTts(15m), logger);
 
         var result = await newCache.TryGetAsync(text, "https://example.com");
 
@@ -340,11 +329,10 @@ public class FileSystemTtsAudioCacheTests : IDisposable
         // Cache with default config (nova voice)
         await _cache.PutAsync(text, "https://example.com", "Title", new byte[] { 1 });
 
-        // Create cache with different voice
+        // Create cache with a different voice in the component
         var cacheConfig = Options.Create(new TtsAudioCacheConfiguration { BasePath = _tempDir });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { Voice = "alloy" });
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
-        var differentVoiceCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+        var differentVoiceCache = new FileSystemTtsAudioCache(cacheConfig, new StubKeyProvider("openai|alloy|tts-1|1|aac|"), StubTts(15m), logger);
 
         var result = await differentVoiceCache.TryGetAsync(text, "https://example.com");
 
@@ -386,15 +374,8 @@ public class FileSystemTtsAudioCacheTests : IDisposable
             MaxSizeBytes = 10 * 1024 * 1024,
             Ttl = TimeSpan.FromHours(1),
         });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
-        {
-            Voice = "nova",
-            Model = "tts-1",
-            Speed = 1.0f,
-            OutputFormat = "aac",
-        });
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
-        var corruptCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+        var corruptCache = new FileSystemTtsAudioCache(cacheConfig, new StubKeyProvider(DefaultComponent), StubTts(15m), logger);
 
         var articles = new List<(string Url, string Title, string Text)>
         {
@@ -426,9 +407,8 @@ public class FileSystemTtsAudioCacheTests : IDisposable
             BasePath = _tempDir,
             Ttl = TimeSpan.FromHours(1),
         });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { Voice = "nova", Model = "tts-1", Speed = 1.0f, OutputFormat = "aac" });
         var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
-        var corruptCache = new FileSystemTtsAudioCache(cacheConfig, ttsConfig, logger);
+        var corruptCache = new FileSystemTtsAudioCache(cacheConfig, new StubKeyProvider(DefaultComponent), StubTts(15m), logger);
 
         // Should NOT throw — catch block returns null
         var result = await corruptCache.TryGetAsync("text", "https://example.com");
@@ -437,4 +417,78 @@ public class FileSystemTtsAudioCacheTests : IDisposable
     }
 
     #endregion
+
+    #region Engine partitioning (workspace-2xej.6)
+
+    [Fact]
+    public async Task EngineFlip_MissesUnderChatterbox_ThenHitsBackUnderOpenAi()
+    {
+        var text = "engine partition text";
+        await _cache.PutAsync(text, "https://example.com", "Title", new byte[] { 1, 2 });
+
+        _keyProvider.Component = "chatterbox|english|builtin|0.5|0.5";
+        (await _cache.TryGetAsync(text, "https://example.com"))
+            .Should().BeNull("chatterbox audio must never be served from openai entries");
+
+        _keyProvider.Component = DefaultComponent;
+        (await _cache.TryGetAsync(text, "https://example.com"))
+            .Should().NotBeNull("flipping back to the original engine restores the hit");
+    }
+
+    [Fact]
+    public async Task InstructionsChange_MissesTheOldEntry()
+    {
+        // Regression for the stale-audio bug: the ctor-frozen hash ignored the
+        // instructions string, so changed instructions served yesterday's audio.
+        var text = "instructions sensitivity text";
+        await _cache.PutAsync(text, "https://example.com", "Title", new byte[] { 1 });
+
+        _keyProvider.Component = DefaultComponent + "speak like a pirate";
+        (await _cache.TryGetAsync(text, "https://example.com"))
+            .Should().BeNull("a changed instructions segment must re-partition the cache");
+    }
+
+    [Fact]
+    public async Task AnalyzeCollection_ChatterboxEngine_ReportsZeroDollarsForUncached()
+    {
+        var cacheConfig = Options.Create(new TtsAudioCacheConfiguration { BasePath = _tempDir });
+        var logger = Substitute.For<ILogger<FileSystemTtsAudioCache>>();
+        var chatterboxCache = new FileSystemTtsAudioCache(
+            cacheConfig,
+            new StubKeyProvider("chatterbox|english|builtin|0.5|0.5"),
+            StubTts(0m),
+            logger);
+
+        var analysis = await chatterboxCache.AnalyzeCollectionAsync(
+        [
+            ("https://example.com/1", "One", new string('a', 5000)),
+            ("https://example.com/2", "Two", new string('b', 9000)),
+        ]);
+
+        analysis.UncachedArticles.Should().Be(2);
+        analysis.EstimatedCost.Should().Be(0m, "local generation is free — the budget gate must never block it");
+        analysis.ArticleStatuses.Should().OnlyContain(a => a.EstimatedCost == 0m);
+    }
+
+    #endregion
+
+    private static ITtsService StubTts(decimal costPerMillionChars)
+    {
+        var tts = Substitute.For<ITtsService>();
+        tts.EstimateCost(Arg.Any<string>()).Returns(ci => new TtsCostEstimate
+        {
+            CharacterCount = ci.Arg<string>().Length,
+            ChunkCount = 1,
+            EstimatedCostUsd = ci.Arg<string>().Length * costPerMillionChars / 1_000_000m,
+            EstimatedDurationMinutes = 0,
+        });
+        return tts;
+    }
+
+    private sealed class StubKeyProvider(string component) : ITtsCacheKeyProvider
+    {
+        public string Component { get; set; } = component;
+
+        public string GetTtsConfigCacheComponent() => Component;
+    }
 }
