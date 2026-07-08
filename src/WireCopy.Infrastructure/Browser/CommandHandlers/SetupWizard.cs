@@ -1015,6 +1015,39 @@ internal static class SetupWizard
             }
         }
 
+        // workspace-p2qo: click-to-select — arm PickScript on the docked lens so a
+        // click on a story moves the label cursor to its row. Poll on animation
+        // ticks, exactly like the legacy PickLeadFromTreeAsync. Non-fatal: keyboard
+        // labeling is unaffected when there is no lens / click support.
+        var clickEnabled = lens?.ArmClickAsync != null && lens.PollClickAsync != null;
+        var animation = input.AnimationController;
+        var hadAnimation = false;
+        var savedInterval = 0;
+        if (clickEnabled)
+        {
+            hadAnimation = animation.AnimationState.HasActiveAnimation;
+            savedInterval = animation.AnimationIntervalMs;
+            try
+            {
+                await lens!.ArmClickAsync!(ct).ConfigureAwait(false);
+                if (!hadAnimation)
+                {
+                    animation.AnimationIntervalMs = 200;
+                    animation.StartAnimation();
+                }
+            }
+            catch (OperationCanceledException)
+            {
+                throw;
+            }
+            catch (Exception)
+            {
+                clickEnabled = false; // fall back to keyboard-only labeling
+            }
+        }
+
+        try
+        {
         while (!ct.IsCancellationRequested)
         {
             var card = BuildLabelCard(rows, allLinks, cursor, notice, pending);
@@ -1025,6 +1058,55 @@ internal static class SetupWizard
             await PreviewFocusedOptionAsync(lens, card, ct).ConfigureAwait(false);
 
             var command = await input.WaitForInputAsync(ct).ConfigureAwait(false);
+
+            // workspace-p2qo: a click on the docked page arrives as a poll hit on the
+            // animation tick — move the cursor to the clicked story's row so the next
+            // a/x/m/i labels it. Unknown clicks (a link the extractor skipped) are
+            // ignored rather than jumping the cursor to nothing.
+            if (clickEnabled && command.Type == CommandType.AnimationTick)
+            {
+                LinkInfo? clicked = null;
+                try
+                {
+                    clicked = await lens!.PollClickAsync!(ct).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception)
+                {
+                    // Poll is best-effort; keep labeling.
+                }
+
+                if (clicked != null)
+                {
+                    var clickKey = NormalizeUrl(clicked.Url);
+                    var hitRow = rows.FindIndex(r => r.Link != null && NormalizeUrl(r.Link.Url) == clickKey);
+                    var existsInLinks = links.Any(l => !l.IsGroupHeader && NormalizeUrl(l.Url) == clickKey);
+                    if (hitRow < 0 && existsInLinks && !allLinks)
+                    {
+                        // A real link hidden in the compact view — flip to the all-links
+                        // rescue view so every clickable link has a row, then re-find.
+                        allLinks = true;
+                        rows = BuildLabelRows(currentConfig, links, allLinks, pending);
+                        hitRow = rows.FindIndex(r => r.Link != null && NormalizeUrl(r.Link.Url) == clickKey);
+                    }
+
+                    if (hitRow >= 0)
+                    {
+                        cursor = hitRow;
+                        notice = $"Clicked: {Truncate(rows[hitRow].Link!.DisplayText, 48)} — press a/x/m/i to label it.";
+                    }
+                    else
+                    {
+                        // A link the extractor never saw — don't jump the cursor to nothing.
+                        notice = "That link isn't in this list — nothing selected.";
+                    }
+                }
+
+                continue;
+            }
 
             if (command.RawKeyChar is 'a' or 'A' or 'x' or 'X' or 'm' or 'M' or 'i' or 'I' or 'u' or 'U')
             {
@@ -1084,6 +1166,33 @@ internal static class SetupWizard
         }
 
         return null;
+        }
+        finally
+        {
+            // workspace-p2qo: always disarm the pick + restore the animation state on
+            // every exit path (Enter/Esc/cancel), mirroring PickLeadFromTreeAsync — a
+            // left-armed PickScript would keep swallowing the user's clicks afterward.
+            if (clickEnabled)
+            {
+                if (!hadAnimation)
+                {
+                    animation.StopAnimation();
+                    animation.AnimationIntervalMs = savedInterval;
+                }
+
+                if (lens?.DisarmClickAsync != null)
+                {
+                    try
+                    {
+                        await lens.DisarmClickAsync(CancellationToken.None).ConfigureAwait(false);
+                    }
+                    catch (Exception)
+                    {
+                        // Cleanup is best-effort.
+                    }
+                }
+            }
+        }
     }
 
     /// <summary>Applies one label key to a link's pending entry (see the loop's key grammar).</summary>
@@ -2536,7 +2645,10 @@ internal static class SetupWizard
     /// </summary>
     internal sealed record Lens(
         Func<string, CancellationToken, Task<int>> HighlightCssAsync,
-        Func<CancellationToken, Task> ClearAsync);
+        Func<CancellationToken, Task> ClearAsync,
+        Func<CancellationToken, Task>? ArmClickAsync = null,
+        Func<CancellationToken, Task<LinkInfo?>>? PollClickAsync = null,
+        Func<CancellationToken, Task>? DisarmClickAsync = null);
 
     internal sealed record Result
     {

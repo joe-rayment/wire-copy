@@ -172,6 +172,96 @@ public class LabelModeTests
     }
 
     [Fact]
+    public async Task ClickOnLens_MovesCursorToThatRow_ThenLabelKeyLabelsIt()
+    {
+        // workspace-p2qo: a click on the docked page arrives as a poll hit on the
+        // animation tick. The cursor jumps to the clicked story's row so the next
+        // 'a' labels it — here GAMMA is clicked (not the top row), then labeled.
+        var links = FourStories();
+        var polled = false;
+        var disarmed = false;
+        var lens = new SetupWizard.Lens(
+            HighlightCssAsync: (_, _) => Task.FromResult(0),
+            ClearAsync: _ => Task.CompletedTask,
+            ArmClickAsync: _ => Task.CompletedTask,
+            PollClickAsync: _ =>
+            {
+                if (polled)
+                {
+                    return Task.FromResult<LinkInfo?>(null);
+                }
+
+                polled = true;
+                return Task.FromResult<LinkInfo?>(links[2]); // GAMMA
+            },
+            DisarmClickAsync: _ =>
+            {
+                disarmed = true;
+                return Task.CompletedTask;
+            });
+
+        var input = Substitute.For<IInputHandler>();
+        input.AnimationController.AnimationState.Returns(new AnimationState());
+        input.WaitForInputAsync(Arg.Any<CancellationToken>()).Returns(
+            Cmd(CommandType.AnimationTick), // poll -> GAMMA -> cursor moves there
+            Key('a'),                       // labels the clicked row
+            Cmd(CommandType.ActivateLink)); // apply
+
+        var outcome = await SetupWizard.RunLabelModeAsync(
+            input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            links, ConfigWith(), lens, CancellationToken.None);
+
+        outcome.Should().NotBeNull();
+        outcome!.Labels.Should().ContainSingle(l =>
+            l.Kind == LinkLabelKind.Article && l.Url == "https://x.com/story/gamma");
+        disarmed.Should().BeTrue("the pick must be disarmed on exit so it stops swallowing clicks");
+    }
+
+    [Fact]
+    public async Task ClickOnUnknownLink_SelectsNothing_LeavesCursorPut()
+    {
+        // A click on a link the extractor never saw must not jump the cursor to
+        // a nonexistent row — the top row stays focused and 'a' labels IT.
+        var links = FourStories();
+        var polled = false;
+        var lens = new SetupWizard.Lens(
+            HighlightCssAsync: (_, _) => Task.FromResult(0),
+            ClearAsync: _ => Task.CompletedTask,
+            ArmClickAsync: _ => Task.CompletedTask,
+            PollClickAsync: _ =>
+            {
+                if (polled)
+                {
+                    return Task.FromResult<LinkInfo?>(null);
+                }
+
+                polled = true;
+                return Task.FromResult<LinkInfo?>(new LinkInfo
+                {
+                    Url = "https://x.com/not-on-this-page",
+                    DisplayText = "Elsewhere",
+                    Type = LinkType.Content,
+                    ImportanceScore = 70,
+                });
+            },
+            DisarmClickAsync: _ => Task.CompletedTask);
+
+        var input = Substitute.For<IInputHandler>();
+        input.AnimationController.AnimationState.Returns(new AnimationState());
+        input.WaitForInputAsync(Arg.Any<CancellationToken>()).Returns(
+            Cmd(CommandType.AnimationTick),
+            Key('a'),
+            Cmd(CommandType.ActivateLink));
+
+        var outcome = await SetupWizard.RunLabelModeAsync(
+            input, _ => Task.CompletedTask, new SetupWizardOverlay.State(),
+            links, ConfigWith(), lens, CancellationToken.None);
+
+        outcome!.Labels.Should().ContainSingle(l => l.Url == "https://x.com/story/alpha",
+            "an unknown click selected nothing, so 'a' labeled the still-focused top row");
+    }
+
+    [Fact]
     public async Task HeaderRow_LabelKey_ShowsNotice()
     {
         var cards = new List<IReadOnlyList<string>>();

@@ -590,8 +590,10 @@ internal static class StrategyChooserHandler
 
         // workspace-wylw: focused wizard options highlight their matched links
         // live on the sidecar lens (same surface as the article tuner).
+        // workspace-p2qo: the lens also carries click-to-select for label mode —
+        // clicking a story on the docked page moves the label cursor to its row.
         var session = scope.ServiceProvider.GetService<IBrowserSession>();
-        var lens = BuildWizardLens(session, ctx.Logger);
+        var lens = BuildWizardLens(session, links, ctx.Logger);
 
         // workspace-6yb7.3: the preview hook builds candidate configs into the
         // page's real tree so the wizard's preview card sits over the actual
@@ -715,7 +717,7 @@ internal static class StrategyChooserHandler
     /// dedicated lens tab. Every failure degrades to no-highlight; the wizard
     /// cards still show identifiers and match counts as text.
     /// </summary>
-    private static SetupWizard.Lens? BuildWizardLens(IBrowserSession? session, ILogger logger)
+    private static SetupWizard.Lens? BuildWizardLens(IBrowserSession? session, List<LinkInfo> links, ILogger logger)
     {
         if (session == null)
         {
@@ -723,6 +725,28 @@ internal static class StrategyChooserHandler
         }
 
         return new SetupWizard.Lens(
+            ArmClickAsync: async _ =>
+            {
+                // workspace-p2qo: arm the SAME PickScript the legacy lead-pick used,
+                // now so label mode can select a row by clicking its story on the
+                // docked page. Non-fatal — keyboard labeling still works if arming fails.
+                var lensPage = await ArmLensPickAsync(session, logger).ConfigureAwait(false);
+                if (lensPage == null)
+                {
+                    logger.LogInformation("Label-mode click: no lens page to arm (keyboard labeling only)");
+                }
+            },
+            PollClickAsync: async _ =>
+            {
+                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                var pick = await PollLensPickAsync(lensPage, logger).ConfigureAwait(false);
+                return pick?.ToLinkInfo(links);
+            },
+            DisarmClickAsync: async _ =>
+            {
+                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                await DisarmLensPickAsync(lensPage, logger).ConfigureAwait(false);
+            },
             HighlightCssAsync: async (css, _) =>
             {
                 try
