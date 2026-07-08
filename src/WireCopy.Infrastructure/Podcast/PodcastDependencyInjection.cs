@@ -56,10 +56,14 @@ public static class PodcastDependencyInjection
         // Register user settings store (must be before services that consume it)
         services.AddSingleton<IUserSettingsStore, UserSettingsStore>();
 
-        // Register services
-        services.AddSingleton<ITtsService, OpenAiTtsService>();
+        // Register services. ITtsService is the ENGINE ROUTER — it re-reads the
+        // TtsEngine setting on every call, so a Settings switch applies instantly.
+        services.AddSingleton<OpenAiTtsService>();
         services.AddSingleton<IChatterboxSidecar, ChatterboxSidecar>();
         services.AddSingleton<ChatterboxTtsService>();
+        services.AddSingleton<TtsEngineRouter>();
+        services.AddSingleton<ITtsService>(sp => sp.GetRequiredService<TtsEngineRouter>());
+        services.AddSingleton<ITtsCacheKeyProvider>(sp => sp.GetRequiredService<TtsEngineRouter>());
         services.AddSingleton<IAudioAssembler, M4bAudioAssembler>();
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();

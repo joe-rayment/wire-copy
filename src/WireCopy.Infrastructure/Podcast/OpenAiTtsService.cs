@@ -554,6 +554,11 @@ internal sealed class OpenAiTtsService : ITtsService
         return string.IsNullOrWhiteSpace(_config.Instructions) ? null : _config.Instructions;
     }
 
+    /// <summary>Bound (non-overridable) audio parameters for the engine-aware cache key —
+    /// speed and output format have no settings-store override, so the config values ARE
+    /// the effective ones (workspace-2xej.5, consumed by TtsEngineRouter).</summary>
+    internal (float Speed, string Format) GetStaticAudioParams() => (_config.Speed, _config.OutputFormat);
+
     /// <summary>Rate for the EFFECTIVE model (settings override wins), so the budget gate
     /// and the confirmation screen's estimate track the model the run will actually use.</summary>
     internal decimal GetEffectiveCostPerMillionChars() => GetEffectiveModel().Trim().ToLowerInvariant() switch

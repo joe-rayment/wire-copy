@@ -15,7 +15,7 @@ namespace WireCopy.Infrastructure.Podcast.Chatterbox;
 /// in-flight request at a time (the worker is single-threaded anyway); the
 /// object survives crashes/timeouts — the next <see cref="StartAsync"/> spawns fresh.
 /// </summary>
-internal sealed class ChatterboxSidecar : IChatterboxSidecar
+internal sealed class ChatterboxSidecar : IChatterboxSidecar, IDisposable
 {
     private const int StderrRingCapacity = 40;
 
@@ -213,6 +213,19 @@ internal sealed class ChatterboxSidecar : IChatterboxSidecar
     public async ValueTask DisposeAsync()
     {
         await StopAsync().ConfigureAwait(false);
+        _process?.Dispose();
+        _process = null;
+        _gate.Dispose();
+    }
+
+    /// <summary>
+    /// Synchronous dispose for containers/scopes that dispose synchronously
+    /// (Microsoft.Extensions.DependencyInjection throws on IAsyncDisposable-only
+    /// singletons). Skips the graceful shutdown handshake — straight kill.
+    /// </summary>
+    public void Dispose()
+    {
+        KillProcess();
         _process?.Dispose();
         _process = null;
         _gate.Dispose();

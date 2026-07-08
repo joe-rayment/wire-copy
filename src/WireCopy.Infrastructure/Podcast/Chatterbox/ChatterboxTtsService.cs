@@ -289,6 +289,9 @@ internal sealed class ChatterboxTtsService : ITtsService
 
     /// <summary>Worker script location in the app's build output.</summary>
     internal string GetWorkerPath() => Path.Combine(AppContext.BaseDirectory, _config.WorkerRelativePath);
+
+    /// <summary>Bound cfg weight (config-only knob) for the engine-aware cache key (workspace-2xej.5).</summary>
+    internal float GetCfgWeight() => _config.CfgWeight;
 #pragma warning restore SA1202
 
     /// <summary>
