@@ -59,6 +59,7 @@ public static class PodcastDependencyInjection
         // Register services
         services.AddSingleton<ITtsService, OpenAiTtsService>();
         services.AddSingleton<IChatterboxSidecar, ChatterboxSidecar>();
+        services.AddSingleton<ChatterboxTtsService>();
         services.AddSingleton<IAudioAssembler, M4bAudioAssembler>();
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
