@@ -7,6 +7,7 @@ using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Bookmarks;
+using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.Enums.Scheduling;
@@ -160,6 +161,46 @@ internal static class ScheduleCommandHandler
         }
     }
 
+    /// <summary>
+    /// workspace-42q8.4 — 'g s': add a section of the CURRENT page (or the whole
+    /// page) to a schedule without leaving the page. The card pre-fills the section
+    /// the cursor is in, always offers "All stories on this page", reuses the same
+    /// take/cadence pickers as the Schedules screen, and pins against the SAME
+    /// config that grouped the tree the user is looking at — no re-lookup ambiguity,
+    /// so what you see is what gets scheduled. A page with no saved layout gets a
+    /// flat DocumentOrder config saved as part of the add (rendering-identical on
+    /// revisit: flat configs route back through the grouped/ordered builder).
+    /// </summary>
+    public static async Task HandleAddToScheduleAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        var page = ctx.NavigationService.CurrentPage;
+        var tree = page?.LinkTree;
+        if (ctx.NavigationService.CurrentContext.ViewMode != ViewMode.Hierarchical || page == null || tree == null || tree.TotalLinks == 0)
+        {
+            ctx.NavigationService.SetStatusMessage(
+                "Open a site's link list first — g s schedules a section of the page you're on.",
+                TimeSpan.FromSeconds(6));
+            return;
+        }
+
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var configStore = scope.ServiceProvider.GetRequiredService<IHierarchyConfigStore>();
+        var scheduleStore = scope.ServiceProvider.GetRequiredService<IScheduleStore>();
+
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var overlay = new SetupWizardOverlay.State();
+        ctx.SetOverlayPainter(opts => SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+        try
+        {
+            await RunQuickAddAsync(ctx, overlay, palette, options, configStore, scheduleStore, page, tree, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            ctx.SetOverlayPainter(null);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        }
+    }
+
     private static async Task RenderListAsync(
         CommandContext ctx,
         SetupWizardOverlay.State overlay,
@@ -173,8 +214,8 @@ internal static class ScheduleCommandHandler
         {
             Title = "Schedules",
             Prompt = recipes.Count == 0
-                ? "No schedules yet. A schedule pulls saved sections (like \"Top Stories\") from your bookmarked sites on a cadence and auto-publishes a podcast while WireCopy is open. Sections are saved per site with the setup wizard (g l)."
-                : "Recurring section recipes → auto-published podcast (runs while WireCopy is open).",
+                ? "No schedules yet. A schedule pulls sections (like \"Top Stories\") from your sites on a cadence and auto-publishes a podcast while WireCopy is open. Quickest way in: open a site and press g s on the section you want."
+                : "Recurring section recipes → auto-published podcast (runs while WireCopy is open). Tip: g s on any page adds its sections from there.",
             Hint = recipes.Count == 0
                 ? "a: new · Esc: close"
                 : "↑/↓ move · a:new · e:edit · space:on/off · R:run now · x:delete · Esc:close",
@@ -271,6 +312,255 @@ internal static class ScheduleCommandHandler
 
         return names;
     }
+
+    private static async Task RunQuickAddAsync(
+        CommandContext ctx,
+        SetupWizardOverlay.State overlay,
+        ThemePalette palette,
+        RenderOptions options,
+        IHierarchyConfigStore configStore,
+        IScheduleStore scheduleStore,
+        Page page,
+        NavigationTree tree,
+        CancellationToken ct)
+    {
+        var draft = await DraftStepFromCurrentPageAsync(ctx, overlay, palette, options, configStore, page, tree, askRequired: false, ct).ConfigureAwait(false);
+        if (draft == null)
+        {
+            return;
+        }
+
+        // WHICH SCHEDULE — an existing recipe, or create one inline with just a name
+        // and cadence. The output name defaults to the schedule name and stays
+        // editable later from the Schedules screen.
+        var recipes = (await scheduleStore.GetAllAsync().ConfigureAwait(false)).ToList();
+        var scheduleLabels = recipes
+            .Select(r => $"{r.Name}  ·  {ScheduleEditing.DescribeCadence(r.Cadence)}  ·  {r.Steps.Count} source{(r.Steps.Count == 1 ? string.Empty : "s")}")
+            .ToList();
+        scheduleLabels.Add("＋ New schedule…");
+        var schedulePick = await PickAsync(
+            ctx,
+            overlay,
+            options,
+            "Which schedule?",
+            "Enter select · Esc back",
+            scheduleLabels,
+            0,
+            ct).ConfigureAwait(false);
+        if (schedulePick.Cancelled)
+        {
+            return;
+        }
+
+        var step = draft.Step;
+        ScheduleRecipe recipe;
+        if (schedulePick.Index < recipes.Count)
+        {
+            var target = recipes[schedulePick.Index];
+            recipe = ScheduleRecipe.Rehydrate(
+                target.Id,
+                target.Name,
+                target.Enabled,
+                target.Cadence,
+                target.Steps.Append(step),
+                target.OutputCollectionName,
+                target.RunState,
+                target.Version);
+        }
+        else
+        {
+            var defaultName = string.IsNullOrWhiteSpace(page.Metadata.Title)
+                ? $"{new Uri(page.Url).Host} digest"
+                : Truncate(page.Metadata.Title!, 40);
+            var name = await PromptTextAsync(ctx, palette, "Schedule name", defaultName, ct, v => string.IsNullOrWhiteSpace(v) ? "Name cannot be empty" : null).ConfigureAwait(false);
+            if (name == null)
+            {
+                return;
+            }
+
+            var cadence = await PickCadenceAsync(ctx, overlay, palette, options, null, ct).ConfigureAwait(false);
+            if (cadence == null)
+            {
+                return;
+            }
+
+            recipe = ScheduleRecipe.Create(name, cadence, new[] { step }, name);
+        }
+
+        // Persist — the page's config first (a step must never reference a layout
+        // that does not exist), then the recipe.
+        if (!await PersistDraftConfigAsync(ctx, configStore, draft).ConfigureAwait(false))
+        {
+            return;
+        }
+
+        await scheduleStore.SaveAsync(recipe).ConfigureAwait(false);
+
+        var nextAt = NextDueCalculator.Decide(recipe.Cadence, recipe.RunState, DateTimeOffset.Now).NextAt;
+        var nextRun = nextAt is { } slot ? $" — next run {slot:ddd HH:mm}" : string.Empty;
+        ctx.NavigationService.Announce(
+            "✓",
+            $"Added {step.SectionName} ({TakeModeLabel(step)}) to '{recipe.Name}'{nextRun} · :schedules to manage",
+            shortText: $"✓ {step.SectionName} → {recipe.Name}");
+    }
+
+    /// <summary>
+    /// workspace-42q8.4/.6 — the shared "pick what to pull from the CURRENT page"
+    /// sequence (WHAT: cursor section / other sections / whole page, then HOW MANY,
+    /// then optionally Required) used by both the g s card and the Schedules
+    /// screen's "This page" source. Returns null when the user backed out. The
+    /// draft's config is NOT persisted here — callers persist via
+    /// <see cref="PersistDraftConfigAsync"/> once the add is actually committed.
+    /// </summary>
+    private static async Task<PageStepDraft?> DraftStepFromCurrentPageAsync(
+        CommandContext ctx,
+        SetupWizardOverlay.State overlay,
+        ThemePalette palette,
+        RenderOptions options,
+        IHierarchyConfigStore configStore,
+        Page page,
+        NavigationTree tree,
+        bool askRequired,
+        CancellationToken ct)
+    {
+        // The SAME lookup the load pipeline used to build the visible tree, so the
+        // sections offered here are the sections on screen.
+        var lookup = await ScheduleConfigResolution.ForUrlAsync(configStore, page.Url).ConfigureAwait(false);
+        var config = lookup.Config;
+        if (config is { NeedsReanalyze: true })
+        {
+            ctx.NavigationService.SetStatusMessage(
+                "This site's saved layout is flagged for re-analysis — run the setup wizard (g l) first, then schedule.",
+                TimeSpan.FromSeconds(8));
+            return null;
+        }
+
+        // No saved layout: the sections the user SEES (DOM auto-groups) become
+        // durable name-matched sections (workspace-42q8.5); a genuinely flat page
+        // schedules as a single list. Either way the config is only PERSISTED once
+        // the caller commits the add (never on Esc).
+        var configIsNew = config == null;
+        if (config == null)
+        {
+            var derivedSections = AutoGroupedSectionDerivation.FromTree(tree);
+            config = new SiteHierarchyConfig
+            {
+                Domain = HierarchyDomainKey.FromUrl(page.Url),
+                UrlPattern = ScrapingStrategies.DocumentOrderStrategy.BuildUrlPattern(page.Url),
+                Sections = derivedSections,
+                CreatedAt = DateTime.UtcNow,
+                ModelVersion = derivedSections.Count > 0 ? "auto-grouped" : "document-order",
+                Kind = LayoutKind.DocumentOrder,
+                Version = 2,
+                Strategy = ScrapingStrategies.DocumentOrderStrategy.StrategyId,
+                StructuralSignature = $"doc-order:{tree.TotalLinks}",
+            };
+        }
+
+        // WHAT — cursor's section first, then the rest, then always the whole page.
+        var cursorSectionName = NavigationTree.GetOwningSectionHeader(tree.CurrentSelection)?.Link.DisplayText;
+        var choices = BuildQuickAddChoices(config, cursorSectionName);
+        QuickAddChoice chosen;
+        if (choices.Count == 1)
+        {
+            chosen = choices[0]; // single-list page — nothing to pick
+        }
+        else
+        {
+            var whatPick = await PickAsync(
+                ctx,
+                overlay,
+                options,
+                "Add to schedule",
+                "A schedule pulls this every run and auto-publishes a podcast. Enter select · Esc back",
+                choices.Select(c => c.Label).ToList(),
+                0,
+                ct).ConfigureAwait(false);
+            if (whatPick.Cancelled)
+            {
+                return null;
+            }
+
+            chosen = choices[whatPick.Index];
+        }
+
+        // HOW MANY — same picker as the Schedules screen.
+        var take = await PickTakeAsync(ctx, overlay, palette, options, ct).ConfigureAwait(false);
+        if (take == null)
+        {
+            return null;
+        }
+
+        // Required: the quick-add default is "must contribute" (that is what adding
+        // to a digest means); the Schedules editor asks, matching its bookmark path.
+        var required = true;
+        if (askRequired)
+        {
+            var requiredPick = await PickAsync(ctx, overlay, options, "Required?", "A required section that yields nothing fails the run loudly (never a silent empty episode). Enter select · Esc back", new List<string> { "Required (must contribute)", "Optional (skip if empty)" }, 0, ct).ConfigureAwait(false);
+            if (requiredPick.Cancelled)
+            {
+                return null;
+            }
+
+            required = requiredPick.Index == 0;
+        }
+
+        var host = new Uri(page.Url).Host;
+        var step = chosen.Section != null
+            ? ScheduleEditing.BuildStep(page.Url, host, config.UrlPattern, chosen.Section, take.Value.Mode, take.Value.Count, required)
+            : ScheduleEditing.BuildWholePageStep(page.Url, host, config.UrlPattern, take.Value.Mode, take.Value.Count, required);
+        return new PageStepDraft(step, config, configIsNew);
+    }
+
+    /// <summary>Persists a draft's freshly-created page config; true when the add may proceed.</summary>
+    private static async Task<bool> PersistDraftConfigAsync(CommandContext ctx, IHierarchyConfigStore configStore, PageStepDraft draft)
+    {
+        if (!draft.ConfigIsNew)
+        {
+            return true;
+        }
+
+        if (await configStore.SaveConfigAsync(draft.Config).ConfigureAwait(false))
+        {
+            return true;
+        }
+
+        ctx.NavigationService.SetStatusMessage(
+            "Could not save this page's layout config (disk?) — the schedule step was NOT added.",
+            TimeSpan.FromSeconds(8),
+            StatusSeverity.Error);
+        return false;
+    }
+
+    /// <summary>
+    /// workspace-42q8.4 — the ordered WHAT options for the quick-add card: the
+    /// cursor's section first (marked), the layout's other sections in order, and
+    /// ALWAYS "All stories on this page" last. Pure so it is unit-tested directly.
+    /// </summary>
+#pragma warning disable SA1202 // helper kept adjacent to its sole caller
+    internal static List<QuickAddChoice> BuildQuickAddChoices(SiteHierarchyConfig config, string? cursorSectionName)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var sections = config.Sections.OrderBy(s => s.SortOrder).ToList();
+        var cursorSection = cursorSectionName == null
+            ? null
+            : sections.FirstOrDefault(s => string.Equals(s.Name, cursorSectionName, StringComparison.OrdinalIgnoreCase));
+
+        var choices = new List<QuickAddChoice>();
+        if (cursorSection != null)
+        {
+            choices.Add(new QuickAddChoice($"▸ {cursorSection.Name}   ⟨the section you're on⟩", cursorSection));
+        }
+
+        choices.AddRange(sections
+            .Where(s => !ReferenceEquals(s, cursorSection))
+            .Select(s => new QuickAddChoice(DescribeSection(s), s)));
+        choices.Add(new QuickAddChoice($"{RecipeStep.WholePageSectionName}   ⟨everything on the page⟩", null));
+        return choices;
+    }
+#pragma warning restore SA1202
+
+    private static string Truncate(string s, int max) => s.Length <= max ? s : s[..(max - 1)] + "…";
 
     /// <summary>Create (existing == null) or edit a recipe. Returns the saved recipe, or null if cancelled.</summary>
     private static async Task<ScheduleRecipe?> EditRecipeAsync(
@@ -507,22 +797,85 @@ internal static class ScheduleCommandHandler
         IBookmarkService bookmarkService,
         CancellationToken ct)
     {
+        // workspace-42q8.6: the page the user is LOOKING AT is the most likely
+        // source — offer it first, ahead of the bookmark list.
+        var currentPage = ctx.NavigationService.CurrentPage;
+        var currentTree = currentPage?.LinkTree;
+        var hasCurrentPage = ctx.NavigationService.CurrentContext.ViewMode == ViewMode.Hierarchical
+                             && currentPage != null && currentTree is { TotalLinks: > 0 };
+
         var bookmarks = (await bookmarkService.GetAllBookmarksAsync(ct).ConfigureAwait(false)).ToList();
-        if (bookmarks.Count == 0)
+        if (bookmarks.Count == 0 && !hasCurrentPage)
         {
-            ctx.NavigationService.SetStatusMessage("No bookmarks yet — bookmark a site first, then add it here.", TimeSpan.FromSeconds(6));
+            ctx.NavigationService.SetStatusMessage("No bookmarks yet — open or bookmark a site first, then add it here.", TimeSpan.FromSeconds(6));
             return null;
         }
 
-        var pick = await PickAsync(ctx, overlay, options, "Pick a site", "Choose a bookmarked site to pull a section from. Enter select · Esc back", bookmarks.Select(b => $"{b.Name}  ·  {b.Url}").ToList(), 0, ct).ConfigureAwait(false);
+        var siteLabels = new List<string>();
+        if (hasCurrentPage)
+        {
+            var pageName = string.IsNullOrWhiteSpace(currentPage!.Metadata.Title) ? currentPage.Url : Truncate(currentPage.Metadata.Title!, 40);
+            siteLabels.Add($"▸ This page — {pageName}");
+        }
+
+        siteLabels.AddRange(bookmarks.Select(b => $"{b.Name}  ·  {b.Url}"));
+        var pick = await PickAsync(ctx, overlay, options, "Pick a site", "Choose where to pull a section from. Enter select · Esc back", siteLabels, 0, ct).ConfigureAwait(false);
         if (pick.Cancelled)
         {
             return null;
         }
 
-        var bookmark = bookmarks[pick.Index];
+        if (hasCurrentPage && pick.Index == 0)
+        {
+            var draft = await DraftStepFromCurrentPageAsync(ctx, overlay, palette, options, configStore, currentPage!, currentTree!, askRequired: true, ct).ConfigureAwait(false);
+            if (draft == null)
+            {
+                return null;
+            }
+
+            // Commit the page's config now — the step this returns is only held in
+            // the editor's working list, and it must never reference a layout that
+            // does not exist (mirrors how inline AI setup persists immediately).
+            return await PersistDraftConfigAsync(ctx, configStore, draft).ConfigureAwait(false) ? draft.Step : null;
+        }
+
+        var bookmark = bookmarks[pick.Index - (hasCurrentPage ? 1 : 0)];
         var lookup = await ScheduleConfigResolution.ForUrlAsync(configStore, bookmark.Url).ConfigureAwait(false);
         var config = lookup.Config;
+
+        // workspace-42q8.6: the bookmark's exact URL may miss while the SITE has
+        // perfectly good saved layouts (host/path drift) — offer them before any
+        // AI re-setup, naming where each applies.
+        if (!ScheduleEditing.UsableConfig(config))
+        {
+            var usableSiteConfigs = lookup.SiteConfigs.Where(c => ScheduleEditing.UsableConfig(c)).ToList();
+            if (usableSiteConfigs.Count > 0)
+            {
+                var offerLabels = usableSiteConfigs
+                    .Select(c => $"Use saved layout for {ScheduleConfigResolution.HumanizePattern(c.UrlPattern)}")
+                    .ToList();
+                offerLabels.Add("Set this page up with AI instead");
+                var offer = await PickAsync(
+                    ctx,
+                    overlay,
+                    options,
+                    "Site is set up — different page",
+                    $"'{bookmark.Name}' has a saved layout, just not for this exact page. Enter select · Esc back",
+                    offerLabels,
+                    0,
+                    ct).ConfigureAwait(false);
+                if (offer.Cancelled)
+                {
+                    return null;
+                }
+
+                if (offer.Index < usableSiteConfigs.Count)
+                {
+                    config = usableSiteConfigs[offer.Index];
+                }
+            }
+        }
+
         if (!ScheduleEditing.UsableConfig(config))
         {
             // workspace-frpl.15 (B12b): rather than dead-end, offer to set the site up
@@ -888,4 +1241,13 @@ internal static class ScheduleCommandHandler
     }
 
     private readonly record struct PickResult(int Index, bool Cancelled, int? RemovedIndex);
+
+    /// <summary>One WHAT option on the quick-add card (null Section = whole page, workspace-42q8.4).</summary>
+    internal sealed record QuickAddChoice(string Label, HierarchySection? Section);
+
+    /// <summary>
+    /// A step drafted from the current page plus the config it pins against;
+    /// ConfigIsNew marks a freshly-created flat config not yet persisted (workspace-42q8.4).
+    /// </summary>
+    private sealed record PageStepDraft(RecipeStep Step, SiteHierarchyConfig Config, bool ConfigIsNew);
 }

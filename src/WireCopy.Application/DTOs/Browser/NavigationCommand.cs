@@ -137,6 +137,12 @@ public enum CommandType
     // Layout
     ChooseLayout,
 
+    /// <summary>
+    /// workspace-42q8.4: 'g s' — add a section of the CURRENT page (or the whole
+    /// page) to a recurring schedule without leaving the page.
+    /// </summary>
+    AddToSchedule,
+
     // Debug/Utility
     DumpHtml,
 

@@ -521,6 +521,26 @@ internal class StatusBarRenderer
                 });
             }
 
+            // workspace-42q8.4: schedule-from-here is discoverable on any link list
+            // (configured or not — a single-list page schedules as "All stories").
+            if (mode == ViewMode.Hierarchical &&
+                context.CurrentPage?.Classification == PageClassification.LinkList)
+            {
+                items.Add(new StatusItem
+                {
+                    Channel = StatusChannel.Ambient,
+                    Priority = 5,
+                    Variants = new[]
+                    {
+                        new[]
+                        {
+                            new StatusSegment("g s", StatusStyle.Accent),
+                            new StatusSegment(":schedule", StatusStyle.Dim),
+                        },
+                    },
+                });
+            }
+
             if (!string.IsNullOrEmpty(layoutVariantLabel))
             {
                 items.Add(StatusItem.Text(StatusChannel.Ambient, StatusStyle.Secondary, layoutVariantLabel, priority: 5));

@@ -1173,6 +1173,10 @@ public partial class BrowserOrchestrator : IBrowserService
                     await SearchCommandHandler.HandleSearchPrevious(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;
 
+                case CommandType.AddToSchedule:
+                    await ScheduleCommandHandler.HandleAddToScheduleAsync(_commandContext, options, cancellationToken).ConfigureAwait(false);
+                    break;
+
                 case CommandType.SaveToCollection:
                     await CollectionCommandHandler.HandleSaveToCollection(_commandContext, options, cancellationToken).ConfigureAwait(false);
                     break;

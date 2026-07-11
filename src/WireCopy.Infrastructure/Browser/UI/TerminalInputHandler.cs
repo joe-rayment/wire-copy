@@ -769,10 +769,12 @@ public class TerminalInputHandler : IInputHandler
 
     /// <summary>
     /// Resolves the SECOND key of a 'g' goto-chord to its command: 'g' then 'g'
-    /// jumps to the top; 'g' then 'l' opens the AI layout wizard (workspace-1dmr).
-    /// Any other second key returns NoOp, which the caller treats as an aborted
-    /// chord (swallowed, vim/Helix-style). Pure and static so the KeyRegistry
-    /// enforcement tests can drive the chord mapping directly (workspace-9k27.14).
+    /// jumps to the top; 'g' then 'l' opens the AI layout wizard (workspace-1dmr);
+    /// 'g' then 's' adds a section of the current page to a schedule
+    /// (workspace-42q8.4). Any other second key returns NoOp, which the caller
+    /// treats as an aborted chord (swallowed, vim/Helix-style). Pure and static so
+    /// the KeyRegistry enforcement tests can drive the chord mapping directly
+    /// (workspace-9k27.14).
     /// </summary>
     internal static NavigationCommand ResolveGotoChord(ConsoleKeyInfo secondKey)
     {
@@ -786,6 +788,12 @@ public class TerminalInputHandler : IInputHandler
             && (secondKey.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt | ConsoleModifiers.Shift)) == 0)
         {
             return new NavigationCommand { Type = CommandType.ChooseLayout };
+        }
+
+        if (secondKey.Key == ConsoleKey.S
+            && (secondKey.Modifiers & (ConsoleModifiers.Control | ConsoleModifiers.Alt | ConsoleModifiers.Shift)) == 0)
+        {
+            return new NavigationCommand { Type = CommandType.AddToSchedule };
         }
 
         return new NavigationCommand { Type = CommandType.NoOp };

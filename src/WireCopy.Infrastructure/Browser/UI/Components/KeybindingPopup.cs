@@ -53,6 +53,7 @@ internal static class KeybindingPopup
                 (KeyFor(CommandType.SwitchView), "switch to reader view"),
                 (readerTree, "reader / tree view"),
                 (KeyFor(CommandType.ChooseLayout), "set up site layout (AI)"),
+                (KeyFor(CommandType.AddToSchedule), "add section to a schedule"),
                 (KeyFor(CommandType.Search), "search"),
                 (searchNextPrev, "next / prev match"),
                 ("R", "refresh (bypass cache)"),

@@ -106,6 +106,9 @@ internal static class KeyRegistry
             // Layout
             [CommandType.ChooseLayout] = "g l",
 
+            // Scheduling (workspace-42q8.4)
+            [CommandType.AddToSchedule] = "g s",
+
             // Job control
             [CommandType.CancelRun] = "x",
             [CommandType.Undo] = "z",

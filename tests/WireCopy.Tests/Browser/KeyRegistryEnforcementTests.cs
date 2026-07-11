@@ -227,6 +227,8 @@ public class KeyRegistryEnforcementTests
                 return TerminalInputHandler.ResolveGotoChord(Ki('g', ConsoleKey.G)).Type;
             case "g l":
                 return TerminalInputHandler.ResolveGotoChord(Ki('l', ConsoleKey.L)).Type;
+            case "g s":
+                return TerminalInputHandler.ResolveGotoChord(Ki('s', ConsoleKey.S)).Type;
 
             // The launcher digit-jump is dispatched in the stateful input loop (gated on
             // launcher mode + no count prefix), not a pure map, so it is resolved here by

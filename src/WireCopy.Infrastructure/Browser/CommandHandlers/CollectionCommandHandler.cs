@@ -72,6 +72,17 @@ internal static class CollectionCommandHandler
             {
                 // Single save: cursor item
                 var saveNode = tree?.GetSelectedNode();
+
+                // workspace-42q8.4: 's' on a SECTION header used to be a silent no-op —
+                // "save this section" naturally means "pull it on a schedule", so route
+                // into the same add-to-schedule card as g s (the card pre-fills the
+                // cursor's owning section, which IS this header).
+                if (saveNode != null && saveNode.Link.HeaderType == HeaderType.SubSection)
+                {
+                    await ScheduleCommandHandler.HandleAddToScheduleAsync(ctx, options, ct).ConfigureAwait(false);
+                    return;
+                }
+
                 if (saveNode != null && !saveNode.IsGroupHeader && !string.IsNullOrEmpty(saveNode.Link.Url))
                 {
                     // Capture the saved row's screen position BEFORE awaiting save —
