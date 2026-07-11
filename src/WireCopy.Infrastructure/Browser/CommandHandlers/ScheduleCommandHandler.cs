@@ -446,8 +446,10 @@ internal static class ScheduleCommandHandler
         // or existed as a single list.
         var situation = lookup switch
         {
+            // With whole-page steps (42q8.2) a flat layout never lands here, so a
+            // non-null config can only mean the re-analysis flag.
             { Config: not null } =>
-                $"'{bookmark.Name}' is saved as a single list without sections, so there is no section to pin yet.",
+                $"'{bookmark.Name}' has a saved layout, but it is flagged for re-analysis (the site changed).",
             { SiteHasAnyConfig: true } =>
                 $"'{bookmark.Name}' has a saved layout, but it covers {ScheduleConfigResolution.DescribeSitePatterns(lookup.SiteConfigs)} — not this exact page.",
             _ => $"'{bookmark.Name}' has no saved layout yet.",
@@ -521,27 +523,35 @@ internal static class ScheduleCommandHandler
         var bookmark = bookmarks[pick.Index];
         var lookup = await ScheduleConfigResolution.ForUrlAsync(configStore, bookmark.Url).ConfigureAwait(false);
         var config = lookup.Config;
-        if (!ScheduleEditing.CanPinSection(config))
+        if (!ScheduleEditing.UsableConfig(config))
         {
             // workspace-frpl.15 (B12b): rather than dead-end, offer to set the site up
-            // INLINE over a background load. Returns a freshly-saved config (now pinnable)
-            // or null if the user backed out / setup didn't produce one. Still never
-            // persists an unpinned section.
+            // INLINE over a background load. Returns a freshly-saved config or null if
+            // the user backed out / setup didn't produce one. workspace-42q8.2: a FLAT
+            // result is fine now — it schedules as a whole-page step — so the gate is
+            // "usable config", no longer "has sections".
             config = await TryInlineSetupAsync(ctx, overlay, palette, options, bookmark, lookup, ct).ConfigureAwait(false);
-            if (!ScheduleEditing.CanPinSection(config))
+            if (!ScheduleEditing.UsableConfig(config))
             {
                 return null;
             }
         }
 
+        // workspace-42q8.2: sections when the layout has them, and ALWAYS the
+        // whole-page option — a single-list site simply has only that one.
         var sections = config!.Sections.OrderBy(s => s.SortOrder).ToList();
-        var sectionPick = await PickAsync(ctx, overlay, options, "Pick a section", $"Durable sections saved for {config.Domain}. Enter select · Esc back", sections.Select(DescribeSection).ToList(), 0, ct).ConfigureAwait(false);
+        var sectionLabels = sections.Select(DescribeSection).ToList();
+        sectionLabels.Add($"{RecipeStep.WholePageSectionName}   ⟨everything on the page⟩");
+        var prompt = sections.Count > 0
+            ? $"Durable sections saved for {config.Domain}. Enter select · Esc back"
+            : $"The saved layout for {config.Domain} is a single list — schedule all of its stories. Enter select · Esc back";
+        var sectionPick = await PickAsync(ctx, overlay, options, "Pick a section", prompt, sectionLabels, 0, ct).ConfigureAwait(false);
         if (sectionPick.Cancelled)
         {
             return null;
         }
 
-        var section = sections[sectionPick.Index];
+        var wholePage = sectionPick.Index >= sections.Count;
 
         var take = await PickTakeAsync(ctx, overlay, palette, options, ct).ConfigureAwait(false);
         if (take == null)
@@ -555,7 +565,9 @@ internal static class ScheduleCommandHandler
             return null;
         }
 
-        return ScheduleEditing.BuildStep(bookmark.Url, new Uri(bookmark.Url).Host, config.UrlPattern, section, take.Value.Mode, take.Value.Count, required: requiredPick.Index == 0);
+        return wholePage
+            ? ScheduleEditing.BuildWholePageStep(bookmark.Url, new Uri(bookmark.Url).Host, config.UrlPattern, take.Value.Mode, take.Value.Count, required: requiredPick.Index == 0)
+            : ScheduleEditing.BuildStep(bookmark.Url, new Uri(bookmark.Url).Host, config.UrlPattern, sections[sectionPick.Index], take.Value.Mode, take.Value.Count, required: requiredPick.Index == 0);
     }
 
     /// <summary>
@@ -804,7 +816,7 @@ internal static class ScheduleCommandHandler
     {
         TakeMode.SingleTopStory => "top story",
         TakeMode.TopN => $"top {step.TakeCount}",
-        _ => "whole section",
+        _ => step.Scope == StepScope.WholePage ? "whole page" : "whole section",
     };
 
     // ---- shared overlay-card picker (mirrors StrategyChooserHandler.RunEntryCardAsync) ----

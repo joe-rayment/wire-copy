@@ -168,4 +168,97 @@ public class SectionResolverTests
         var withoutAlias = _resolver.Resolve(NytConfig(), links, BusinessStep());
         withoutAlias.Status.Should().Be(ResolutionStatus.ZeroMatch, "no alias → no false positive");
     }
+
+    // ---- workspace-42q8.2: whole-page steps (single-list sites) ----
+    private static SiteHierarchyConfig FlatConfig() => new()
+    {
+        Domain = "text.npr.example",
+        UrlPattern = "^https?://(www\\.)?text\\.npr\\.example/?",
+        Sections = new List<HierarchySection>(),
+        CreatedAt = DateTime.UtcNow,
+        ModelVersion = "document-order",
+        ExcludeUrlPatterns = new List<string> { "/sponsored/" },
+    };
+
+    private static RecipeStep WholePageStep(TakeMode mode = TakeMode.WholeSection, int? count = null) =>
+        RecipeStep.Create("https://text.npr.example/", "text.npr.example", "^x$", string.Empty,
+            takeMode: mode, takeCount: count, scope: StepScope.WholePage);
+
+    [Fact]
+    public void WholePage_FlatConfig_ResolvesEveryContentLinkInDocumentOrder_ApplyingExcludes()
+    {
+        var links = new List<LinkInfo>
+        {
+            Link("https://text.npr.example/a", "First", "ul li a"),
+            Link("https://text.npr.example/sponsored/x", "Ad", "ul li a"),
+            Link("https://text.npr.example/b", "Second", "ul li a"),
+        };
+
+        var r = _resolver.Resolve(FlatConfig(), links, WholePageStep());
+
+        r.Status.Should().Be(ResolutionStatus.Resolved);
+        r.Items.Select(i => i.Title).Should().Equal("First", "Second");
+        r.MatchCount.Should().Be(2, "the excluded sponsor never counts");
+        r.Tier.Should().BeNull("no section-matching tier applies to a whole page");
+    }
+
+    [Theory]
+    [InlineData(TakeMode.SingleTopStory, null, 1)]
+    [InlineData(TakeMode.TopN, 2, 2)]
+    [InlineData(TakeMode.WholeSection, null, 3)]
+    public void WholePage_AppliesEveryTakeMode(TakeMode mode, int? count, int expected)
+    {
+        var links = new List<LinkInfo>
+        {
+            Link("https://text.npr.example/a", "A", "ul li a"),
+            Link("https://text.npr.example/b", "B", "ul li a"),
+            Link("https://text.npr.example/c", "C", "ul li a"),
+        };
+
+        var r = _resolver.Resolve(FlatConfig(), links, WholePageStep(mode, count));
+
+        r.Status.Should().Be(ResolutionStatus.Resolved);
+        r.Items.Should().HaveCount(expected);
+        r.Items[0].Title.Should().Be("A", "document order is preserved");
+    }
+
+    [Fact]
+    public void WholePage_OnASectionedConfig_AlsoResolves()
+    {
+        // "All stories" is offered on sectioned sites too — it must not depend on
+        // the config being flat.
+        var links = new List<LinkInfo>
+        {
+            Link("https://www.nytimes.com/1", "Top", TopSelector),
+            Link("https://www.nytimes.com/2", "Biz", BusinessSelector),
+        };
+        var step = RecipeStep.Create("https://www.nytimes.com/", "nytimes.com", "^x$", string.Empty, scope: StepScope.WholePage);
+
+        var r = _resolver.Resolve(NytConfig(), links, step);
+
+        r.Status.Should().Be(ResolutionStatus.Resolved);
+        r.Items.Should().HaveCount(2);
+    }
+
+    [Fact]
+    public void WholePage_EmptyPage_IsALoudZeroMatch()
+    {
+        var r = _resolver.Resolve(FlatConfig(), new List<LinkInfo>(), WholePageStep());
+
+        r.Status.Should().Be(ResolutionStatus.ZeroMatch);
+        r.Diagnostic.Should().NotBeNullOrEmpty("never an empty list dressed as success");
+    }
+
+    [Fact]
+    public void PinnedSectionStep_AgainstFlatConfig_NamesTheRealCause()
+    {
+        // The layout never had sections — the diagnostic must say that (and point at
+        // 'All stories'), not pretend a section was renamed.
+        var step = RecipeStep.Create("https://text.npr.example/", "text.npr.example", "^x$", "Top Stories");
+
+        var r = _resolver.Resolve(FlatConfig(), new List<LinkInfo>(), step);
+
+        r.Status.Should().Be(ResolutionStatus.SectionNotFound);
+        r.Diagnostic.Should().Contain("single list").And.Contain(RecipeStep.WholePageSectionName);
+    }
 }

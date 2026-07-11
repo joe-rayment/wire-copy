@@ -16,18 +16,25 @@ namespace WireCopy.Infrastructure.Scheduling;
 internal static class ScheduleEditing
 {
     /// <summary>
-    /// A site can contribute a durable step ONLY when it has a saved config that is
-    /// not flagged for re-analysis and actually has sections to pick from. Otherwise
-    /// the step-builder must route to inline setup (B12b) and BLOCK the save.
+    /// workspace-42q8.2 — a site can contribute SOME durable step whenever it has a
+    /// saved config that is not flagged for re-analysis: a sectioned layout pins
+    /// sections, and ANY usable layout (including a flat single-list one) supports a
+    /// whole-page step. Only a site with no usable config at all must route to
+    /// inline setup (B12b) — and the save stays blocked until one exists.
     /// </summary>
-    public static bool CanPinSection(SiteHierarchyConfig? config) =>
-        config is { NeedsReanalyze: false } && config.Sections.Count > 0;
+    public static bool UsableConfig(SiteHierarchyConfig? config) =>
+        config is { NeedsReanalyze: false };
+
+    /// <summary>True when the usable config has named sections to pin (the pre-42q8.2 CanPinSection).</summary>
+    public static bool HasPinnableSections(SiteHierarchyConfig? config) =>
+        UsableConfig(config) && config!.Sections.Count > 0;
 
     /// <summary>
-    /// True when an EXISTING recipe step can no longer resolve its durable section
-    /// against the current saved config (config deleted, flagged for re-analysis, or
-    /// the section renamed/removed) — the editor renders "needs reconfigure" instead
-    /// of crashing, and the step is never silently dropped.
+    /// True when an EXISTING recipe step can no longer resolve against the current
+    /// saved config (config deleted, flagged for re-analysis, or — for a pinned
+    /// section — the section renamed/removed) — the editor renders "needs
+    /// reconfigure" instead of crashing, and the step is never silently dropped.
+    /// A whole-page step needs only a usable config, never a section.
     /// </summary>
     public static bool StepNeedsReconfigure(SiteHierarchyConfig? config, RecipeStep step)
     {
@@ -35,6 +42,11 @@ internal static class ScheduleEditing
         if (config is null || config.NeedsReanalyze)
         {
             return true;
+        }
+
+        if (step.Scope == StepScope.WholePage)
+        {
+            return false;
         }
 
         return !config.Sections.Any(s =>
@@ -69,6 +81,28 @@ internal static class ScheduleEditing
             section.SortOrder,
             headingAliases: headingAliases);
     }
+
+    /// <summary>
+    /// workspace-42q8.2 — builds a whole-page step ("All stories"): durable identity
+    /// is the config's UrlPattern alone; no section is referenced, so single-list
+    /// (flat DocumentOrder) layouts schedule exactly like sectioned ones.
+    /// </summary>
+    public static RecipeStep BuildWholePageStep(
+        string sourceUrl,
+        string domain,
+        string configUrlPattern,
+        TakeMode takeMode,
+        int? takeCount,
+        bool required) =>
+        RecipeStep.Create(
+            sourceUrl,
+            domain,
+            configUrlPattern,
+            RecipeStep.WholePageSectionName,
+            takeMode,
+            takeCount,
+            required,
+            scope: StepScope.WholePage);
 
     /// <summary>
     /// Builds a cadence from the day-of-week toggles + local time (+ optional grace).

@@ -28,25 +28,40 @@ internal sealed class SectionResolver : ISectionResolver
         ArgumentNullException.ThrowIfNull(todaysLinks);
         ArgumentNullException.ThrowIfNull(step);
 
+        // Content links in document order, ads/promos removed by the durable
+        // exclude rules — so SingleTopStory can't pick up a co-located ad.
+        var content = todaysLinks
+            .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader && !NavigationTreeBuilder.IsExcluded(l, config))
+            .ToList();
+
+        // workspace-42q8.2: a whole-page step needs no section at all — the content
+        // list above (excludes applied, document order) IS its match. This is what
+        // makes single-list sites (flat DocumentOrder layouts) schedulable.
+        if (step.Scope == StepScope.WholePage)
+        {
+            return ResolveWholePage(config, content, step);
+        }
+
         var section = config.Sections.FirstOrDefault(s =>
                           string.Equals(s.Name, step.SectionName, StringComparison.OrdinalIgnoreCase))
                       ?? config.Sections.FirstOrDefault(s => s.SortOrder == step.SortOrderFallback);
 
         if (section == null)
         {
+            // workspace-42q8.2: say the true thing. "Section not in the layout" reads
+            // as site drift; a layout that never HAD sections needs a different fix
+            // (switch the step to All stories), so name that case explicitly.
+            var diagnostic = config.Sections.Count == 0
+                ? $"The saved layout for {config.Domain} is a single list without sections — edit the schedule and " +
+                  $"pick '{RecipeStep.WholePageSectionName}' for this source instead of a section."
+                : $"Section '{step.SectionName}' (or SortOrder {step.SortOrderFallback}) is not in the " +
+                  $"saved layout for {config.Domain} — re-run AI setup (g l) for this site.";
             return new SectionResolution
             {
                 Status = ResolutionStatus.SectionNotFound,
-                Diagnostic = $"Section '{step.SectionName}' (or SortOrder {step.SortOrderFallback}) is not in the " +
-                             $"saved layout for {config.Domain} — re-run AI setup (g l) for this site.",
+                Diagnostic = diagnostic,
             };
         }
-
-        // Content links in document order, ads/promos removed by the durable
-        // exclude rules — so SingleTopStory can't pick up a co-located ad.
-        var content = todaysLinks
-            .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader && !NavigationTreeBuilder.IsExcluded(l, config))
-            .ToList();
 
         // Primary: the durable predicates, resolved for THIS section only.
         var matched = content.Where(l => NavigationTreeBuilder.MatchesSection(l, section)).ToList();
@@ -120,6 +135,49 @@ internal sealed class SectionResolver : ISectionResolver
                   $"[{string.Join(", ", recoveredSelectors)}] after the saved selector matched 0 today — " +
                   "ratify the layout in Schedules (the recovery is not saved)."
                 : null,
+        };
+    }
+
+    /// <summary>
+    /// workspace-42q8.2 — resolves a <see cref="StepScope.WholePage"/> step: every
+    /// content link post-exclude in document order, TakeMode applied by the caller
+    /// downstream exactly like a section match. The recovery tiers are meaningless
+    /// here (there is no saved selector to re-derive), so an empty page is a plain
+    /// loud ZeroMatch.
+    /// </summary>
+    private static SectionResolution ResolveWholePage(
+        SiteHierarchyConfig config,
+        IReadOnlyList<LinkInfo> content,
+        RecipeStep step)
+    {
+        if (content.Count == 0)
+        {
+            return new SectionResolution
+            {
+                Status = ResolutionStatus.ZeroMatch,
+                MatchCount = 0,
+                Diagnostic = $"'{step.SectionName}' matched 0 articles on {config.Domain} today; " +
+                             "the page rendered empty or every link was excluded.",
+            };
+        }
+
+        var taken = step.TakeMode switch
+        {
+            TakeMode.SingleTopStory => content.Take(1),
+            TakeMode.TopN => content.Take(step.TakeCount ?? 1),
+            _ => content.Take(NavigationTreeBuilder.MaxContentLinks),
+        };
+
+        return new SectionResolution
+        {
+            Status = ResolutionStatus.Resolved,
+            Items = taken
+                .Select(l => (l.Url, Title: string.IsNullOrWhiteSpace(l.DisplayText) ? l.Url : l.DisplayText))
+                .ToList(),
+            MatchCount = content.Count,
+
+            // No section-matching tier applies — the whole page is the match.
+            Tier = null,
         };
     }
 

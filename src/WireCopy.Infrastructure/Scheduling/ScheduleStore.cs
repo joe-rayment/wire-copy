@@ -132,6 +132,7 @@ internal sealed class ScheduleStore : IScheduleStore
             Domain = s.Domain,
             ConfigUrlPattern = s.ConfigUrlPattern,
             SectionName = s.SectionName,
+            Scope = s.Scope,
             SortOrderFallback = s.SortOrderFallback,
             HeadingAliases = s.HeadingAliases.ToList(),
             TakeMode = s.TakeMode,
@@ -156,6 +157,7 @@ internal sealed class ScheduleStore : IScheduleStore
             Domain = s.Domain,
             ConfigUrlPattern = s.ConfigUrlPattern,
             SectionName = s.SectionName,
+            Scope = s.Scope,
             SortOrderFallback = s.SortOrderFallback,
             HeadingAliases = s.HeadingAliases,
             TakeMode = s.TakeMode,
@@ -251,6 +253,10 @@ internal sealed class ScheduleStore : IScheduleStore
         public string ConfigUrlPattern { get; set; } = string.Empty;
 
         public string SectionName { get; set; } = string.Empty;
+
+        // workspace-42q8.2: absent in pre-existing files → PinnedSection, so old
+        // recipes keep their meaning (serialized as the enum NAME like every enum here).
+        public StepScope Scope { get; set; } = StepScope.PinnedSection;
 
         public int SortOrderFallback { get; set; }
 

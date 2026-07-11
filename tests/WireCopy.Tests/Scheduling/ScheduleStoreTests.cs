@@ -118,4 +118,47 @@ public class ScheduleStoreTests : IDisposable
         await File.WriteAllTextAsync(Path.Combine(_dir, "schedules.json"), "not valid json {{{");
         (await _store.GetAllAsync()).Should().BeEmpty();
     }
+
+    [Fact]
+    public async Task WholePageStep_RoundTripsWithItsScope()
+    {
+        // workspace-42q8.2
+        var step = ScheduleEditing.BuildWholePageStep(
+            "https://text.npr.org/", "text.npr.org", "^npr$", TakeMode.TopN, takeCount: 4, required: true);
+        var recipe = ScheduleRecipe.Create(
+            "NPR All", Cadence.Create(new[] { DayOfWeek.Monday }, new TimeOnly(7, 0)), new[] { step });
+        await _store.SaveAsync(recipe);
+
+        var loaded = await _store.GetAsync(recipe.Id);
+
+        var loadedStep = loaded!.Steps.Single();
+        loadedStep.Scope.Should().Be(StepScope.WholePage);
+        loadedStep.SectionName.Should().Be(RecipeStep.WholePageSectionName);
+        loadedStep.TakeCount.Should().Be(4);
+
+        // Persisted as the enum NAME (reorder-safe), like every enum in this file.
+        var raw = await File.ReadAllTextAsync(Path.Combine(_dir, "schedules.json"));
+        raw.Should().Contain("\"WholePage\"");
+    }
+
+    [Fact]
+    public async Task LegacyStepJson_WithoutScope_LoadsAsPinnedSection()
+    {
+        // workspace-42q8.2: schedules.json written before the Scope field existed
+        // must keep meaning exactly what it meant.
+        var legacy =
+            "{\"version\":1,\"recipes\":[{\"id\":\"7e0f7e57-1111-2222-3333-444444444444\",\"name\":\"Old Brief\"," +
+            "\"enabled\":true,\"days\":[\"Monday\"],\"localTime\":\"07:00\"," +
+            "\"steps\":[{\"sourceUrl\":\"https://nyt.example/\",\"domain\":\"nyt.example\"," +
+            "\"configUrlPattern\":\"^nyt$\",\"sectionName\":\"Front\",\"sortOrderFallback\":0,\"headingAliases\":[]," +
+            "\"takeMode\":\"WholeSection\",\"required\":true}]," +
+            "\"outputCollectionName\":\"Old Brief\",\"version\":1,\"lastStatus\":\"Never\"}]}";
+        await File.WriteAllTextAsync(Path.Combine(_dir, "schedules.json"), legacy);
+
+        var loaded = await _store.GetAllAsync();
+
+        var step = loaded.Single().Steps.Single();
+        step.Scope.Should().Be(StepScope.PinnedSection);
+        step.SectionName.Should().Be("Front");
+    }
 }

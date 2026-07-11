@@ -31,6 +31,13 @@ public sealed record RecipeStep
     /// <summary>The saved section's Name (durable key part 2).</summary>
     public required string SectionName { get; init; }
 
+    /// <summary>
+    /// workspace-42q8.2 — whether this step pins a named section or takes the whole
+    /// page. Defaults to <see cref="StepScope.PinnedSection"/> so recipes persisted
+    /// before the field existed keep their meaning.
+    /// </summary>
+    public StepScope Scope { get; init; } = StepScope.PinnedSection;
+
     /// <summary>SortOrder to fall back to if the section was renamed.</summary>
     public int SortOrderFallback { get; init; }
 
@@ -46,8 +53,15 @@ public sealed record RecipeStep
     public bool Required { get; init; }
 
     /// <summary>
+    /// The display name a whole-page step carries in place of a section name.
+    /// </summary>
+    public const string WholePageSectionName = "All stories";
+
+    /// <summary>
     /// Validates + normalises the TakeMode/TakeCount invariants:
     /// SingleTopStory ⇒ count 1, WholeSection ⇒ count null, TopN ⇒ count ≥ 1.
+    /// A <see cref="StepScope.WholePage"/> step needs no section name (it defaults
+    /// to <see cref="WholePageSectionName"/>); a pinned-section step requires one.
     /// </summary>
     public static RecipeStep Create(
         string sourceUrl,
@@ -59,11 +73,17 @@ public sealed record RecipeStep
         bool required = true,
         int sortOrderFallback = 0,
         Guid? bookmarkId = null,
-        IEnumerable<string>? headingAliases = null)
+        IEnumerable<string>? headingAliases = null,
+        StepScope scope = StepScope.PinnedSection)
     {
         if (string.IsNullOrWhiteSpace(sourceUrl))
         {
             throw new ArgumentException("SourceUrl is required", nameof(sourceUrl));
+        }
+
+        if (scope == StepScope.WholePage && string.IsNullOrWhiteSpace(sectionName))
+        {
+            sectionName = WholePageSectionName;
         }
 
         if (string.IsNullOrWhiteSpace(sectionName))
@@ -87,6 +107,7 @@ public sealed record RecipeStep
             Domain = domain.Trim().ToLowerInvariant(),
             ConfigUrlPattern = configUrlPattern,
             SectionName = sectionName.Trim(),
+            Scope = scope,
             SortOrderFallback = sortOrderFallback,
             HeadingAliases = headingAliases?.ToList() ?? new List<string>(),
             TakeMode = takeMode,

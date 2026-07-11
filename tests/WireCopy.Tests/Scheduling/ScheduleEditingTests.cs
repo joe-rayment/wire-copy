@@ -29,18 +29,28 @@ public class ScheduleEditingTests
     };
 
     [Theory]
-    [InlineData(false, 1, true)]   // configured, has sections → can pin
+    [InlineData(false, 1, true)]   // configured, has sections → pinnable
     [InlineData(true, 1, false)]   // flagged for re-analysis → blocked
-    [InlineData(false, 0, false)]  // no sections → blocked
-    public void CanPinSection_OnlyWhenConfiguredWithSections(bool needsReanalyze, int sectionCount, bool expected)
+    [InlineData(false, 0, false)]  // no sections → nothing to PIN (whole-page still schedulable, below)
+    public void HasPinnableSections_OnlyWhenConfiguredWithSections(bool needsReanalyze, int sectionCount, bool expected)
     {
         var cfg = sectionCount == 0 ? Config(needsReanalyze) : Config(needsReanalyze, "Front");
-        ScheduleEditing.CanPinSection(cfg).Should().Be(expected);
+        ScheduleEditing.HasPinnableSections(cfg).Should().Be(expected);
+    }
+
+    [Theory]
+    [InlineData(false, 0, true)]   // workspace-42q8.2: a FLAT layout is usable — whole-page steps
+    [InlineData(false, 1, true)]
+    [InlineData(true, 1, false)]   // re-analysis flag still blocks everything
+    public void UsableConfig_AcceptsFlatLayouts_RejectsReanalyzeFlag(bool needsReanalyze, int sectionCount, bool expected)
+    {
+        var cfg = sectionCount == 0 ? Config(needsReanalyze) : Config(needsReanalyze, "Front");
+        ScheduleEditing.UsableConfig(cfg).Should().Be(expected);
     }
 
     [Fact]
-    public void CanPinSection_NullConfig_IsBlocked() =>
-        ScheduleEditing.CanPinSection(null).Should().BeFalse("an unconfigured site can never persist an unpinned step");
+    public void UsableConfig_NullConfig_IsBlocked() =>
+        ScheduleEditing.UsableConfig(null).Should().BeFalse("an unconfigured site can never persist a step");
 
     [Fact]
     public void StepNeedsReconfigure_WhenConfigDeleted_OrSectionGone()
@@ -55,6 +65,36 @@ public class ScheduleEditingTests
         ScheduleEditing.StepNeedsReconfigure(Config(true, "Front", "Business"), step).Should().BeTrue("flagged for re-analysis");
 
         ScheduleEditing.StepNeedsReconfigure(Config(false, "Front", "Business"), step).Should().BeFalse("Business still present");
+    }
+
+    [Fact]
+    public void StepNeedsReconfigure_WholePageStep_FineOnFlatConfig_BrokenOnlyWithoutUsableConfig()
+    {
+        // workspace-42q8.2: whole-page steps reference no section, so a flat layout
+        // (or one whose sections all changed) never flags them.
+        var step = ScheduleEditing.BuildWholePageStep(
+            "https://www.nytimes.com/", "nytimes.com", "^x$", TakeMode.WholeSection, null, required: true);
+
+        ScheduleEditing.StepNeedsReconfigure(Config(false), step).Should().BeFalse("flat config is exactly what a whole-page step wants");
+        ScheduleEditing.StepNeedsReconfigure(Config(false, "Front"), step).Should().BeFalse("sections are irrelevant to a whole-page step");
+        ScheduleEditing.StepNeedsReconfigure(null, step).Should().BeTrue("deleted config still breaks it");
+        ScheduleEditing.StepNeedsReconfigure(Config(true), step).Should().BeTrue("re-analysis flag still breaks it");
+    }
+
+    [Fact]
+    public void BuildWholePageStep_CarriesTheWholePageIdentity()
+    {
+        var step = ScheduleEditing.BuildWholePageStep(
+            "https://www.nytimes.com/section/todayspaper", "NYTimes.com", "^nyt$",
+            TakeMode.TopN, takeCount: 5, required: false);
+
+        step.Scope.Should().Be(StepScope.WholePage);
+        step.SectionName.Should().Be(RecipeStep.WholePageSectionName);
+        step.ConfigUrlPattern.Should().Be("^nyt$");
+        step.Domain.Should().Be("nytimes.com");
+        step.TakeMode.Should().Be(TakeMode.TopN);
+        step.TakeCount.Should().Be(5);
+        step.Required.Should().BeFalse();
     }
 
     [Fact]

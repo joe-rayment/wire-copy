@@ -44,6 +44,45 @@ public class NavigationTree
     /// </summary>
     public bool HierarchyConfigStale { get; set; }
 
+    /// <summary>
+    /// workspace-42q8.3: the tree's section headers (<see cref="HeaderType.SubSection"/>
+    /// nodes) in document order — empty for a flat tree. The unit the schedule flow
+    /// offers to pin.
+    /// </summary>
+    public IReadOnlyList<LinkNode> SectionHeaders =>
+        EnumerateInDocumentOrder(Root).Where(n => n.Link.HeaderType == HeaderType.SubSection).ToList();
+
+    /// <summary>
+    /// workspace-42q8.3: the section header a node belongs to — the node itself when
+    /// it IS a section header, else the nearest <see cref="HeaderType.SubSection"/>
+    /// ancestor; null on a flat tree / for nodes outside any section (so callers can
+    /// fall back to "the whole page"). Pass null (e.g. no selection) for null.
+    /// </summary>
+    public static LinkNode? GetOwningSectionHeader(LinkNode? node)
+    {
+        for (var current = node; current != null; current = current.Parent)
+        {
+            if (current.Link.HeaderType == HeaderType.SubSection)
+            {
+                return current;
+            }
+        }
+
+        return null;
+    }
+
+    private static IEnumerable<LinkNode> EnumerateInDocumentOrder(LinkNode node)
+    {
+        foreach (var child in node.Children)
+        {
+            yield return child;
+            foreach (var descendant in EnumerateInDocumentOrder(child))
+            {
+                yield return descendant;
+            }
+        }
+    }
+
     private List<LinkNode>? _cachedVisibleNodes;
 
     private NavigationTree(LinkNode root)
