@@ -56,9 +56,9 @@ public class RecipeRunPipelineTests
             .Returns(OkResult());
     }
 
-    private RecipeRunPipeline Sut() => new(
+    private RecipeRunPipeline Sut(IHierarchyConfigStore? configStore = null) => new(
         _loader, _resolver, _orchestrator, _jobManager, _runRepo, _uow, _store,
-        NullLogger<RecipeRunPipeline>.Instance);
+        NullLogger<RecipeRunPipeline>.Instance, configStore: configStore);
 
     [Fact]
     public async Task ThreeStepsAcrossTwoSites_AssembleIntoOneCollectionInOrder_DedupingCrossStepUrls()
@@ -197,6 +197,70 @@ public class RecipeRunPipelineTests
         _jobManager.Received(1).StartJob(
             Arg.Any<Collection>(), Arg.Any<PodcastTargets?>(), Arg.Any<Task<PodcastResult>>(), Arg.Any<CancellationTokenSource>());
         _jobManager.Received().Clear();
+    }
+
+    [Fact]
+    public async Task LoaderConfigMiss_StepStillResolves_ViaDurableConfigUrlPattern()
+    {
+        // workspace-42q8.1: the adapter's URL-regex lookup can miss (bookmark URL
+        // drifted from the URL the layout was saved on) while the step's DURABLE
+        // ConfigUrlPattern still identifies the config exactly.
+        var pinned = Cfg with { UrlPattern = "^https?://(www\\.)?nyt\\.example/edition" };
+        var step = RecipeStep.Create(NytUrl, "nyt.example", pinned.UrlPattern, "Front", required: true);
+        var recipe = Recipe("NYT Brief", step);
+
+        _loader.LoadLinksAndConfigAsync(NytUrl, Arg.Any<CancellationToken>())
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Ok, Links = Array.Empty<LinkInfo>(), Config = null });
+        var configStore = Substitute.For<IHierarchyConfigStore>();
+        configStore.GetConfigsForDomainAsync(NytUrl).Returns(new[] { pinned });
+        configStore.GetConfigAsync(Arg.Any<string>()).Returns((SiteHierarchyConfig?)null);
+        ResolveAs("Front", Resolved(("u1", "A")));
+
+        var run = NewRun(recipe);
+        await Sut(configStore).RunAsync(recipe, run);
+
+        run.Status.Should().Be(ScheduledRunStatus.Completed);
+        _resolver.Received(1).Resolve(pinned, Arg.Any<IReadOnlyList<LinkInfo>>(), Arg.Any<RecipeStep>());
+    }
+
+    [Fact]
+    public async Task LoaderConfigMiss_SiteHasOtherLayouts_DiagnosticNamesTheDriftNotABlanketLie()
+    {
+        var other = Cfg with { UrlPattern = "^https?://(www\\.)?nyt\\.example/other-page" };
+        var step = RecipeStep.Create(NytUrl, "nyt.example", "^gone$", "Front", required: true);
+        var recipe = Recipe("NYT Brief", step);
+
+        _loader.LoadLinksAndConfigAsync(NytUrl, Arg.Any<CancellationToken>())
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Ok, Links = Array.Empty<LinkInfo>(), Config = null });
+        var configStore = Substitute.For<IHierarchyConfigStore>();
+        configStore.GetConfigsForDomainAsync(NytUrl).Returns(new[] { other });
+        configStore.GetConfigAsync(Arg.Any<string>()).Returns((SiteHierarchyConfig?)null);
+
+        var run = NewRun(recipe);
+        await Sut(configStore).RunAsync(recipe, run);
+
+        run.Status.Should().Be(ScheduledRunStatus.Failed);
+        run.StepOutcomesJson.Should().Contain("no longer matches", "the site IS set up — say what actually broke")
+            .And.NotContain("No saved layout");
+    }
+
+    [Fact]
+    public async Task LoaderConfigMiss_NothingSavedForSite_DiagnosticSaysSetUpOnce()
+    {
+        var step = RecipeStep.Create(NytUrl, "nyt.example", "^gone$", "Front", required: true);
+        var recipe = Recipe("NYT Brief", step);
+
+        _loader.LoadLinksAndConfigAsync(NytUrl, Arg.Any<CancellationToken>())
+            .Returns(new UnattendedSectionLoad { Outcome = LoadOutcome.Ok, Links = Array.Empty<LinkInfo>(), Config = null });
+        var configStore = Substitute.For<IHierarchyConfigStore>();
+        configStore.GetConfigsForDomainAsync(NytUrl).Returns(Array.Empty<SiteHierarchyConfig>());
+        configStore.GetConfigAsync(Arg.Any<string>()).Returns((SiteHierarchyConfig?)null);
+
+        var run = NewRun(recipe);
+        await Sut(configStore).RunAsync(recipe, run);
+
+        run.Status.Should().Be(ScheduledRunStatus.Failed);
+        run.StepOutcomesJson.Should().Contain("No saved layout").And.Contain("g l");
     }
 
     // ---- helpers ----

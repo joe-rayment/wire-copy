@@ -19,7 +19,7 @@ namespace WireCopy.Infrastructure.Scheduling;
 
 /// <summary>
 /// workspace-frpl.8 (B7) — runs ONE recipe occurrence end-to-end. For each ordered
-/// step it loads the source headlessly (B5), resolves the durable section against
+/// step it loads the source unattended in the background (B5), resolves the durable section against
 /// today's links (B2), applies the TakeMode, and appends the items to a single
 /// running list (first-wins cross-step URL dedup). A QUALITY FLOOR then decides
 /// whether to publish at all: it ABORTS with no episode if nothing resolved, if any
@@ -50,6 +50,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private readonly ISemanticSectionRecovery? _semanticRecovery;
     private readonly IOptions<GcsConfiguration>? _gcsOptions;
     private readonly IUserSettingsStore? _settingsStore;
+    private readonly IHierarchyConfigStore? _configStore;
 
     public RecipeRunPipeline(
         IUnattendedSectionLoader loader,
@@ -62,7 +63,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         ILogger<RecipeRunPipeline> logger,
         ISemanticSectionRecovery? semanticRecovery = null,
         IOptions<GcsConfiguration>? gcsOptions = null,
-        IUserSettingsStore? settingsStore = null)
+        IUserSettingsStore? settingsStore = null,
+        IHierarchyConfigStore? configStore = null)
     {
         _loader = loader;
         _resolver = resolver;
@@ -75,6 +77,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         _semanticRecovery = semanticRecovery;
         _gcsOptions = gcsOptions;
         _settingsStore = settingsStore;
+        _configStore = configStore;
     }
 
     public async Task RunAsync(ScheduleRecipe recipe, ScheduledRun run, CancellationToken cancellationToken = default)
@@ -209,7 +212,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             // workspace-frpl.11 (B8): a Blocked load is a logged-out/paywalled session,
             // not a transient error — give the user an actionable, human diagnostic
             // (surfaced by B11) instead of producing a silent empty episode. We never
-            // attempt headless re-auth; the user refreshes by browsing the site once.
+            // attempt unattended re-auth; the user refreshes by browsing the site once.
             var diagnostic = load.Outcome == LoadOutcome.Blocked
                 ? $"{HostOf(step.SourceUrl)}: appears logged-out or paywalled — open it in WireCopy and sign in to refresh your session. " +
                   "The scheduled run skipped this step rather than publish an empty episode."
@@ -217,15 +220,25 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             return (load.Outcome.ToString(), 0, diagnostic);
         }
 
-        if (load.Config is null)
+        // workspace-42q8.1: resolve the config by the step's DURABLE key
+        // (ConfigUrlPattern) first, with the adapter's URL-matched config as the
+        // legacy fallback — and when nothing resolves, say the truthful thing:
+        // "the site's saved layout no longer covers this URL" is actionable in a
+        // way the old blanket "no saved layout" (often a lie) was not.
+        var lookup = _configStore != null
+            ? await ScheduleConfigResolution.ForStepAsync(_configStore, step, load.FinalUrl).ConfigureAwait(false)
+            : null;
+        var config = lookup?.Config ?? load.Config;
+        if (config is null)
         {
-            return (
-                ResolutionStatus.SectionNotFound.ToString(),
-                0,
-                $"No saved layout config for {step.SourceUrl} — configure it once (g l) so scheduled runs can resolve sections");
+            var diagnostic = lookup is { SiteHasAnyConfig: true }
+                ? $"The saved layout for {HostOf(step.SourceUrl)} (covers {ScheduleConfigResolution.DescribeSitePatterns(lookup.SiteConfigs)}) " +
+                  $"no longer matches {step.SourceUrl} — re-add this step in :schedules to re-pin it"
+                : $"No saved layout for {HostOf(step.SourceUrl)} yet — set the site up once (g l) so scheduled runs can resolve sections";
+            return (ResolutionStatus.SectionNotFound.ToString(), 0, diagnostic);
         }
 
-        var resolution = _resolver.Resolve(load.Config, load.Links, step);
+        var resolution = _resolver.Resolve(config, load.Links, step);
 
         // workspace-frpl.10 (B9b): when the durable match AND B9a's deterministic
         // re-derivation both yielded 0, try the budgeted semantic recovery tier as a
@@ -235,7 +248,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         if (resolution.Status == ResolutionStatus.ZeroMatch && _semanticRecovery != null)
         {
             var recovered = await _semanticRecovery
-                .TryRecoverAsync(load.Config, load.Links, step, cancellationToken)
+                .TryRecoverAsync(config, load.Links, step, cancellationToken)
                 .ConfigureAwait(false);
             if (recovered != null)
             {

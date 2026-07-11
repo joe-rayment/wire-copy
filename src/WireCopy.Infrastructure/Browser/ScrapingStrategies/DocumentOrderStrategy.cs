@@ -80,7 +80,12 @@ public sealed class DocumentOrderStrategy : IScrapingStrategy
         try
         {
             var uri = new Uri(pageUrl);
-            var escapedDomain = Regex.Escape(uri.Host);
+
+            // workspace-42q8.1: escape the www-stripped host so the (www\.)? prefix
+            // below actually makes the pattern host-variant tolerant — escaping the
+            // literal saved host used to produce (www\.)?www\.x\.com, which never
+            // matched the bare x.com form of the same page.
+            var escapedDomain = Regex.Escape(HierarchyDomainKey.StripWww(uri.Host));
 
             // workspace-felb: keep a non-default port in the pattern so local
             // sites on different ports never match each other's configs.

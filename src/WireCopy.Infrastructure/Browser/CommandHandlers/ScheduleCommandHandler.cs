@@ -173,7 +173,7 @@ internal static class ScheduleCommandHandler
         {
             Title = "Schedules",
             Prompt = recipes.Count == 0
-                ? "No schedules yet. A schedule pulls saved sections (like \"Top Stories\") from your bookmarked sites on a cadence and auto-publishes a podcast while WireCopy is open. Sections are saved per site with the Ctrl+L setup wizard."
+                ? "No schedules yet. A schedule pulls saved sections (like \"Top Stories\") from your bookmarked sites on a cadence and auto-publishes a podcast while WireCopy is open. Sections are saved per site with the setup wizard (g l)."
                 : "Recurring section recipes → auto-published podcast (runs while WireCopy is open).",
             Hint = recipes.Count == 0
                 ? "a: new · Esc: close"
@@ -259,8 +259,11 @@ internal static class ScheduleCommandHandler
         var names = new List<string>();
         foreach (var step in recipe.Steps)
         {
-            var config = await configStore.GetConfigAsync(step.SourceUrl).ConfigureAwait(false);
-            if (ScheduleEditing.StepNeedsReconfigure(config, step))
+            // workspace-42q8.1: durable-key-first lookup — the old URL-regex-only
+            // lookup flagged healthy steps "needs reconfigure" whenever the bookmark
+            // URL drifted from the URL the layout was saved on.
+            var lookup = await ScheduleConfigResolution.ForStepAsync(configStore, step).ConfigureAwait(false);
+            if (ScheduleEditing.StepNeedsReconfigure(lookup.Config, step))
             {
                 names.Add(step.SectionName);
             }
@@ -405,9 +408,12 @@ internal static class ScheduleCommandHandler
     /// <summary>
     /// workspace-frpl.15 (B12b) — set an UNCONFIGURED bookmarked site up inline: confirm,
     /// load it unattended through B5's preload-context-serialized path, run the SAME
-    /// SetupWizard the Ctrl+L flow uses (unattended adapters, null screenshot), and persist
+    /// SetupWizard the g l flow uses (unattended adapters, null screenshot), and persist
     /// the resulting durable config so its section becomes pickable. Returns the saved
     /// config, or null if AI is unavailable / the user cancelled / no config was produced.
+    /// workspace-42q8.1: the confirm prompt is honest about WHY setup is needed — a site
+    /// whose layout simply doesn't cover this bookmark's page is told that, never the
+    /// blanket (often false) "has no saved layout".
     /// </summary>
     private static async Task<SiteHierarchyConfig?> TryInlineSetupAsync(
         CommandContext ctx,
@@ -415,6 +421,7 @@ internal static class ScheduleCommandHandler
         ThemePalette palette,
         RenderOptions options,
         Bookmark bookmark,
+        ScheduleConfigLookup lookup,
         CancellationToken ct)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
@@ -434,7 +441,19 @@ internal static class ScheduleCommandHandler
             return null;
         }
 
-        var setup = await PickAsync(ctx, overlay, options, "Set up this site?", $"'{bookmark.Name}' has no saved layout. Set it up now with AI over a background load? Enter select · Esc back", new List<string> { "Set up with AI now", "Cancel" }, 0, ct).ConfigureAwait(false);
+        // Truthful situation line (workspace-42q8.1): the blanket "has no saved
+        // layout" was often a lie — a layout existed for another page of the site,
+        // or existed as a single list.
+        var situation = lookup switch
+        {
+            { Config: not null } =>
+                $"'{bookmark.Name}' is saved as a single list without sections, so there is no section to pin yet.",
+            { SiteHasAnyConfig: true } =>
+                $"'{bookmark.Name}' has a saved layout, but it covers {ScheduleConfigResolution.DescribeSitePatterns(lookup.SiteConfigs)} — not this exact page.",
+            _ => $"'{bookmark.Name}' has no saved layout yet.",
+        };
+
+        var setup = await PickAsync(ctx, overlay, options, "Set up this site?", $"{situation} Set this page up now with AI over a background load? Enter select · Esc back", new List<string> { "Set up with AI now", "Cancel" }, 0, ct).ConfigureAwait(false);
         if (setup.Cancelled || setup.Index != 0)
         {
             return null;
@@ -448,7 +467,7 @@ internal static class ScheduleCommandHandler
         if (load.Outcome != LoadOutcome.Ok || load.Links.Count == 0)
         {
             ctx.NavigationService.SetStatusMessage(
-                $"Couldn't load {bookmark.Name} headlessly ({load.Outcome}) — try opening it once in WireCopy first.",
+                $"Couldn't load {bookmark.Name} in the background ({load.Outcome}) — try opening it once in WireCopy first.",
                 TimeSpan.FromSeconds(8));
             return null;
         }
@@ -500,14 +519,15 @@ internal static class ScheduleCommandHandler
         }
 
         var bookmark = bookmarks[pick.Index];
-        var config = await configStore.GetConfigAsync(bookmark.Url).ConfigureAwait(false);
+        var lookup = await ScheduleConfigResolution.ForUrlAsync(configStore, bookmark.Url).ConfigureAwait(false);
+        var config = lookup.Config;
         if (!ScheduleEditing.CanPinSection(config))
         {
             // workspace-frpl.15 (B12b): rather than dead-end, offer to set the site up
-            // INLINE over a headless load. Returns a freshly-saved config (now pinnable)
+            // INLINE over a background load. Returns a freshly-saved config (now pinnable)
             // or null if the user backed out / setup didn't produce one. Still never
             // persists an unpinned section.
-            config = await TryInlineSetupAsync(ctx, overlay, palette, options, bookmark, ct).ConfigureAwait(false);
+            config = await TryInlineSetupAsync(ctx, overlay, palette, options, bookmark, lookup, ct).ConfigureAwait(false);
             if (!ScheduleEditing.CanPinSection(config))
             {
                 return null;

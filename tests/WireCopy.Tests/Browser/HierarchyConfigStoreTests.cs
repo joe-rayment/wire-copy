@@ -38,6 +38,12 @@ public class HierarchyConfigStoreTests : IDisposable
                 "test-hierarchy.localhost.json",
                 "test-hierarchy.localhost_8001.json",
                 "test-hierarchy.localhost_8002.json",
+                "test-hierarchy-wwwprobe.example.com.json",
+                "www.test-hierarchy-wwwprobe.example.com.json",
+                "test-hierarchy-wwwsave.example.com.json",
+                "www.test-hierarchy-wwwsave.example.com.json",
+                "test-hierarchy-domainlist.example.com.json",
+                "www.test-hierarchy-domainlist.example.com.json",
             };
 
             foreach (var file in testFiles)
@@ -313,6 +319,107 @@ public class HierarchyConfigStoreTests : IDisposable
 
         ported.Should().BeNull("ported URLs must not match the port-blind legacy config");
         defaultPort.Should().NotBeNull("default-port URLs still find the bare-host config");
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_LegacyWwwKeyedFile_FoundFromApexUrl()
+    {
+        // workspace-42q8.1: configs written before the www-strip live in
+        // "www.<host>.json" with a pattern anchored on the literal www host.
+        // An apex-host URL for the same page must still find them (this was
+        // the "NYT Today's Paper has no saved layout" lie).
+        var legacyJson =
+            "[{\"domain\":\"www.test-hierarchy-wwwprobe.example.com\"," +
+            "\"urlPattern\":\"^https?://(www\\\\.)?www\\\\.test-hierarchy-wwwprobe\\\\.example\\\\.com/section/today\"," +
+            "\"sections\":[{\"name\":\"Top\",\"sortOrder\":0,\"parentSelectors\":[],\"urlPatterns\":[],\"startCollapsed\":false}]," +
+            "\"createdAt\":\"2026-03-17T12:00:00Z\",\"modelVersion\":\"gpt-5-mini\"}]";
+        Directory.CreateDirectory(_storagePath);
+        await File.WriteAllTextAsync(
+            Path.Combine(_storagePath, "www.test-hierarchy-wwwprobe.example.com.json"), legacyJson);
+
+        var fromApex = await _store.GetConfigAsync("https://test-hierarchy-wwwprobe.example.com/section/today");
+        var fromWww = await _store.GetConfigAsync("https://www.test-hierarchy-wwwprobe.example.com/section/today");
+
+        fromApex.Should().NotBeNull("the legacy www-keyed config covers the same site");
+        fromWww.Should().NotBeNull();
+        fromApex!.Sections[0].Name.Should().Be("Top");
+    }
+
+    [Fact]
+    public async Task GetConfigAsync_WwwUrl_FindsConfigSavedFromApexUrl()
+    {
+        var config = CreateTestConfig(
+            domain: "test-hierarchy-wwwsave.example.com",
+            urlPattern: "^https?://(www\\.)?test-hierarchy-wwwsave\\.example\\.com/?");
+        await _store.SaveConfigAsync(config);
+
+        var result = await _store.GetConfigAsync("https://www.test-hierarchy-wwwsave.example.com/");
+
+        result.Should().NotBeNull("www and apex are the same site");
+    }
+
+    [Fact]
+    public async Task GetConfigsForDomainAsync_ReturnsEverySiteConfig_RegardlessOfUrlMatch()
+    {
+        // One config in the current apex file, one stranded in a legacy www file,
+        // neither matching the queried URL — both must surface so callers can say
+        // "the site IS set up, just not this page" instead of lying.
+        var apex = CreateTestConfig(
+            domain: "test-hierarchy-domainlist.example.com",
+            urlPattern: "^https?://(www\\.)?test-hierarchy-domainlist\\.example\\.com/pageA");
+        await _store.SaveConfigAsync(apex);
+        var legacyJson =
+            "[{\"domain\":\"www.test-hierarchy-domainlist.example.com\"," +
+            "\"urlPattern\":\"^https?://www\\\\.test-hierarchy-domainlist\\\\.example\\\\.com/pageB\"," +
+            "\"sections\":[]," +
+            "\"createdAt\":\"2026-03-17T12:00:00Z\",\"modelVersion\":\"gpt-5-mini\"}]";
+        await File.WriteAllTextAsync(
+            Path.Combine(_storagePath, "www.test-hierarchy-domainlist.example.com.json"), legacyJson);
+
+        var all = await _store.GetConfigsForDomainAsync("https://test-hierarchy-domainlist.example.com/unrelated");
+
+        all.Should().HaveCount(2);
+        (await _store.GetConfigAsync("https://test-hierarchy-domainlist.example.com/unrelated"))
+            .Should().BeNull("no pattern covers this URL — but the domain listing above still reports the site as configured");
+    }
+
+    [Fact]
+    public async Task SaveConfigAsync_SupersedesSamePatternConfigInLegacyWwwFile()
+    {
+        const string pattern = "^https?://(www\\.)?test-hierarchy-wwwsave\\.example\\.com/?";
+        var legacyJson =
+            "[{\"domain\":\"www.test-hierarchy-wwwsave.example.com\"," +
+            "\"urlPattern\":\"" + pattern.Replace("\\", "\\\\") + "\"," +
+            "\"sections\":[{\"name\":\"Stale\",\"sortOrder\":0,\"parentSelectors\":[],\"urlPatterns\":[],\"startCollapsed\":false}]," +
+            "\"createdAt\":\"2026-03-17T12:00:00Z\",\"modelVersion\":\"old\"}]";
+        Directory.CreateDirectory(_storagePath);
+        await File.WriteAllTextAsync(
+            Path.Combine(_storagePath, "www.test-hierarchy-wwwsave.example.com.json"), legacyJson);
+
+        var fresh = CreateTestConfig(domain: "test-hierarchy-wwwsave.example.com", urlPattern: pattern);
+        await _store.SaveConfigAsync(fresh);
+
+        var all = await _store.GetConfigsForDomainAsync("https://test-hierarchy-wwwsave.example.com/");
+        all.Should().HaveCount(1, "the same-pattern config in the legacy www file is superseded, not shadow-duplicated");
+        all[0].ModelVersion.Should().Be("gpt-5-mini");
+    }
+
+    [Fact]
+    public async Task DeleteConfigAsync_RemovesConfigFromLegacyWwwFile()
+    {
+        var legacyJson =
+            "[{\"domain\":\"www.test-hierarchy-wwwprobe.example.com\"," +
+            "\"urlPattern\":\"^https?://(www\\\\.)?www\\\\.test-hierarchy-wwwprobe\\\\.example\\\\.com/?\"," +
+            "\"sections\":[]," +
+            "\"createdAt\":\"2026-03-17T12:00:00Z\",\"modelVersion\":\"old\"}]";
+        Directory.CreateDirectory(_storagePath);
+        await File.WriteAllTextAsync(
+            Path.Combine(_storagePath, "www.test-hierarchy-wwwprobe.example.com.json"), legacyJson);
+
+        var deleted = await _store.DeleteConfigAsync("https://test-hierarchy-wwwprobe.example.com/");
+
+        deleted.Should().BeTrue("deleting by the apex URL must reach the legacy www-keyed file");
+        (await _store.GetConfigAsync("https://www.test-hierarchy-wwwprobe.example.com/")).Should().BeNull();
     }
 
     [Fact]

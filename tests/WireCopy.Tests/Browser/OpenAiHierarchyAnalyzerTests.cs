@@ -567,7 +567,10 @@ public class OpenAiHierarchyAnalyzerTests
             "https://www.nytimes.com/section/opinion");
 
         result.UrlPattern.Should().Contain("nytimes\\.com");
-        result.Domain.Should().Be("www.nytimes.com");
+
+        // workspace-42q8.1: the storage key is www-stripped so both host variants
+        // of the same site share one config.
+        result.Domain.Should().Be("nytimes.com");
     }
 
     [Fact]

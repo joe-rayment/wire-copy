@@ -58,13 +58,23 @@ internal sealed class UnattendedSectionLoadAdapter : IUnattendedSectionLoader
         }
 
         var links = await _linkExtractor.ExtractLinksAsync(load.Html, finalUrl, cancellationToken).ConfigureAwait(false);
+
+        // workspace-42q8.1: the links above were extracted against the post-redirect
+        // finalUrl, so the config lookup must be able to follow the same redirect —
+        // otherwise a bookmark that now bounces (e.g. to a new edition URL) extracts
+        // fine but "loses" its saved layout.
         var config = await _configStore.GetConfigAsync(sourceUrl).ConfigureAwait(false);
+        if (config is null && !string.Equals(finalUrl, sourceUrl, StringComparison.OrdinalIgnoreCase))
+        {
+            config = await _configStore.GetConfigAsync(finalUrl).ConfigureAwait(false);
+        }
 
         return new UnattendedSectionLoad
         {
             Outcome = LoadOutcome.Ok,
             Links = links,
             Config = config,
+            FinalUrl = finalUrl,
         };
     }
 }

@@ -17,7 +17,8 @@ public static class ScheduleDependencyInjection
         // workspace-frpl.12 (B10): startup orphan sweep for scheduled runs.
         services.AddHostedService<ScheduledRunLifecycleService>();
 
-        // workspace-frpl.6 (B5): headless section loader for scheduled runs.
+        // workspace-frpl.6 (B5): unattended (no-TUI, still headful) section loader
+        // for scheduled runs.
         services.AddSingleton<IUnattendedSectionLoader, UnattendedSectionLoadAdapter>();
 
         // workspace-frpl.8 (B7): the per-occurrence run pipeline. SCOPED so it shares

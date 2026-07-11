@@ -16,12 +16,15 @@ namespace WireCopy.Tests.Browser;
 public class HierarchyDomainKeyTests
 {
     [Theory]
-    [InlineData("https://www.nytimes.com/section/todayspaper", "www.nytimes.com")]
+    [InlineData("https://www.nytimes.com/section/todayspaper", "nytimes.com")] // workspace-42q8.1: www-stripped
+    [InlineData("https://nytimes.com/section/todayspaper", "nytimes.com")]
     [InlineData("https://example.com:443/", "example.com")]
     [InlineData("http://example.com:80/", "example.com")]
+    [InlineData("http://www.example.com:8080/", "example.com:8080")]
     [InlineData("http://127.0.0.1:8642/", "127.0.0.1:8642")]
     [InlineData("http://localhost:5173/index.html", "localhost:5173")]
     [InlineData("HTTP://LOCALHOST:5173/", "localhost:5173")]
+    [InlineData("https://www.com/", "www.com")] // "www" + single label: not a www prefix, keep as-is
     public void FromUrl_KeysNonDefaultPortsAndBareHostsCorrectly(string url, string expected)
     {
         HierarchyDomainKey.FromUrl(url).Should().Be(expected);
@@ -51,7 +54,19 @@ public class HierarchyDomainKeyTests
     {
         var pattern = DocumentOrderStrategy.BuildUrlPattern("https://www.nytimes.com/section/todayspaper");
 
-        pattern.Should().Be("^https?://(www\\.)?www\\.nytimes\\.com/section/todayspaper");
+        // workspace-42q8.1: the escaped host is www-stripped so the (www\.)? prefix
+        // makes the SAME pattern match both host variants of the page.
+        pattern.Should().Be("^https?://(www\\.)?nytimes\\.com/section/todayspaper");
+        System.Text.RegularExpressions.Regex.IsMatch("https://www.nytimes.com/section/todayspaper", pattern).Should().BeTrue();
+        System.Text.RegularExpressions.Regex.IsMatch("https://nytimes.com/section/todayspaper", pattern).Should().BeTrue();
+    }
+
+    [Fact]
+    public void BuildUrlPattern_SavedFromApexHost_MatchesWwwVariantToo()
+    {
+        var pattern = DocumentOrderStrategy.BuildUrlPattern("https://nytimes.com/section/todayspaper");
+
+        pattern.Should().Be("^https?://(www\\.)?nytimes\\.com/section/todayspaper");
         System.Text.RegularExpressions.Regex.IsMatch("https://www.nytimes.com/section/todayspaper", pattern).Should().BeTrue();
     }
 }

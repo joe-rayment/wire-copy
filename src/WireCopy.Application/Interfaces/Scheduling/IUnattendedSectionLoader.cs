@@ -25,4 +25,11 @@ public sealed record UnattendedSectionLoad
     public IReadOnlyList<LinkInfo> Links { get; init; } = Array.Empty<LinkInfo>();
 
     public SiteHierarchyConfig? Config { get; init; }
+
+    /// <summary>
+    /// workspace-42q8.1: the post-redirect URL the links were actually extracted
+    /// against (null when the load failed) — config resolution must be able to
+    /// follow the same redirect the content did.
+    /// </summary>
+    public string? FinalUrl { get; init; }
 }

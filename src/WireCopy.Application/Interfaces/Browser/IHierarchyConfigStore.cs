@@ -19,6 +19,15 @@ public interface IHierarchyConfigStore
     Task<SiteHierarchyConfig?> GetConfigAsync(string url);
 
     /// <summary>
+    /// workspace-42q8.1: EVERY config saved for the URL's site (www/apex host variants
+    /// included), whether or not any of them pattern-matches this exact URL. Lets
+    /// callers tell "this site has no saved layout at all" apart from "this page
+    /// isn't covered by the site's saved layout(s)" instead of conflating both as
+    /// a null <see cref="GetConfigAsync"/> result.
+    /// </summary>
+    Task<IReadOnlyList<SiteHierarchyConfig>> GetConfigsForDomainAsync(string url);
+
+    /// <summary>
     /// Saves a hierarchy config. Overwrites any existing config
     /// for the same domain and URL pattern.
     /// </summary>
