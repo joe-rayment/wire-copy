@@ -35,6 +35,30 @@ if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; t
     fi
 fi
 
+# --desktop: launch the single-window desktop shell (Electron) instead of running the TUI in
+# this terminal. The shell IS a real headful Chromium window hosting the same TUI in an owned
+# pane — never headless; the Xvfb wrapper above applies identically when there is no display.
+for arg in "$@"; do
+    if [ "$arg" = "--desktop" ]; then
+        echo "wirecopy: building the app (Release)..." >&2
+        "$DOTNET" build src/WireCopy.API/WireCopy.API.csproj -c Release --nologo -v q || exit 1
+        if [ ! -d shell/node_modules ]; then
+            echo "wirecopy: first desktop run — installing the shell (one-time, downloads Electron)..." >&2
+            (cd shell && npm install --no-fund --no-audit) || exit 1
+        fi
+        if [ ! -f shell/node_modules/.wc-pty-rebuilt ]; then
+            (cd shell && npx electron-rebuild -f -w node-pty && touch node_modules/.wc-pty-rebuilt) || exit 1
+        fi
+        shell_flags=()
+        if [ "${WIRECOPY_SHELL_NO_SANDBOX:-}" = "1" ]; then
+            # Container/CI only (no setuid sandbox): must be argv — Linux sandbox init
+            # runs before the shell's main script. Desktop runs keep the sandbox ON.
+            shell_flags=(--no-sandbox --disable-dev-shm-usage)
+        fi
+        exec "${launch[@]}" shell/node_modules/.bin/electron shell "${shell_flags[@]}"
+    fi
+done
+
 # Run with or without filtering.
 #
 # The TUI renders ANSI frames to STDOUT (TerminalPageRenderer → Console.Out) and reads keys from STDIN, so

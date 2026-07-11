@@ -1,0 +1,221 @@
+// WireCopy Desktop — single-window shell.
+// One real headful Chromium window (Electron) hosting:
+//   - the UNMODIFIED WireCopy TUI (node-pty → xterm pane)  → PRIMARY, boots full-window
+//   - live pages as WebContentsViews (real engine)          → SECONDARY, revealed on demand
+// NEVER headless: this process IS a headful browser; on displayless Linux the launcher
+// wraps it in Xvfb (see ../run), it does not degrade.
+//
+// Focus doctrine (three layers — see scripts/electron-shell-spike/README.md for the
+// empirical history; electron#42578 focus-steal-after-load is real):
+//   1. bounce: page-side focus gain in reader mode → refocus terminal
+//   2. enforcement loop: renderer-internal focus() emits no event — cheap poll restores
+//   3. forwarding: keys that still land on a page are re-sent to the terminal, never lost
+// 'browser' mode is an explicit user gesture (click into the pane); Esc returns to reader.
+const { app, BaseWindow, WebContentsView, ipcMain, Menu } = require('electron')
+const path = require('path')
+const pty = require('node-pty')
+
+const ROOT = path.resolve(__dirname, '..')
+const CDP_PORT = process.env.WIRECOPY_SHELL_CDP_PORT || '9223'
+const PAGE_FRACTION = 0.42 // page pane is a feature, not the focus — never dominant
+
+app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
+// NOTE (Linux): sandbox flags cannot be set here — Electron initializes the zygote/sandbox
+// BEFORE this script runs. Containers without a setuid sandbox must pass --no-sandbox
+// --disable-dev-shm-usage on the CLI (../run does this when WIRECOPY_SHELL_NO_SANDBOX=1).
+// Packaged and normal desktop runs keep the Chromium sandbox ON.
+
+// Present as plain Chrome: same engine, honest version, no Electron token — required
+// for Google sign-in and consistent with how the app's sites see a normal browser.
+const CHROME_UA = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
+app.userAgentFallback = CHROME_UA
+
+// One instance only: the TUI owns a shared browser profile + wirecopy.db.
+// app.exit (not quit): quit() is async and pre-ready it can leave the process lingering.
+if (!app.requestSingleInstanceLock()) {
+  app.exit(0)
+} else {
+  app.on('second-instance', () => {
+    if (state.win && !state.win.isDestroyed()) {
+      if (state.win.isMinimized()) state.win.restore()
+      state.win.focus()
+    }
+  })
+}
+
+const state = {
+  win: null,
+  termView: null,
+  pageView: null,     // the visible "lens" pane
+  ptyProc: null,
+  mode: 'reader',     // 'reader' | 'browser'
+  revealed: false,
+  ptyDims: { cols: 0, rows: 0 }
+}
+
+function layout () {
+  const { win, termView, pageView } = state
+  if (!win || win.isDestroyed()) return
+  const [w, h] = win.getContentSize()
+  if (state.revealed) {
+    const pageW = Math.round(w * PAGE_FRACTION)
+    termView.setBounds({ x: 0, y: 0, width: w - pageW, height: h })
+    pageView.setVisible(true)
+    pageView.setBounds({ x: w - pageW, y: 0, width: pageW, height: h })
+  } else {
+    termView.setBounds({ x: 0, y: 0, width: w, height: h })
+    pageView.setVisible(false)
+  }
+}
+
+function focusTerm () {
+  const { win, termView } = state
+  if (win && !win.isDestroyed() && !termView.webContents.isDestroyed()) termView.webContents.focus()
+}
+
+function setMode (m) {
+  if (state.mode === m) return
+  state.mode = m
+  if (m === 'reader') focusTerm()
+  else state.pageView.webContents.focus()
+}
+
+function setPaneVisible (on) {
+  state.revealed = !!on
+  layout()
+  if (!on) focusTerm()
+}
+
+// Reroute a key that landed on a page (reader mode) into the terminal — the user's
+// keystroke is NEVER lost, no matter who won a focus race at that instant.
+const KEYCODE_MAP = { ArrowUp: 'Up', ArrowDown: 'Down', ArrowLeft: 'Left', ArrowRight: 'Right', ' ': 'Space' }
+function forwardToTerm (input) {
+  const wc = state.termView.webContents
+  if (wc.isDestroyed()) return
+  const keyCode = KEYCODE_MAP[input.key] || input.key
+  const modifiers = []
+  if (input.shift) modifiers.push('shift')
+  if (input.control) modifiers.push('control')
+  if (input.alt) modifiers.push('alt')
+  if (input.meta) modifiers.push('meta')
+  if (input.type === 'keyUp') {
+    wc.sendInputEvent({ type: 'keyUp', keyCode, modifiers })
+    return
+  }
+  wc.sendInputEvent({ type: 'keyDown', keyCode, modifiers })
+  if (input.key.length === 1) wc.sendInputEvent({ type: 'char', keyCode: input.key, modifiers })
+}
+
+function attachFocusDoctrine (pageView) {
+  const wc = pageView.webContents
+  wc.on('focus', () => { if (state.mode === 'reader') focusTerm() })
+  const refocus = () => { if (state.mode === 'reader') focusTerm() }
+  wc.on('did-finish-load', refocus)
+  wc.on('did-navigate', refocus)
+  wc.on('did-frame-navigate', refocus)
+  wc.on('before-input-event', (e, input) => {
+    if (state.mode === 'reader') { e.preventDefault(); forwardToTerm(input); return }
+    if (input.type === 'keyDown' && input.key === 'Escape') { e.preventDefault(); setMode('reader') }
+  })
+  // A CLICK into the pane is a deliberate user gesture → browser mode. (Keyboard-side
+  // stealing never carries a real mouseDown, so this cannot be triggered by page JS.)
+  wc.on('input-event', (_e, input) => {
+    if (state.mode === 'reader' && state.revealed && input.type === 'mouseDown') setMode('browser')
+  })
+  wc.setWindowOpenHandler(({ url }) => {
+    wc.loadURL(url).catch(() => {})
+    return { action: 'deny' }
+  })
+}
+
+function spawnTui () {
+  const file = process.env.WIRECOPY_SHELL_DOTNET || path.join(ROOT, 'dotnet')
+  const dll = process.env.WIRECOPY_SHELL_TUI_DLL ||
+    path.join(ROOT, 'src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll')
+  const { cols, rows } = state.ptyDims
+  state.ptyProc = pty.spawn(file, ['exec', dll], {
+    name: 'xterm-256color',
+    cols: cols || 80,
+    rows: rows || 24,
+    cwd: ROOT,
+    env: {
+      ...process.env,
+      TERM: 'xterm-256color',
+      COLORTERM: 'truecolor',
+      WIRECOPY_SHELL: '1'
+    }
+  })
+  state.ptyProc.onData(d => {
+    if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('pty:data', d)
+  })
+  state.ptyProc.onExit(({ exitCode }) => {
+    state.ptyProc = null
+    // The TUI is the app: when it exits (user quit / crash), the shell goes with it.
+    setTimeout(() => app.quit(), exitCode === 0 ? 0 : 1500)
+  })
+}
+
+app.whenReady().then(() => {
+  Menu.setApplicationMenu(null)
+  state.win = new BaseWindow({ width: 1520, height: 940, title: 'Wire Copy', backgroundColor: '#0e0e14' })
+
+  state.termView = new WebContentsView({
+    webPreferences: { preload: path.join(__dirname, 'preload.js') }
+  })
+  state.pageView = new WebContentsView({
+    webPreferences: { partition: 'persist:wirecopy' }
+  })
+  state.pageView.webContents.session.setUserAgent(CHROME_UA)
+
+  state.win.contentView.addChildView(state.pageView)
+  state.win.contentView.addChildView(state.termView)
+  layout()
+  state.win.on('resize', layout)
+  state.win.on('focus', () => { if (state.mode === 'reader') focusTerm() })
+  state.win.on('closed', () => { try { state.ptyProc && state.ptyProc.kill() } catch {} })
+
+  attachFocusDoctrine(state.pageView)
+  try { state.termView.webContents.on('blur', () => { if (state.mode === 'reader') focusTerm() }) } catch {}
+  setInterval(() => {
+    const { win, termView } = state
+    if (state.mode === 'reader' && win && !win.isDestroyed() && win.isFocused() &&
+        !termView.webContents.isFocused()) focusTerm()
+  }, 150)
+
+  state.termView.webContents.loadFile('term.html')
+
+  ipcMain.on('term:ready', (_e, dims) => {
+    state.ptyDims = dims
+    if (state.ptyProc) state.ptyProc.resize(dims.cols, dims.rows)
+    else spawnTui()
+  })
+  ipcMain.on('pty:input', (_e, d) => { if (state.ptyProc) state.ptyProc.write(d) })
+  ipcMain.on('term:resize', (_e, dims) => {
+    state.ptyDims = dims
+    if (state.ptyProc) state.ptyProc.resize(dims.cols, dims.rows)
+  })
+
+  // Dev/gate hooks (local IPC via the terminal pane; production control arrives over
+  // the WIRECOPY_SHELL_CHANNEL socket in a later phase).
+  ipcMain.on('wcdev:reveal', (_e, on) => setPaneVisible(on))
+  ipcMain.on('wcdev:mode', (_e, m) => setMode(m === 'browser' ? 'browser' : 'reader'))
+  ipcMain.handle('wcdev:state', () => ({
+    mode: state.mode,
+    revealed: state.revealed,
+    ptyDims: state.ptyDims,
+    contentSize: state.win.getContentSize(),
+    termBounds: state.termView.getBounds(),
+    pageBounds: state.pageView.getBounds()
+  }))
+  ipcMain.handle('wcdev:nav', async (_e, url) => {
+    try { await state.pageView.webContents.loadURL(url) } catch (err) { return String(err) }
+    return 'ok'
+  })
+
+  focusTerm()
+})
+
+app.on('window-all-closed', () => {
+  try { if (state.ptyProc) state.ptyProc.kill() } catch {}
+  app.quit()
+})
