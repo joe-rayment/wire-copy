@@ -254,6 +254,15 @@ internal static class LauncherCommandHandler
                 await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct).ConfigureAwait(false);
                 break;
 
+            case CommandType.AddToSchedule:
+                // workspace-42q8.4: g s needs an open page — say so (the launcher
+                // footer renders the status in the badge slot) instead of no-oping.
+                ctx.NavigationService.SetStatusMessage(
+                    "Open a site's link list first — g s schedules a section of the page you're on.",
+                    TimeSpan.FromSeconds(6));
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                break;
+
             case CommandType.GoToUrl:
             case CommandType.OpenInBrowser:
                 // Select the URL bar, then activate it

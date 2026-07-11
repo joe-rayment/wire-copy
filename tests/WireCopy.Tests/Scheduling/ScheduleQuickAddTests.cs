@@ -33,7 +33,7 @@ public class ScheduleQuickAddTests
 
         choices.Should().HaveCount(4);
         choices[0].Section!.Name.Should().Be("Business");
-        choices[0].Label.Should().StartWith("▸").And.Contain("the section you're on");
+        choices[0].Label.Should().StartWith("Business").And.Contain("the section you're on");
         choices[1].Section!.Name.Should().Be("Top Stories");
         choices[2].Section!.Name.Should().Be("Opinion");
         choices[3].Section.Should().BeNull("the whole-page option is always last");
@@ -54,7 +54,7 @@ public class ScheduleQuickAddTests
         var choices = ScheduleCommandHandler.BuildQuickAddChoices(Config("Top Stories"), "Some Auto Group");
 
         choices.Select(c => c.Section?.Name).Should().Equal("Top Stories", null);
-        choices.Should().OnlyContain(c => !c.Label.StartsWith("▸"));
+        choices.Should().OnlyContain(c => !c.Label.Contains("the section you're on"));
     }
 
     [Fact]
@@ -63,7 +63,7 @@ public class ScheduleQuickAddTests
         var choices = ScheduleCommandHandler.BuildQuickAddChoices(Config("Business"), "bUsInEsS");
 
         choices[0].Section!.Name.Should().Be("Business");
-        choices[0].Label.Should().StartWith("▸");
+        choices[0].Label.Should().Contain("the section you're on");
     }
 
     [Fact]

@@ -180,6 +180,9 @@ internal static class ScheduleCommandHandler
             ctx.NavigationService.SetStatusMessage(
                 "Open a site's link list first — g s schedules a section of the page you're on.",
                 TimeSpan.FromSeconds(6));
+
+            // Repaint NOW or the guidance stays invisible until the next keypress.
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             return;
         }
 
@@ -549,7 +552,9 @@ internal static class ScheduleCommandHandler
         var choices = new List<QuickAddChoice>();
         if (cursorSection != null)
         {
-            choices.Add(new QuickAddChoice($"▸ {cursorSection.Name}   ⟨the section you're on⟩", cursorSection));
+            // No "▸" here — that is the card CURSOR's glyph, and a label carrying
+            // it reads as a phantom second cursor on unselected rows.
+            choices.Add(new QuickAddChoice($"{cursorSection.Name}   ⟨the section you're on⟩", cursorSection));
         }
 
         choices.AddRange(sections
@@ -815,7 +820,7 @@ internal static class ScheduleCommandHandler
         if (hasCurrentPage)
         {
             var pageName = string.IsNullOrWhiteSpace(currentPage!.Metadata.Title) ? currentPage.Url : Truncate(currentPage.Metadata.Title!, 40);
-            siteLabels.Add($"▸ This page — {pageName}");
+            siteLabels.Add($"This page — {pageName}");
         }
 
         siteLabels.AddRange(bookmarks.Select(b => $"{b.Name}  ·  {b.Url}"));

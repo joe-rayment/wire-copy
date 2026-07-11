@@ -122,6 +122,8 @@ public class ScheduleConfigResolutionTests
     [InlineData("^https?://(www\\.)?nytimes\\.com/section/todayspaper", "/section/todayspaper")]
     [InlineData("^https?://(www\\.)?nytimes\\.com/?", "nytimes.com (home page)")]
     [InlineData("^https?://(www\\.)?127\\.0\\.0\\.1:8642/?", "127.0.0.1:8642 (home page)")]
+    [InlineData("^http://127\\.0\\.0\\.1:8642/sectioned\\.html", "/sectioned.html")] // plain-http anchor
+    [InlineData("^https://x\\.com/hub", "/hub")]
     [InlineData("", "the site")]
     public void HumanizePattern_ProducesReadablePaths(string pattern, string expected)
     {

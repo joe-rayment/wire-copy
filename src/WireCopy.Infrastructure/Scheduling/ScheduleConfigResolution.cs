@@ -96,10 +96,21 @@ internal static class ScheduleConfigResolution
         }
 
         var cleaned = urlPattern
-            .Replace("^https?://", string.Empty, StringComparison.Ordinal)
-            .Replace("(www\\.)?", string.Empty, StringComparison.Ordinal)
             .Replace("\\", string.Empty, StringComparison.Ordinal)
-            .TrimEnd('$');
+            .TrimStart('^')
+            .TrimEnd('$')
+            .Replace("(www.)?", string.Empty, StringComparison.Ordinal);
+
+        // Patterns anchor "http://", "https://" or the regex "https?://" — drop
+        // whichever scheme form is present (a plain IndexOf('/') would otherwise
+        // split inside "://").
+        cleaned = System.Text.RegularExpressions.Regex.Replace(
+            cleaned,
+            "^https?\\??://",
+            string.Empty,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase,
+            TimeSpan.FromSeconds(1));
+
         var slash = cleaned.IndexOf('/', StringComparison.Ordinal);
         if (slash < 0)
         {
