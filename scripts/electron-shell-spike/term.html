@@ -1,0 +1,67 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WireCopy Terminal Pane</title>
+<style>
+  /* Styling WE own — no user terminal dictates any of this. */
+  html, body { margin: 0; height: 100%; background: #0e0e14; overflow: hidden; }
+  #pad  { height: 100%; box-sizing: border-box; padding: 16px 8px 8px 16px; }
+  #term { height: 100%; }
+  .xterm .xterm-viewport { background: transparent !important; }
+</style>
+<link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+<div id="pad"><div id="term"></div></div>
+<script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+<script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+<script>
+  const term = new Terminal({
+    fontFamily: 'monospace',
+    fontSize: 15,
+    cursorBlink: false,
+    allowProposedApi: true,
+    scrollback: 200,
+    theme: {
+      background: '#0e0e14',
+      foreground: '#e8e6f0',
+      cursor: '#ff87d7',
+      selectionBackground: '#3d2a4d',
+      magenta: '#ff87d7',
+      brightMagenta: '#ffa8e2'
+    }
+  })
+  const fit = new FitAddon.FitAddon()
+  term.loadAddon(fit)
+  term.open(document.getElementById('term'))
+  fit.fit()
+  term.focus()
+
+  term.onData(d => wc.input(d))
+  wc.onPtyData(d => term.write(d))
+  wc.onPtyExit(c => term.write('\r\n[wirecopy exited ' + c + ']'))
+  wc.ready({ cols: term.cols, rows: term.rows })
+
+  new ResizeObserver(() => {
+    fit.fit()
+    wc.resize({ cols: term.cols, rows: term.rows })
+  }).observe(document.getElementById('term'))
+
+  window.addEventListener('focus', () => term.focus())
+  // Keeper: if this document has focus but xterm's textarea lost it, take it back.
+  setInterval(() => {
+    if (document.hasFocus() && (!document.activeElement || document.activeElement.tagName !== 'TEXTAREA')) term.focus()
+  }, 250)
+
+  // Gate hooks
+  window.__dims = () => ({ cols: term.cols, rows: term.rows })
+  window.__termText = () => {
+    const b = term.buffer.active
+    const out = []
+    for (let i = 0; i < b.length; i++) out.push(b.getLine(i) ? b.getLine(i).translateToString(false) : '')
+    return out.join('\n')
+  }
+  window.__spike = {
+    reveal: o => wc.reveal(o),
+    setMode: m => wc.setMode(m),
+    state: () => wc.state(),
+    nav: u => wc.nav(u)
+  }
+</script>

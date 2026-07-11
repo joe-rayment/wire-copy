@@ -1,0 +1,97 @@
+[
+  {
+    "name": "A1 TUI launcher rendered in pane",
+    "pass": true,
+    "detail": "\"Go to URL\" visible"
+  },
+  {
+    "name": "A2 launcher tiles rendered",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "A3 boot layout is app-primary (terminal full-width)",
+    "pass": true,
+    "detail": "{\"x\":0,\"y\":0,\"width\":1520,\"height\":940}"
+  },
+  {
+    "name": "A4 pane styling is ours (custom bg)",
+    "pass": true,
+    "detail": "rgb(14, 14, 20)"
+  },
+  {
+    "name": "B1 revealed split: reader remains primary",
+    "pass": true,
+    "detail": "term=882px page=638px"
+  },
+  {
+    "name": "B2 live page loaded",
+    "pass": true,
+    "detail": "ok"
+  },
+  {
+    "name": "B3 page viewport == pane width (no clip/fake-width)",
+    "pass": true,
+    "detail": "innerWidth=638 paneWidth=638 dpr=1"
+  },
+  {
+    "name": "B4 TUI truly reflowed (xterm cols shrank + pty told)",
+    "pass": true,
+    "detail": "xterm cols=93 pty cols=93"
+  },
+  {
+    "name": "C1 keys land in TUI while thief steals focus",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "C1b TUI process still alive under assault",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "C2 thief page received ZERO keys",
+    "pass": true,
+    "detail": "page saw 0 keys"
+  },
+  {
+    "name": "C3 keys STILL land in TUI after pane navigation (steal-on-load beaten)",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "C4 thief2 received ZERO keys",
+    "pass": true,
+    "detail": "page saw 0 keys"
+  },
+  {
+    "name": "D1 browser mode: credentials typing reaches the page input",
+    "pass": true,
+    "detail": "value=\"user@example.com\""
+  },
+  {
+    "name": "D2 Esc hands focus back to reader; keys flow to TUI again",
+    "pass": true,
+    "detail": ""
+  },
+  {
+    "name": "D3 post-Esc keys did NOT leak into the page",
+    "pass": true,
+    "detail": "value=\"user@example.com\""
+  },
+  {
+    "name": "E1 .NET ConnectOverCDPAsync drove the pane (title+eval)",
+    "pass": true,
+    "detail": "TITLE=NPR : National Public Radio|MATH=42"
+  },
+  {
+    "name": "F1 nytimes.com renders (not bot-walled)",
+    "pass": true,
+    "detail": "title=\"The New York Times - Breaking News, US News, World News and Videos\" links=460"
+  },
+  {
+    "name": "F2 Google sign-in form renders (no \"not secure\" wall)",
+    "pass": true,
+    "detail": "title=\"Sign in - Google Accounts\""
+  }
+]

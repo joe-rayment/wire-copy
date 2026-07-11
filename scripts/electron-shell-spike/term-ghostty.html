@@ -1,0 +1,60 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>WireCopy Terminal Pane (ghostty-web)</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #0e0e14; overflow: hidden; }
+  #pad  { height: 100%; box-sizing: border-box; padding: 16px 8px 8px 16px; }
+  #term { height: 100%; }
+</style>
+<div id="pad"><div id="term"></div></div>
+<script type="module">
+  // The libghostty path: same VT core as the Ghostty terminal, WASM-compiled,
+  // xterm.js-compatible API ("change your import"). Swapped in behind the same seam.
+  import { init, Terminal, FitAddon } from './node_modules/ghostty-web/dist/ghostty-web.js'
+  await init() // loads the libghostty-vt WASM core
+
+  const term = new Terminal({
+    fontSize: 15,
+    theme: { background: '#0e0e14', foreground: '#e8e6f0', cursor: '#ff87d7' }
+  })
+  const fit = new FitAddon()
+  term.loadAddon(fit)
+  term.open(document.getElementById('term'))
+  fit.fit()
+  if (term.focus) term.focus()
+
+  term.onData(d => wc.input(d))
+  wc.onPtyData(d => term.write(d))
+  wc.onPtyExit(c => term.write('\r\n[wirecopy exited ' + c + ']'))
+  wc.ready({ cols: term.cols, rows: term.rows })
+
+  new ResizeObserver(() => {
+    fit.fit()
+    wc.resize({ cols: term.cols, rows: term.rows })
+  }).observe(document.getElementById('term'))
+
+  // ghostty-web 0.4.0: focus() doesn't reach its capture textarea — do it directly.
+  const grabInput = () => {
+    const ta = document.querySelector('textarea')
+    if (ta && document.activeElement !== ta) ta.focus()
+  }
+  grabInput()
+  window.addEventListener('focus', grabInput)
+  setInterval(() => { if (document.hasFocus()) grabInput() }, 250)
+
+  window.__dims = () => ({ cols: term.cols, rows: term.rows })
+  window.__termText = () => {
+    try {
+      const b = term.buffer.active
+      const out = []
+      for (let i = 0; i < b.length; i++) out.push(b.getLine(i) ? b.getLine(i).translateToString(false) : '')
+      return out.join('\n')
+    } catch (e) { return 'BUFFER-API-MISSING: ' + e }
+  }
+  window.__spike = {
+    reveal: o => wc.reveal(o),
+    setMode: m => wc.setMode(m),
+    state: () => wc.state(),
+    nav: u => wc.nav(u)
+  }
+</script>
