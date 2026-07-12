@@ -15,6 +15,53 @@
   },
   "devDependencies": {
     "@electron/rebuild": "^4.2.0",
-    "electron": "43.1.0"
+    "electron": "43.1.0",
+    "electron-builder": "^26.0.12"
+  },
+  "build": {
+    "appId": "com.wirecopy.desktop",
+    "productName": "WireCopy",
+    "asar": true,
+    "asarUnpack": [
+      "**/node_modules/node-pty/**"
+    ],
+    "files": [
+      "main.js",
+      "preload.js",
+      "popup-preload.js",
+      "channel.js",
+      "term.html",
+      "fonts/**"
+    ],
+    "extraResources": [
+      {
+        "from": "stage-api",
+        "to": "api"
+      }
+    ],
+    "directories": {
+      "output": "dist"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "tar.gz"
+      ],
+      "category": "Network",
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    },
+    "mac": {
+      "target": [
+        {
+          "target": "zip",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
+      ],
+      "identity": null,
+      "artifactName": "${productName}-${version}-${os}-${arch}.${ext}"
+    }
   }
 }

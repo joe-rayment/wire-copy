@@ -2,3 +2,6 @@ node_modules/
 deps/
 out/
 *.log
+stage-api/
+dist/
+.last-desktop-build

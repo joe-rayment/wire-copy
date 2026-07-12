@@ -34,3 +34,25 @@ Env knobs: `WIRECOPY_SHELL_CDP_PORT` (default 9223, loopback CDP for the .NET dr
 `gates/` — outcome-asserted, headful under Xvfb, OS-level keys via xdotool (CDP key dispatch
 would bypass focus routing and fake results). Each gate builds what it needs and owns its
 display/port. Run e.g. `node gates/gate-p1.mjs` from `shell/` (see each gate's header).
+
+## Packaging (workspace-mwer)
+
+```bash
+shell/build-desktop.sh          # full artifacts for THIS host (AppImage/tar.gz on linux, unsigned zip on mac)
+shell/build-desktop.sh --dir    # fast unpacked dir target (what gate-p7-packaged verifies)
+```
+
+The script stages into a throwaway `/tmp` dir (the repo is a shared volume — platform
+binaries never persist here), publishes the **self-contained** WireCopy.API for the host
+RID (folder publish, untrimmed — the Playwright node driver is loose content), installs
+runtime deps, and runs electron-builder. The package:
+
+- bundles the API under `resources/api` (no .NET on the machine), spawned as its own apphost;
+- needs **no Playwright browser download** — shell mode attaches to the app's own Chromium;
+- keeps the **Chromium sandbox ON** (a bare launch in a sandbox-less container aborts; the
+  `--no-sandbox` argv is strictly container/CI launch input, never baked);
+- writes logs + TUI state under the OS userData dir instead of the repo.
+
+macOS artifacts (zip, arm64/x64, unsigned per the v1 install plan) build with the same
+script **on a mac host** — cross-building from linux can't produce the native node-pty
+or app bundle. `./run` terminal flow and `./run --desktop` dev flow are untouched.

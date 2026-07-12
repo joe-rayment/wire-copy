@@ -30,6 +30,17 @@ const ROOT = path.resolve(__dirname, '..')
 const CDP_PORT = process.env.WIRECOPY_SHELL_CDP_PORT || '9223'
 const PAGE_FRACTION = 0.42 // page pane is a feature, not the focus — never dominant
 
+// Packaged app (workspace-mwer): the self-contained .NET API ships under resources/api
+// (its own apphost — no dotnet on the machine needed), and writable state (logs, the
+// TUI's working dir) moves to userData; the repo layout only exists in dev.
+const PACKAGED = app.isPackaged
+const API_DIR = PACKAGED ? path.join(process.resourcesPath, 'api') : null
+function logDir () {
+  const dir = PACKAGED ? path.join(app.getPath('userData'), 'logs') : path.join(ROOT, 'logs')
+  fs.mkdirSync(dir, { recursive: true })
+  return dir
+}
+
 app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
 // NOTE (Linux): sandbox flags cannot be set here — Electron initializes the zygote/sandbox
 // BEFORE this script runs. Containers without a setuid sandbox must pass --no-sandbox
@@ -330,9 +341,18 @@ function openPopupPane (url) {
 }
 
 function spawnTui () {
-  const file = process.env.WIRECOPY_SHELL_DOTNET || path.join(ROOT, 'dotnet')
-  const dll = process.env.WIRECOPY_SHELL_TUI_DLL ||
-    path.join(ROOT, 'src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll')
+  // Dev: the repo's ./dotnet wrapper + Release dll. Packaged: the bundled self-contained
+  // apphost under resources/api — no SDK/runtime on the machine, no repo layout.
+  let file
+  let baseArgs
+  if (PACKAGED) {
+    file = path.join(API_DIR, process.platform === 'win32' ? 'WireCopy.API.exe' : 'WireCopy.API')
+    baseArgs = []
+  } else {
+    file = process.env.WIRECOPY_SHELL_DOTNET || path.join(ROOT, 'dotnet')
+    baseArgs = ['exec', process.env.WIRECOPY_SHELL_TUI_DLL ||
+      path.join(ROOT, 'src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll')]
+  }
   const { cols, rows } = state.ptyDims
   const env = {
     ...process.env,
@@ -347,20 +367,18 @@ function spawnTui () {
   // overwrote the status bar. Route fd2 to a log file before exec, the desktop twin of
   // ./run's stderr tee. The path travels by env var so no shell-quoting of the path exists.
   let spawnFile = file
-  let spawnArgs = ['exec', dll]
+  let spawnArgs = baseArgs
   if (process.platform !== 'win32') {
-    const logDir = path.join(ROOT, 'logs')
-    fs.mkdirSync(logDir, { recursive: true })
     const ts = new Date().toISOString().replace(/[:.]/g, '-')
-    env.WIRECOPY_SHELL_CHILD_STDERR = path.join(logDir, `shell-child-stderr-${ts}.log`)
+    env.WIRECOPY_SHELL_CHILD_STDERR = path.join(logDir(), `shell-child-stderr-${ts}.log`)
     spawnFile = '/bin/sh'
-    spawnArgs = ['-c', 'exec "$0" "$@" 2>>"$WIRECOPY_SHELL_CHILD_STDERR"', file, 'exec', dll]
+    spawnArgs = ['-c', 'exec "$0" "$@" 2>>"$WIRECOPY_SHELL_CHILD_STDERR"', file, ...baseArgs]
   }
   state.ptyProc = pty.spawn(spawnFile, spawnArgs, {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 24,
-    cwd: ROOT,
+    cwd: PACKAGED ? app.getPath('userData') : ROOT,
     env
   })
   state.ptyProc.onData(d => {
