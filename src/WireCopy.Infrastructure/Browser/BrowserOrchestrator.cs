@@ -220,6 +220,9 @@ public partial class BrowserOrchestrator : IBrowserService
             ForceRefreshAsync = ForceRefreshAsync,
             InteractiveRefreshAsync = InteractiveRefreshAsync,
             OpenInteractiveBrowserAsync = OpenInteractiveBrowserAsync,
+            OpenInPaneAsync = url => _browserSession is IBrowserSession paneSession
+                ? paneSession.OpenInPaneAsync(url)
+                : Task.FromResult(PaneOpenResult.NotAttached),
             SetOverlayPainter = painter => _activeOverlayPainter = painter,
             RenderCurrentPageAsync = RenderCurrentPageAsync,
             RefreshCollectionsAsync = RefreshCollectionsAsync,

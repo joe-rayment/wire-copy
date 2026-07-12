@@ -219,6 +219,30 @@ internal static class ViewCommandHandler
             return;
         }
 
+        // Single-window shell (field bug 2026-07-12): the app IS the browser — open the
+        // story in the app's OWN pane (same partition/session, spotlight suspends via the
+        // mctt divergence path), never an external browser. A shell-side failure still
+        // ends here: bouncing to the OS browser is exactly what the user rejected.
+        if (ctx.OpenInPaneAsync != null)
+        {
+            var paneResult = await ctx.OpenInPaneAsync(url).ConfigureAwait(false);
+            if (paneResult == PaneOpenResult.Opened)
+            {
+                ctx.NavigationService.SetStatusMessage("Opened in the live pane — Esc returns to the reader");
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
+            }
+
+            if (paneResult == PaneOpenResult.Failed)
+            {
+                ctx.NavigationService.SetStatusMessage(
+                    "Couldn't open the page in the pane (details in logs/wirecopy-*.log)",
+                    StatusSeverity.Error);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                return;
+            }
+        }
+
         // workspace-kdda: when the preloader is sitting on a CAPTCHA / login
         // gate, the system browser (Process.Start) lands in a separate
         // context with no shared session — solving the gate there has no

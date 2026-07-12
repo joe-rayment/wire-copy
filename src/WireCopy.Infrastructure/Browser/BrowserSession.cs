@@ -662,6 +662,42 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
+    public async Task<PaneOpenResult> OpenInPaneAsync(string url)
+    {
+        if (_disposed || !_shell.IsConnected || string.IsNullOrWhiteSpace(url))
+        {
+            return PaneOpenResult.NotAttached;
+        }
+
+        try
+        {
+            // Ensure the attach + lens exist, reveal the pane (sticky dock intent —
+            // matches the user's explicit "show me this in the browser" gesture),
+            // then drive the lens and hand the keyboard to the page.
+            await GetOrCreatePageAsync().ConfigureAwait(false);
+            var lens = await GetLensPageAsync().ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The shell lens page is unavailable");
+            if (await DockWindowAsync().ConfigureAwait(false) != BrowserWindowState.Docked)
+            {
+                throw new InvalidOperationException("The shell pane did not reveal");
+            }
+
+            await lens.GotoAsync(url, new PageGotoOptions
+            {
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+                Timeout = 20000,
+            }).ConfigureAwait(false);
+            await _shell.SetModeAsync("browser").ConfigureAwait(false);
+            return PaneOpenResult.Opened;
+        }
+        catch (Exception ex)
+        {
+            _logger.LogWarning(ex, "Open-in-pane failed for {Url}", url);
+            return PaneOpenResult.Failed;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<BrowserWindowState?> SummonAndDockAsync(string url)
     {
         if (_disposed || string.IsNullOrWhiteSpace(url))

@@ -101,6 +101,15 @@ internal class CommandContext
     public required Func<string, RenderOptions, CancellationToken, Task> OpenInteractiveBrowserAsync { get; init; }
 
     /// <summary>
+    /// Field bug 2026-07-12: under the single-window shell, "open in browser" must open
+    /// INSIDE the app — reveal the pane, drive the lens, hand keys to the page — never
+    /// an external OS browser. Returns the tri-state <see cref="PaneOpenResult"/> so the
+    /// caller can distinguish "terminal mode, OS browser is fine" from "shell owned it".
+    /// Optional: null (tests, minimal contexts) behaves as terminal mode.
+    /// </summary>
+    public Func<string, Task<PaneOpenResult>>? OpenInPaneAsync { get; init; }
+
+    /// <summary>
     /// workspace-ujxu: installs (or clears with <c>null</c>) an anchored
     /// overlay painter invoked at the end of every page render. Used by
     /// long-lived command handlers — most notably the Ctrl+L strategy

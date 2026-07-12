@@ -172,6 +172,17 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<BrowserWindowState?> SummonAndDockAsync(string url);
 
     /// <summary>
+    /// Opens a URL INSIDE the single-window shell: reveals the live pane, drives the
+    /// LENS to the URL, and hands the keyboard to the page (browser mode; Esc returns).
+    /// The lens navigation is not a spotlight follow-nav, so the dock spotlight treats
+    /// it as user-driven and suspends following (workspace-mctt divergence + the
+    /// "y: read it here" offer). Returns <see cref="PaneOpenResult.NotAttached"/> in
+    /// terminal mode — ONLY then may the caller fall back to the OS default browser.
+    /// </summary>
+    /// <param name="url">Absolute URL to show in the pane.</param>
+    Task<PaneOpenResult> OpenInPaneAsync(string url);
+
+    /// <summary>
     /// Captures a viewport screenshot of the current page as PNG bytes.
     /// Returns null if no active page or capture fails.
     /// </summary>
