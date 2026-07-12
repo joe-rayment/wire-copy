@@ -186,18 +186,34 @@ function spawnTui () {
   const dll = process.env.WIRECOPY_SHELL_TUI_DLL ||
     path.join(ROOT, 'src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll')
   const { cols, rows } = state.ptyDims
-  state.ptyProc = pty.spawn(file, ['exec', dll], {
+  const env = {
+    ...process.env,
+    TERM: 'xterm-256color',
+    COLORTERM: 'truecolor',
+    WIRECOPY_SHELL: '1',
+    WIRECOPY_SHELL_CHANNEL: state.channelServer ? state.channelServer.socketPath : ''
+  }
+  // The pty is ONE stream: node-pty hands the child the slave for stdout AND stderr,
+  // so any stderr from the TUI's process tree (a node-driver DeprecationWarning, dotnet
+  // diagnostics) would paint INTO the terminal over the TUI's frames — field bug: DEP0169
+  // overwrote the status bar. Route fd2 to a log file before exec, the desktop twin of
+  // ./run's stderr tee. The path travels by env var so no shell-quoting of the path exists.
+  let spawnFile = file
+  let spawnArgs = ['exec', dll]
+  if (process.platform !== 'win32') {
+    const logDir = path.join(ROOT, 'logs')
+    fs.mkdirSync(logDir, { recursive: true })
+    const ts = new Date().toISOString().replace(/[:.]/g, '-')
+    env.WIRECOPY_SHELL_CHILD_STDERR = path.join(logDir, `shell-child-stderr-${ts}.log`)
+    spawnFile = '/bin/sh'
+    spawnArgs = ['-c', 'exec "$0" "$@" 2>>"$WIRECOPY_SHELL_CHILD_STDERR"', file, 'exec', dll]
+  }
+  state.ptyProc = pty.spawn(spawnFile, spawnArgs, {
     name: 'xterm-256color',
     cols: cols || 80,
     rows: rows || 24,
     cwd: ROOT,
-    env: {
-      ...process.env,
-      TERM: 'xterm-256color',
-      COLORTERM: 'truecolor',
-      WIRECOPY_SHELL: '1',
-      WIRECOPY_SHELL_CHANNEL: state.channelServer ? state.channelServer.socketPath : ''
-    }
+    env
   })
   state.ptyProc.onData(d => {
     if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('pty:data', d)

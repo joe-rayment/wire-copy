@@ -64,7 +64,34 @@ for arg in "$@"; do
             # runs before the shell's main script. Desktop runs keep the sandbox ON.
             shell_flags=(--no-sandbox --disable-dev-shm-usage)
         fi
-        exec "${launch[@]}" "$DEPS_DIR/node_modules/.bin/electron" shell "${shell_flags[@]}"
+
+        # Desktop console stays quiet (workspace-iflq): Electron/Chromium stderr is a
+        # firehose (DevTools banner, macOS task_policy_set spam, per-subresource SSL
+        # failures). Tee the UNFILTERED stream to a log so nothing is ever lost, and
+        # pass only unrecognized lines through — a blocklist, same shape as terminal
+        # mode above, so a genuinely novel error still reaches the console.
+        mkdir -p logs
+        shell_stderr_log="logs/shell-stderr-$(date +%Y%m%d-%H%M%S).log"
+        echo "wirecopy: desktop shell — full stderr → $shell_stderr_log" >&2
+        shell_noise=(
+            -e "DevTools listening on ws://"
+            -e "task_policy_set"
+            -e "ssl_client_socket_impl"
+            -e "handshake failed"
+            -e "cert_verify_proc"
+            -e "Fontconfig"
+            -e "libva error"
+            -e "MESA"
+            -e "GetVSyncParametersIfAvailable"
+            -e "dri3 extension not supported"
+            -e "floss"
+        )
+        if [ "${WIRECOPY_SHELL_DEBUG:-}" != "1" ]; then
+            # [shell] info lines (mode flips, channel chatter) are debug-only signal.
+            shell_noise+=( -e "^\[shell\] " )
+        fi
+        exec "${launch[@]}" "$DEPS_DIR/node_modules/.bin/electron" shell "${shell_flags[@]}" \
+            2> >(tee -a "$shell_stderr_log" | grep --line-buffered -v "${shell_noise[@]}" >&2)
     fi
 done
 
