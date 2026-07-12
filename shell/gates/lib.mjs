@@ -61,10 +61,10 @@ export class Env {
     await sleep(700)
   }
 
-  launchShell (extra = {}) {
+  launchShell (extra = {}, extraArgv = []) {
     // Sandbox flags must be argv (Linux sandbox init precedes main.js) — container-only.
     const p = spawn(path.join(DEPS_DIR, 'node_modules', '.bin', 'electron'),
-      ['.', '--no-sandbox', '--disable-dev-shm-usage'], {
+      ['.', '--no-sandbox', '--disable-dev-shm-usage', ...extraArgv], {
       cwd: SHELL_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
       env: {
