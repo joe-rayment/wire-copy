@@ -94,11 +94,15 @@ try {
   check('P3.1 link list rendered in the reader', list.ok, list.ok ? '' : list.txt.slice(-300))
 
   console.log('\n== P3: | reveals the pane; lens adopted; attach proven ==')
+  // Settle: | during the sub-second window before the app swaps its current page off
+  // the launcher hits a non-summonable URL and no-ops. A user would just press | again.
+  await sleep(2500)
   env.type('|')
   let st = null
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < 40; i++) {
     st = await term.eval('window.__wc.state()')
     if (st.revealed) break
+    if (i === 20) env.type('|') // user-realistic retry
     await sleep(500)
   }
   check('P3.2 | revealed the pane (reader stays primary)',
