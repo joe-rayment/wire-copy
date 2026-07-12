@@ -89,7 +89,13 @@ function layout () {
 
 function focusTerm () {
   const { win, termView } = state
-  if (win && !win.isDestroyed() && !termView.webContents.isDestroyed()) termView.webContents.focus()
+  // NEVER pull OS-level focus. Every reader-refocus path is IN-WINDOW discipline only:
+  // if the user switched to another app, the window is unfocused and we stay away —
+  // webContents.focus() re-activates the whole app (field-reported focus trap on macOS,
+  // reproduced under openbox; gate-focus-os pins this). When the user returns, the
+  // window 'focus' handler restores reader focus.
+  if (!win || win.isDestroyed() || !win.isFocused()) return
+  if (!termView.webContents.isDestroyed()) termView.webContents.focus()
 }
 
 function setMode (m) {
