@@ -73,7 +73,15 @@ try {
   console.log('\n== O: press o on the selected (first) story ==')
   env.activate(); await sleep(200)
   env.type('o')
-  const lens1 = await lensUrlAt(paneW, '/story1.html', 25000)
+  let lens1 = await lensUrlAt(paneW, '/story1.html', 8000)
+  if (!lens1) {
+    // User-realistic retry (the 4991eca2 de-flake pattern): under load the focus-settle
+    // gap right after the auto-reveal can swallow a keypress before it reaches the TUI —
+    // the child log shows NO 'Opening in pane' for a swallowed press. A user presses again.
+    env.activate(); await sleep(300)
+    env.type('o')
+    lens1 = await lensUrlAt(paneW, '/story1.html', 20000)
+  }
   check('O.3 lens navigated to the SELECTED story (story1) at pane width', !!lens1, String(lens1))
   let mode = null
   for (let i = 0; i < 20; i++) { mode = (await term.eval('window.__wc.state()')).mode; if (mode === 'browser') break; await sleep(400) }
