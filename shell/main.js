@@ -29,7 +29,10 @@ app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
 
 // Present as plain Chrome: same engine, honest version, no Electron token — required
 // for Google sign-in and consistent with how the app's sites see a normal browser.
-const CHROME_UA = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
+const UA_PLATFORM = process.platform === 'darwin'
+  ? 'Macintosh; Intel Mac OS X 10_15_7'
+  : process.platform === 'win32' ? 'Windows NT 10.0; Win64; x64' : 'X11; Linux x86_64'
+const CHROME_UA = `Mozilla/5.0 (${UA_PLATFORM}) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
 app.userAgentFallback = CHROME_UA
 
 // Gates isolate their state: a throwaway userData keeps partitions/cookies per run.
