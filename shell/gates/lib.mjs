@@ -63,7 +63,8 @@ export class Env {
         ...extra
       }
     })
-    p.stderr.on('data', () => {})
+    p.stderrText = ''
+    p.stderr.on('data', d => { p.stderrText += d.toString('utf8') })
     p.stdout.on('data', () => {})
     this.procs.push(p)
     return p

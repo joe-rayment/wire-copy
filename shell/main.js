@@ -11,9 +11,11 @@
 //   2. enforcement loop: renderer-internal focus() emits no event — cheap poll restores
 //   3. forwarding: keys that still land on a page are re-sent to the terminal, never lost
 // 'browser' mode is an explicit user gesture (click into the pane); Esc returns to reader.
-const { app, BaseWindow, WebContentsView, ipcMain, Menu } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, Menu, session } = require('electron')
 const path = require('path')
+const os = require('os')
 const pty = require('node-pty')
+const channel = require('./channel')
 
 const ROOT = path.resolve(__dirname, '..')
 const CDP_PORT = process.env.WIRECOPY_SHELL_CDP_PORT || '9223'
@@ -47,6 +49,8 @@ const state = {
   win: null,
   termView: null,
   pageView: null,     // the visible "lens" pane
+  pages: new Map(),   // tag → WebContentsView ("lens" + hidden fetch/prefetch pages)
+  channelServer: null,
   ptyProc: null,
   mode: 'reader',     // 'reader' | 'browser'
   revealed: false,
@@ -78,6 +82,22 @@ function setMode (m) {
   state.mode = m
   if (m === 'reader') focusTerm()
   else state.pageView.webContents.focus()
+  if (state.channelServer) state.channelServer.broadcast('mode', { mode: m })
+}
+
+// Hidden, tagged pages the .NET side adopts over CDP (fetch/prefetch). They are real
+// members of a headful browser window — sized like tabs, just not visible. Never headless.
+function createTaggedPage (tag) {
+  if (state.pages.has(tag)) return { existed: true }
+  const view = new WebContentsView({
+    webPreferences: { partition: 'persist:wirecopy', backgroundThrottling: false }
+  })
+  view.setVisible(false)
+  state.win.contentView.addChildView(view, 0) // bottom of the z-order, under the panes
+  view.setBounds({ x: 0, y: 0, width: 1280, height: 720 })
+  view.webContents.loadURL('about:blank#wc-' + tag).catch(() => {})
+  state.pages.set(tag, view)
+  return { existed: false }
 }
 
 function setPaneVisible (on) {
@@ -142,7 +162,8 @@ function spawnTui () {
       ...process.env,
       TERM: 'xterm-256color',
       COLORTERM: 'truecolor',
-      WIRECOPY_SHELL: '1'
+      WIRECOPY_SHELL: '1',
+      WIRECOPY_SHELL_CHANNEL: state.channelServer ? state.channelServer.socketPath : ''
     }
   })
   state.ptyProc.onData(d => {
@@ -159,13 +180,16 @@ app.whenReady().then(() => {
   Menu.setApplicationMenu(null)
   state.win = new BaseWindow({ width: 1520, height: 940, title: 'Wire Copy', backgroundColor: '#0e0e14' })
 
+  session.fromPartition('persist:wirecopy').setUserAgent(CHROME_UA)
   state.termView = new WebContentsView({
     webPreferences: { preload: path.join(__dirname, 'preload.js') }
   })
   state.pageView = new WebContentsView({
     webPreferences: { partition: 'persist:wirecopy' }
   })
-  state.pageView.webContents.session.setUserAgent(CHROME_UA)
+  // Tag the lens pane so the .NET driver can adopt it over CDP by URL.
+  state.pageView.webContents.loadURL('about:blank#wc-lens').catch(() => {})
+  state.pages.set('lens', state.pageView)
 
   state.win.contentView.addChildView(state.pageView)
   state.win.contentView.addChildView(state.termView)
@@ -181,6 +205,19 @@ app.whenReady().then(() => {
     if (state.mode === 'reader' && win && !win.isDestroyed() && win.isFocused() &&
         !termView.webContents.isFocused()) focusTerm()
   }, 150)
+
+  // Control channel: up BEFORE the TUI spawns so the child can connect at boot.
+  const socketPath = path.join(os.tmpdir(), `wirecopy-shell-${process.pid}.sock`)
+  state.channelServer = channel.serve({
+    socketPath,
+    log: msg => console.error('[shell] ' + msg),
+    handlers: {
+      hello: () => ({ cdpEndpoint: `http://127.0.0.1:${CDP_PORT}` }),
+      setPane: p => { setPaneVisible(!!p.visible); return { visible: state.revealed } },
+      setMode: p => { setMode(p.mode === 'browser' ? 'browser' : 'reader'); return { mode: state.mode } },
+      createPage: p => createTaggedPage(String(p.tag || ''))
+    }
+  })
 
   state.termView.webContents.loadFile('term.html')
 
@@ -218,4 +255,8 @@ app.whenReady().then(() => {
 app.on('window-all-closed', () => {
   try { if (state.ptyProc) state.ptyProc.kill() } catch {}
   app.quit()
+})
+
+app.on('will-quit', () => {
+  try { if (state.channelServer) state.channelServer.close() } catch {}
 })

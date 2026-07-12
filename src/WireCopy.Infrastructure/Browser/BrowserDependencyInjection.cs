@@ -12,6 +12,7 @@ using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Infrastructure.Browser.Cache;
 using WireCopy.Infrastructure.Browser.CommandHandlers;
+using WireCopy.Infrastructure.Browser.Shell;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI;
 using WireCopy.Infrastructure.Configuration;
@@ -97,6 +98,13 @@ public static class BrowserDependencyInjection
                     CookieContainer = container
                 };
             });
+
+        // Desktop-shell control channel: live when the single-window shell exports
+        // WIRECOPY_SHELL_CHANNEL; NullShellChannel keeps plain-terminal mode zero-cost.
+        services.AddSingleton<IShellChannel>(sp =>
+            (IShellChannel?)ShellChannel.TryConnectFromEnvironment(sp.GetRequiredService<ILogger<ShellChannel>>())
+            ?? new NullShellChannel());
+        services.AddHostedService<ShellChannelAnnouncer>();
 
         // Register browser session (shared Playwright lifecycle)
         services.AddSingleton<BrowserSession>();
