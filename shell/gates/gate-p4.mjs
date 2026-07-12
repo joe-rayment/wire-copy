@@ -93,17 +93,14 @@ try {
   env.type(listUrl); await sleep(300)
   env.key('Return')
   check('P4.1 hostile list rendered in the reader', (await pollTermText(term, 'Quiet Turbine', 40000)).ok)
-  // Settle + user-realistic retry: | during the current-page swap window no-ops.
-  await sleep(2500)
-  env.type('|')
+  // D2 (workspace-3keu): the first link list auto-reveals the pane — no | keystroke.
   let st = null
   for (let i = 0; i < 40; i++) {
     st = await term.eval('window.__wc.state()')
     if (st.revealed) break
-    if (i === 20) env.type('|')
     await sleep(500)
   }
-  check('P4.2 pane revealed with the thief page live', !!st?.revealed)
+  check('P4.2 pane auto-revealed with the thief page live', !!st?.revealed)
   const lens = await lensCdp(st.pageBounds.width)
   let spot0 = null
   for (let i = 0; i < 40; i++) { spot0 = await lens.eval(spotHrefExpr).catch(() => null); if (spot0) break; await sleep(500) }

@@ -57,6 +57,15 @@ public interface IBrowserSession : IBrowserSessionControl
     bool WantsSidecar { get; }
 
     /// <summary>
+    /// Gets a value indicating whether the session is attached to the single-window
+    /// desktop shell (WIRECOPY_SHELL_CHANNEL connected). Shell mode has its own
+    /// pane-reveal semantics (workspace-3keu): the live-page pane reveals once on the
+    /// first rendered link list, then stays opt-in via the dock key. Always false in
+    /// plain terminal mode.
+    /// </summary>
+    bool IsShellAttached { get; }
+
+    /// <summary>
     /// Gets or sets the sink for the ONE-TIME user-visible notice raised when a macOS
     /// osascript automation call fails (Automation/Accessibility permission missing) —
     /// wired to the status bar by the orchestrator (workspace-9k27.7). Browse-mode

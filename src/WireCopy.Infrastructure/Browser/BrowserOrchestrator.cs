@@ -81,6 +81,11 @@ public partial class BrowserOrchestrator : IBrowserService
     // first lands on a link list with the sidecar available but not engaged.
     private bool _sidecarTeachShown;
 
+    // workspace-3keu: single-window shell one-shot — the pane reveals on the FIRST
+    // rendered link list of a session (the xink.7 semantics), then stays opt-in via
+    // the dock key. Never reset, so a hide ('|') is respected for the whole session.
+    private bool _shellFirstListRevealed;
+
     // workspace-mctt: lens URL the user navigated to (adoption offer target).
     private volatile string? _divergedLensUrl;
 
@@ -708,6 +713,17 @@ public partial class BrowserOrchestrator : IBrowserService
     {
         return scope.ServiceProvider.GetRequiredService<ICollectionService>();
     }
+
+    /// <summary>
+    /// workspace-3keu: "renders as a list" for the shell first-list reveal. Gate on
+    /// content shape, NOT Classification==LinkList — many indexes classify Unknown
+    /// (the xink.7 lesson); an article that reads in the reader must never reveal.
+    /// Skeleton pages carry an empty tree, so they fall out via HasLinks().
+    /// </summary>
+    private static bool RendersAsLinkList(Page? page)
+        => page is not null
+           && !(page.Classification == PageClassification.Article && page.HasReadableContent())
+           && page.HasLinks();
 
     /// <summary>
     /// Calculates how many grid rows actually fit on screen from a given scroll offset,
@@ -1392,8 +1408,29 @@ public partial class BrowserOrchestrator : IBrowserService
     {
         if (_sidecarUnavailable
             || !_inputHandler.IsInteractive
-            || _browserSession is not IBrowserSession session
-            || !session.WantsSidecar)
+            || _browserSession is not IBrowserSession session)
+        {
+            return;
+        }
+
+        // workspace-3keu: under the single-window shell the pane reveals ONCE on the
+        // first rendered link list (the xink.7 semantics the user chose), then stays
+        // opt-in via the dock key — config Sidecar defaults false there, so the exbz
+        // auto-engage below never fires on its own. A successful summon flips the
+        // sticky dock intent, so control falls through to the shared docked-announce
+        // branch; a failure quietly leaves the teach hint to advertise the dock key.
+        // Consumed either way: this must never re-fire after the user hides the pane.
+        if (session.IsShellAttached
+            && !_shellFirstListRevealed
+            && !session.IsDocked
+            && RendersAsLinkList(_navigationService.CurrentPage)
+            && BrowserDockCommandHandler.IsSummonableUrl(_navigationService.CurrentPage?.Url))
+        {
+            _shellFirstListRevealed = true;
+            await session.SummonAndDockAsync(_navigationService.CurrentPage!.Url).ConfigureAwait(false);
+        }
+
+        if (!session.WantsSidecar)
         {
             return;
         }

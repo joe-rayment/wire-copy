@@ -93,19 +93,16 @@ try {
   const list = await pollTermText(term, 'Quiet Turbine', 40000)
   check('P3.1 link list rendered in the reader', list.ok, list.ok ? '' : list.txt.slice(-300))
 
-  console.log('\n== P3: | reveals the pane; lens adopted; attach proven ==')
-  // Settle: | during the sub-second window before the app swaps its current page off
-  // the launcher hits a non-summonable URL and no-ops. A user would just press | again.
-  await sleep(2500)
-  env.type('|')
+  console.log('\n== P3: first list AUTO-reveals the pane (D2); lens adopted; attach proven ==')
+  // D2 (workspace-3keu): the FIRST rendered link list of a session reveals the pane
+  // on its own — no | keystroke. The old |-press flow lives on in P3.9/P3.10 (sticky).
   let st = null
   for (let i = 0; i < 40; i++) {
     st = await term.eval('window.__wc.state()')
     if (st.revealed) break
-    if (i === 20) env.type('|') // user-realistic retry
     await sleep(500)
   }
-  check('P3.2 | revealed the pane (reader stays primary)',
+  check('P3.2 first link list auto-revealed the pane (reader stays primary)',
     st?.revealed && st.termBounds.width > st.pageBounds.width,
     st ? `term=${st.termBounds.width} page=${st.pageBounds.width}` : 'no state')
 

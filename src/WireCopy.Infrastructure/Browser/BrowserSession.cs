@@ -229,6 +229,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public bool WantsSidecar => !_disposed && _userWantsDock;
 
     /// <inheritdoc />
+    public bool IsShellAttached => !_disposed && _shell.IsConnected;
+
+    /// <inheritdoc />
     public Action<string>? PermissionNoticeSink { get; set; }
 
     /// <inheritdoc />
