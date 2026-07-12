@@ -11,5 +11,6 @@ contextBridge.exposeInMainWorld('wc', {
   reveal: on => ipcRenderer.send('wcdev:reveal', on),
   setMode: m => ipcRenderer.send('wcdev:mode', m),
   state: () => ipcRenderer.invoke('wcdev:state'),
-  nav: url => ipcRenderer.invoke('wcdev:nav', url)
+  nav: url => ipcRenderer.invoke('wcdev:nav', url),
+  probeCertDefaultSession: url => ipcRenderer.invoke('wcdev:probeCertDefaultSession', url)
 })

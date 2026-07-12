@@ -311,7 +311,14 @@ app.whenReady().then(() => {
 
   state.win = new BaseWindow({ ...initialBounds(), title: 'Wire Copy', backgroundColor: '#0e0e14' })
 
-  session.fromPartition('persist:wirecopy').setUserAgent(CHROME_UA)
+  const wcSession = session.fromPartition('persist:wirecopy')
+  wcSession.setUserAgent(CHROME_UA)
+  // Cert-error parity (workspace-83tf): terminal mode launches its browser with
+  // Playwright IgnoreHTTPSErrors=true, so cert-invalid sites/subresources (field log:
+  // net_error -201 CERT_DATE_INVALID) load where the shell's strict partition failed.
+  // Mirror that tolerance SCOPED to the wirecopy partition — every app pane/page lives
+  // there; the default session (and any other partition) stays strict.
+  wcSession.setCertificateVerifyProc((_req, cb) => cb(0))
   state.termView = new WebContentsView({
     webPreferences: { preload: path.join(__dirname, 'preload.js') }
   })
@@ -412,6 +419,12 @@ app.whenReady().then(() => {
   ipcMain.handle('wcdev:nav', async (_e, url) => {
     try { await state.pageView.webContents.loadURL(url) } catch (err) { return String(err) }
     return 'ok'
+  })
+  // Gate seam (workspace-83tf): load a URL in a throwaway view on the DEFAULT session —
+  // proves cert tolerance stays scoped to the wirecopy partition (control must reject).
+  ipcMain.handle('wcdev:probeCertDefaultSession', async (_e, url) => {
+    const v = new WebContentsView()
+    try { await v.webContents.loadURL(url); return 'loaded' } catch (err) { return String(err) } finally { v.webContents.close() }
   })
 
   focusTerm()
