@@ -11,7 +11,7 @@
 //   2. enforcement loop: renderer-internal focus() emits no event — cheap poll restores
 //   3. forwarding: keys that still land on a page are re-sent to the terminal, never lost
 // 'browser' mode is an explicit user gesture (click into the pane); Esc returns to reader.
-const { app, BaseWindow, WebContentsView, ipcMain, Menu, session } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, Menu, screen, session } = require('electron')
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
@@ -70,6 +70,76 @@ const state = {
   mode: 'reader',     // 'reader' | 'browser'
   revealed: false,
   ptyDims: { cols: 0, rows: 0 }
+}
+
+// ---- persisted user prefs (window bounds, terminal type scale) ----
+const prefsFile = name => path.join(app.getPath('userData'), name)
+function readJson (file) {
+  try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return null }
+}
+function writeJson (file, obj) {
+  try { fs.writeFileSync(file, JSON.stringify(obj)) } catch {}
+}
+
+// Window bounds: default = 85% of the work area, centered; a remembered size/position
+// is restored clamped to a display that still exists (external monitor unplugged, etc).
+function initialBounds () {
+  const saved = readJson(prefsFile('window-bounds.json'))
+  if (saved && [saved.x, saved.y, saved.width, saved.height].every(Number.isFinite)) {
+    const wa = screen.getDisplayMatching(saved).workArea
+    const width = Math.min(saved.width, wa.width)
+    const height = Math.min(saved.height, wa.height)
+    return {
+      x: Math.min(Math.max(saved.x, wa.x), wa.x + wa.width - width),
+      y: Math.min(Math.max(saved.y, wa.y), wa.y + wa.height - height),
+      width,
+      height
+    }
+  }
+  const wa = screen.getPrimaryDisplay().workArea
+  const width = Math.round(wa.width * 0.85)
+  const height = Math.round(wa.height * 0.85)
+  return { x: wa.x + Math.round((wa.width - width) / 2), y: wa.y + Math.round((wa.height - height) / 2), width, height }
+}
+
+let saveBoundsTimer = null
+function rememberBounds () {
+  const { win } = state
+  if (!win || win.isDestroyed() || win.isMinimized() || win.isFullScreen()) return
+  clearTimeout(saveBoundsTimer)
+  saveBoundsTimer = setTimeout(() => {
+    if (win.isDestroyed()) return
+    writeJson(prefsFile('window-bounds.json'), win.getBounds())
+  }, 400)
+}
+
+// Terminal type scale (field: "everything is a little smaller"): Cmd/Ctrl +/-/0 zoom,
+// persisted; the initial value rides term.html's query string so the first fit is right.
+const FONT_DEFAULT = 16
+const FONT_MIN = 8
+const FONT_MAX = 32
+let termFontSize = (() => {
+  const saved = readJson(prefsFile('term-prefs.json'))
+  const px = saved ? Number(saved.fontSize) : NaN
+  // Anything outside the legal zoom range (including the Number(null)===0 trap on a
+  // fresh profile) means "no valid preference" — take the default, don't clamp.
+  return px >= FONT_MIN && px <= FONT_MAX ? px : FONT_DEFAULT
+})()
+function setTermFont (px) {
+  const next = Math.min(FONT_MAX, Math.max(FONT_MIN, px))
+  if (next === termFontSize) return
+  termFontSize = next
+  writeJson(prefsFile('term-prefs.json'), { fontSize: termFontSize })
+  if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('wc:font', termFontSize)
+}
+function handleZoomKey (input) {
+  if (input.type !== 'keyDown') return false
+  const mod = process.platform === 'darwin' ? input.meta : input.control
+  if (!mod || input.alt || input.shift) return false
+  if (input.key === '=' || input.key === '+') { setTermFont(termFontSize + 1); return true }
+  if (input.key === '-') { setTermFont(termFontSize - 1); return true }
+  if (input.key === '0') { setTermFont(FONT_DEFAULT); return true }
+  return false
 }
 
 function layout () {
@@ -226,8 +296,20 @@ function spawnTui () {
 }
 
 app.whenReady().then(() => {
-  Menu.setApplicationMenu(null)
-  state.win = new BaseWindow({ width: 1520, height: 940, title: 'Wire Copy', backgroundColor: '#0e0e14' })
+  // macOS keeps a REAL app menu (About/Quit + Edit clipboard roles + Window) — without
+  // an Edit menu Cmd+C/V never reach a page input, and the default menu says "Electron".
+  // Linux/Windows shows no menu bar at all.
+  if (process.platform === 'darwin') {
+    Menu.setApplicationMenu(Menu.buildFromTemplate([
+      { role: 'appMenu' },
+      { role: 'editMenu' },
+      { role: 'windowMenu' }
+    ]))
+  } else {
+    Menu.setApplicationMenu(null)
+  }
+
+  state.win = new BaseWindow({ ...initialBounds(), title: 'Wire Copy', backgroundColor: '#0e0e14' })
 
   session.fromPartition('persist:wirecopy').setUserAgent(CHROME_UA)
   state.termView = new WebContentsView({
@@ -243,11 +325,17 @@ app.whenReady().then(() => {
   state.win.contentView.addChildView(state.pageView)
   state.win.contentView.addChildView(state.termView)
   layout()
-  state.win.on('resize', layout)
+  state.win.on('resize', () => { layout(); rememberBounds() })
+  state.win.on('move', rememberBounds)
   state.win.on('focus', () => { if (state.mode === 'reader') focusTerm() })
   state.win.on('closed', () => { try { state.ptyProc && state.ptyProc.kill() } catch {} })
 
   attachFocusDoctrine(state.pageView)
+  // Type-scale zoom is a shell concern: intercept Cmd/Ctrl +/-/0 on the terminal pane
+  // before xterm sees them (the TUI binds no such chords — Ctrl+D/U/P/L only).
+  state.termView.webContents.on('before-input-event', (e, input) => {
+    if (handleZoomKey(input)) e.preventDefault()
+  })
   try {
     state.termView.webContents.on('blur', () => {
       setTimeout(() => { if (state.mode === 'reader') focusTerm() }, 30)
@@ -288,7 +376,10 @@ app.whenReady().then(() => {
     fs.createReadStream(fp).pipe(res)
   })
   termSrv.listen(0, '127.0.0.1', () => {
-    state.termView.webContents.loadURL(`http://127.0.0.1:${termSrv.address().port}/term.html`)
+    // Initial type scale + platform ride the query string so the FIRST fit computes at
+    // the right cell size (no boot-time double resize); live zoom arrives over wc:font.
+    state.termView.webContents.loadURL(
+      `http://127.0.0.1:${termSrv.address().port}/term.html?font=${termFontSize}&plat=${process.platform}`)
   })
 
   ipcMain.on('term:ready', (_e, dims) => {
@@ -310,6 +401,8 @@ app.whenReady().then(() => {
     mode: state.mode,
     revealed: state.revealed,
     ptyDims: state.ptyDims,
+    winBounds: state.win.getBounds(),
+    termFontSize,
     contentSize: state.win.getContentSize(),
     termBounds: state.termView.getBounds(),
     pageBounds: state.pageView.getBounds(),

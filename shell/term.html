@@ -13,9 +13,19 @@
 <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script>
+  // Type scale (workspace-9d04): the shell owns the initial size (persisted zoom) via the
+  // query string, and a per-platform stack replaces bare 'monospace' (whose fallback ran
+  // small in the field) until the bundled brand font lands (P6).
+  const params = new URLSearchParams(location.search)
+  const plat = params.get('plat') || 'linux'
+  const FONT_STACK = plat === 'darwin'
+    ? "'SF Mono', Menlo, Monaco, monospace"
+    : plat === 'win32'
+      ? "'Cascadia Mono', Consolas, monospace"
+      : "'DejaVu Sans Mono', 'Noto Sans Mono', 'Liberation Mono', monospace"
   const term = new Terminal({
-    fontFamily: 'monospace',
-    fontSize: 15,
+    fontFamily: FONT_STACK,
+    fontSize: Number(params.get('font')) || 16,
     cursorBlink: false,
     allowProposedApi: true,
     scrollback: 200,
@@ -38,6 +48,14 @@
   wc.onPtyData(d => term.write(d))
   wc.ready({ cols: term.cols, rows: term.rows })
 
+  // Live zoom (Cmd/Ctrl +/-/0 handled shell-side): a font change resizes CELLS, not the
+  // container, so the ResizeObserver below never fires — refit and re-report explicitly.
+  wc.onFont(px => {
+    term.options.fontSize = px
+    fit.fit()
+    wc.resize({ cols: term.cols, rows: term.rows })
+  })
+
   new ResizeObserver(() => {
     fit.fit()
     wc.resize({ cols: term.cols, rows: term.rows })
@@ -55,6 +73,7 @@
 
   // Gate/debug hooks (read-only introspection of the pane).
   window.__dims = () => ({ cols: term.cols, rows: term.rows })
+  window.__font = () => term.options.fontSize
   window.__termText = () => {
     const b = term.buffer.active
     const out = []
