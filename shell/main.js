@@ -82,10 +82,15 @@ function focusTerm () {
 
 function setMode (m) {
   if (state.mode === m) return
+  console.error(`[shell] mode → ${m}`)
   state.mode = m
   if (m === 'reader') focusTerm()
   else state.pageView.webContents.focus()
   if (state.channelServer) state.channelServer.broadcast('mode', { mode: m })
+  // The terminal pane's focus keeper must stand down in browser mode: inside embedded
+  // views document.hasFocus() tracks WINDOW focus, so an un-gated keeper steals
+  // webContents focus back from the page every tick.
+  if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('wc:mode', m)
 }
 
 // Hidden, tagged pages the .NET side adopts over CDP (fetch/prefetch). They are real
@@ -131,14 +136,21 @@ function forwardToTerm (input) {
 
 function attachFocusDoctrine (pageView) {
   const wc = pageView.webContents
-  wc.on('focus', () => { if (state.mode === 'reader') focusTerm() })
+  // Deferred bounce: a click into the pane emits page-focus BEFORE the mouseDown handler
+  // flips the mode — an instant bounce would yank focus back and undo the user's
+  // deliberate entry (the electron#42922 event-storm trap).
+  wc.on('focus', () => setTimeout(() => { if (state.mode === 'reader') focusTerm() }, 30))
   const refocus = () => { if (state.mode === 'reader') focusTerm() }
   wc.on('did-finish-load', refocus)
   wc.on('did-navigate', refocus)
   wc.on('did-frame-navigate', refocus)
   wc.on('before-input-event', (e, input) => {
     if (state.mode === 'reader') { e.preventDefault(); forwardToTerm(input); return }
-    if (input.type === 'keyDown' && input.key === 'Escape') { e.preventDefault(); setMode('reader') }
+    // Esc can arrive as keyDown OR rawKeyDown depending on the renderer's dispatch path.
+    if ((input.type === 'keyDown' || input.type === 'rawKeyDown') && input.key === 'Escape') {
+      e.preventDefault()
+      setMode('reader')
+    }
   })
   // A CLICK into the pane is a deliberate user gesture → browser mode. (Keyboard-side
   // stealing never carries a real mouseDown, so this cannot be triggered by page JS.)
@@ -202,7 +214,11 @@ app.whenReady().then(() => {
   state.win.on('closed', () => { try { state.ptyProc && state.ptyProc.kill() } catch {} })
 
   attachFocusDoctrine(state.pageView)
-  try { state.termView.webContents.on('blur', () => { if (state.mode === 'reader') focusTerm() }) } catch {}
+  try {
+    state.termView.webContents.on('blur', () => {
+      setTimeout(() => { if (state.mode === 'reader') focusTerm() }, 30)
+    })
+  } catch {}
   setInterval(() => {
     const { win, termView } = state
     if (state.mode === 'reader' && win && !win.isDestroyed() && win.isFocused() &&
@@ -245,7 +261,9 @@ app.whenReady().then(() => {
     ptyDims: state.ptyDims,
     contentSize: state.win.getContentSize(),
     termBounds: state.termView.getBounds(),
-    pageBounds: state.pageView.getBounds()
+    pageBounds: state.pageView.getBounds(),
+    termFocused: state.termView.webContents.isFocused(),
+    pageFocused: state.pageView.webContents.isFocused()
   }))
   ipcMain.handle('wcdev:nav', async (_e, url) => {
     try { await state.pageView.webContents.loadURL(url) } catch (err) { return String(err) }

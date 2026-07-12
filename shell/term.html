@@ -43,10 +43,14 @@
     wc.resize({ cols: term.cols, rows: term.rows })
   }).observe(document.getElementById('term'))
 
-  window.addEventListener('focus', () => term.focus())
-  // Keeper: if this document has focus but xterm's textarea lost it, take it back.
+  // In embedded views document.hasFocus() follows WINDOW focus — the keeper and the
+  // focus listener must stand down while the shell says the page pane owns the keyboard.
+  let shellMode = 'reader'
+  wc.onMode(m => { shellMode = m })
+  window.addEventListener('focus', () => { if (shellMode === 'reader') term.focus() })
   setInterval(() => {
-    if (document.hasFocus() && (!document.activeElement || document.activeElement.tagName !== 'TEXTAREA')) term.focus()
+    if (shellMode === 'reader' && document.hasFocus() &&
+        (!document.activeElement || document.activeElement.tagName !== 'TEXTAREA')) term.focus()
   }, 250)
 
   // Gate/debug hooks (read-only introspection of the pane).

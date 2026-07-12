@@ -105,6 +105,7 @@ public static class BrowserDependencyInjection
             (IShellChannel?)ShellChannel.TryConnectFromEnvironment(sp.GetRequiredService<ILogger<ShellChannel>>())
             ?? new NullShellChannel());
         services.AddHostedService<ShellChannelAnnouncer>();
+        services.AddHostedService<ShellModeHintService>();
 
         // Register browser session (shared Playwright lifecycle)
         services.AddSingleton<BrowserSession>();
