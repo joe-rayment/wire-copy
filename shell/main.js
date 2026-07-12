@@ -14,8 +14,17 @@
 const { app, BaseWindow, WebContentsView, ipcMain, Menu, session } = require('electron')
 const path = require('path')
 const os = require('os')
-const pty = require('node-pty')
+const fs = require('fs')
 const channel = require('./channel')
+
+// Shell deps are PER-PLATFORM (this repo dir is shared across machines; Electron and
+// node-pty binaries are platform-specific). Prefer deps/<platform>-<arch>/node_modules;
+// fall back to a plain ./node_modules for legacy/dev setups.
+const DEPS = (() => {
+  const scoped = path.join(__dirname, 'deps', `${process.platform}-${process.arch}`, 'node_modules')
+  return fs.existsSync(scoped) ? scoped : path.join(__dirname, 'node_modules')
+})()
+const pty = require(path.join(DEPS, 'node-pty'))
 
 const ROOT = path.resolve(__dirname, '..')
 const CDP_PORT = process.env.WIRECOPY_SHELL_CDP_PORT || '9223'
@@ -241,7 +250,24 @@ app.whenReady().then(() => {
     }
   })
 
-  state.termView.webContents.loadFile('term.html')
+  // Terminal pane UI over a loopback-only static server: term.html's node_modules/*
+  // asset URLs resolve against the per-platform DEPS dir (file:// can't parameterize
+  // that), and module/wasm loading gets a real origin for future pane variants.
+  const http = require('http')
+  const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm' }
+  const termSrv = http.createServer((req, res) => {
+    const rel = decodeURIComponent(new URL(req.url, 'http://x/').pathname)
+    const fp = rel.startsWith('/node_modules/')
+      ? path.join(DEPS, rel.slice('/node_modules/'.length))
+      : path.join(__dirname, rel)
+    const rootOk = fp.startsWith(DEPS) || fp.startsWith(__dirname)
+    if (!rootOk || !fs.existsSync(fp) || fs.statSync(fp).isDirectory()) { res.writeHead(404); res.end(); return }
+    res.writeHead(200, { 'content-type': MIME[path.extname(fp)] || 'application/octet-stream' })
+    fs.createReadStream(fp).pipe(res)
+  })
+  termSrv.listen(0, '127.0.0.1', () => {
+    state.termView.webContents.loadURL(`http://127.0.0.1:${termSrv.address().port}/term.html`)
+  })
 
   ipcMain.on('term:ready', (_e, dims) => {
     state.ptyDims = dims

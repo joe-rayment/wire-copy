@@ -8,6 +8,9 @@ import { fileURLToPath } from 'node:url'
 
 export const SHELL_DIR = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..')
 export const ROOT = path.resolve(SHELL_DIR, '..')
+// Per-platform deps (shared repo dir across machines — see ../run): gates launch the
+// Electron that matches THIS host.
+export const DEPS_DIR = path.join(SHELL_DIR, 'deps', `${process.platform}-${process.arch}`)
 export const OUT = path.join(SHELL_DIR, 'gates', 'out')
 mkdirSync(OUT, { recursive: true })
 
@@ -60,7 +63,7 @@ export class Env {
 
   launchShell (extra = {}) {
     // Sandbox flags must be argv (Linux sandbox init precedes main.js) — container-only.
-    const p = spawn(path.join(SHELL_DIR, 'node_modules', '.bin', 'electron'),
+    const p = spawn(path.join(DEPS_DIR, 'node_modules', '.bin', 'electron'),
       ['.', '--no-sandbox', '--disable-dev-shm-usage'], {
       cwd: SHELL_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],

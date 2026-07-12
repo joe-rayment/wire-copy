@@ -40,14 +40,23 @@ fi
 # pane — never headless; the Xvfb wrapper above applies identically when there is no display.
 for arg in "$@"; do
     if [ "$arg" = "--desktop" ]; then
+        command -v node >/dev/null 2>&1 || { echo "wirecopy: --desktop needs Node.js (for Electron). Install node and re-run." >&2; exit 1; }
         echo "wirecopy: building the app (Release)..." >&2
         "$DOTNET" build src/WireCopy.API/WireCopy.API.csproj -c Release --nologo -v q || exit 1
-        if [ ! -d shell/node_modules ]; then
-            echo "wirecopy: first desktop run — installing the shell (one-time, downloads Electron)..." >&2
-            (cd shell && npm install --no-fund --no-audit) || exit 1
-        fi
-        if [ ! -f shell/node_modules/.wc-pty-rebuilt ]; then
-            (cd shell && npx electron-rebuild -f -w node-pty && touch node_modules/.wc-pty-rebuilt) || exit 1
+
+        # Shell deps are PER-PLATFORM: this repo directory is shared between machines
+        # (macOS + the Linux dev container), and Electron/node-pty binaries are
+        # platform-specific — a shared node_modules hands one OS the other's binaries
+        # (spawn ENOEXEC). Each platform installs and launches from its own dir.
+        PLAT="$(node -p 'process.platform + "-" + process.arch')"
+        DEPS_DIR="shell/deps/$PLAT"
+        if [ ! -x "$DEPS_DIR/node_modules/.bin/electron" ] || [ ! -f "$DEPS_DIR/node_modules/.wc-pty-rebuilt" ]; then
+            echo "wirecopy: first desktop run on $PLAT — installing the shell (one-time, downloads Electron)..." >&2
+            mkdir -p "$DEPS_DIR"
+            cp shell/package.json "$DEPS_DIR/" || exit 1
+            (cd "$DEPS_DIR" && npm install --no-fund --no-audit \
+                && npx electron-rebuild -f -w node-pty \
+                && touch node_modules/.wc-pty-rebuilt) || exit 1
         fi
         shell_flags=()
         if [ "${WIRECOPY_SHELL_NO_SANDBOX:-}" = "1" ]; then
@@ -55,7 +64,7 @@ for arg in "$@"; do
             # runs before the shell's main script. Desktop runs keep the sandbox ON.
             shell_flags=(--no-sandbox --disable-dev-shm-usage)
         fi
-        exec "${launch[@]}" shell/node_modules/.bin/electron shell "${shell_flags[@]}"
+        exec "${launch[@]}" "$DEPS_DIR/node_modules/.bin/electron" shell "${shell_flags[@]}"
     fi
 done
 
