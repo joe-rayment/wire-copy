@@ -64,6 +64,7 @@ const state = {
   win: null,
   termView: null,
   pageView: null,     // the visible "lens" pane
+  popupView: null,    // SSO/auth popup pane (workspace-y0bi) — at most one, over the page pane
   pages: new Map(),   // tag → WebContentsView ("lens" + hidden fetch/prefetch pages)
   channelServer: null,
   ptyProc: null,
@@ -155,6 +156,35 @@ function layout () {
     termView.setBounds({ x: 0, y: 0, width: w, height: h })
     pageView.setVisible(false)
   }
+  positionPopup()
+}
+
+// The SSO popup pane sits centered over the PAGE pane (never over the reader) at a
+// provider-friendly size, clamped to the pane. Recomputed on every layout change.
+function positionPopup () {
+  const { popupView, pageView, win } = state
+  if (!popupView || !win || win.isDestroyed()) return
+  const pb = pageView.getBounds()
+  const width = Math.min(500, Math.max(320, Math.round(pb.width * 0.92)))
+  const height = Math.min(640, Math.max(400, Math.round(pb.height * 0.85)))
+  popupView.setBounds({
+    x: pb.x + Math.round((pb.width - width) / 2),
+    y: pb.y + Math.round((pb.height - height) / 2),
+    width,
+    height
+  })
+}
+
+function closePopupPane () {
+  const popup = state.popupView
+  if (!popup) return
+  state.popupView = null
+  try { state.win.contentView.removeChildView(popup) } catch {}
+  try { if (!popup.webContents.isDestroyed()) popup.webContents.close() } catch {}
+  // The opener page keeps the keyboard — SSO hand-back lands where the user was.
+  if (state.mode === 'browser' && !state.pageView.webContents.isDestroyed()) {
+    state.pageView.webContents.focus()
+  }
 }
 
 function focusTerm () {
@@ -198,6 +228,7 @@ function createTaggedPage (tag) {
 
 function setPaneVisible (on) {
   state.revealed = !!on
+  if (!on) closePopupPane() // a popup must never float orphaned over the full reader
   layout()
   if (!on) focusTerm()
 }
@@ -235,9 +266,11 @@ function attachFocusDoctrine (pageView) {
   wc.on('before-input-event', (e, input) => {
     if (state.mode === 'reader') { e.preventDefault(); forwardToTerm(input); return }
     // Esc can arrive as keyDown OR rawKeyDown depending on the renderer's dispatch path.
+    // It peels one layer at a time: an open SSO popup closes first; reader mode second.
     if ((input.type === 'keyDown' || input.type === 'rawKeyDown') && input.key === 'Escape') {
       e.preventDefault()
-      setMode('reader')
+      if (state.popupView) closePopupPane()
+      else setMode('reader')
     }
   })
   // A CLICK into the pane is a deliberate user gesture → browser mode. (Keyboard-side
@@ -245,10 +278,55 @@ function attachFocusDoctrine (pageView) {
   wc.on('input-event', (_e, input) => {
     if (state.mode === 'reader' && state.revealed && input.type === 'mouseDown') setMode('browser')
   })
-  wc.setWindowOpenHandler(({ url }) => {
-    wc.loadURL(url).catch(() => {})
+  // window.open routing (workspace-y0bi): a REAL popup (window.open with features —
+  // the SSO shape: Google/Apple sign-in) gets an owned TEMP PANE over the page pane;
+  // popup-preload.js shims window.opener.postMessage/window.close over IPC (relayed
+  // into this opener page with the popup's real origin). Everything else (_blank
+  // links) stays same-pane. NOTE: the createWindow-override route is a dead end here —
+  // returning a WebContentsView's contents from it WEDGES Electron 43's main loop
+  // (spike-proven: setImmediate/timers stop right after the callback returns).
+  wc.setWindowOpenHandler(details => {
+    if (details.disposition === 'new-window') {
+      openPopupPane(details.url)
+      return { action: 'deny' }
+    }
+
+    wc.loadURL(details.url).catch(() => {})
     return { action: 'deny' }
   })
+}
+
+function openPopupPane (url) {
+  closePopupPane() // one at a time — a fresh SSO popup replaces a stale one
+  const popup = new WebContentsView({
+    webPreferences: {
+      partition: 'persist:wirecopy',
+      preload: path.join(__dirname, 'popup-preload.js'),
+      contextIsolation: false,
+      sandbox: false,
+      nodeIntegration: false
+    }
+  })
+  state.popupView = popup
+  state.win.contentView.addChildView(popup) // topmost
+  positionPopup()
+  popup.webContents.loadURL(url).catch(() => {})
+  setTimeout(() => { try { popup.webContents.focus() } catch {} }, 80)
+  popup.webContents.once('destroyed', () => {
+    if (state.popupView === popup) closePopupPane()
+  })
+  popup.webContents.on('before-input-event', (e, input) => {
+    if ((input.type === 'keyDown' || input.type === 'rawKeyDown') && input.key === 'Escape') {
+      e.preventDefault()
+      closePopupPane()
+    }
+  })
+  // The popup itself never spawns further windows — nested opens stay in place.
+  popup.webContents.setWindowOpenHandler(({ url: nested }) => {
+    popup.webContents.loadURL(nested).catch(() => {})
+    return { action: 'deny' }
+  })
+  console.error('[shell] SSO popup pane opened: ' + url)
 }
 
 function spawnTui () {
@@ -389,6 +467,22 @@ app.whenReady().then(() => {
       `http://127.0.0.1:${termSrv.address().port}/term.html?font=${termFontSize}&plat=${process.platform}`)
   })
 
+  // SSO popup opener bridge (workspace-y0bi): the popup's shimmed opener.postMessage
+  // arrives here and is REPLAYED into the opener page as a real MessageEvent carrying
+  // the popup's actual origin; the shimmed window.close() tears the pane down. Both
+  // are sender-guarded to the live popup only.
+  ipcMain.on('wcpopup:post', (e, json) => {
+    if (!state.popupView || e.sender !== state.popupView.webContents) return
+    let origin = 'null'
+    try { origin = new URL(e.sender.getURL()).origin } catch {}
+    state.pageView.webContents.executeJavaScript(
+      `window.dispatchEvent(new MessageEvent('message', { data: ${json}, origin: ${JSON.stringify(origin)} }))`
+    ).catch(() => {})
+  })
+  ipcMain.on('wcpopup:close', e => {
+    if (state.popupView && e.sender === state.popupView.webContents) closePopupPane()
+  })
+
   ipcMain.on('term:ready', (_e, dims) => {
     state.ptyDims = dims
     if (state.ptyProc) state.ptyProc.resize(dims.cols, dims.rows)
@@ -410,6 +504,8 @@ app.whenReady().then(() => {
     ptyDims: state.ptyDims,
     winBounds: state.win.getBounds(),
     termFontSize,
+    popupOpen: !!state.popupView,
+    popupBounds: state.popupView ? state.popupView.getBounds() : null,
     contentSize: state.win.getContentSize(),
     termBounds: state.termView.getBounds(),
     pageBounds: state.pageView.getBounds(),

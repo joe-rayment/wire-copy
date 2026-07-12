@@ -133,6 +133,14 @@ export class Cdp {
         m.error ? rej(new Error(m.error.message)) : res(m.result)
       }
     }
+    // A dropped target (app crash, page teardown) must FAIL pending sends, not hang
+    // the gate forever — the silent-hang class cost a full timeout to diagnose once.
+    const failAll = why => {
+      for (const [, p] of c.pending) p.rej(new Error('CDP socket closed: ' + why))
+      c.pending.clear()
+    }
+    ws.onclose = () => failAll('closed')
+    ws.onerror = () => failAll('error')
     return c
   }
   send (method, params = {}) {
