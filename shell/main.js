@@ -81,6 +81,7 @@ const state = {
   ptyProc: null,
   mode: 'reader',     // 'reader' | 'browser'
   revealed: false,
+  paneShown: false,   // physical visibility (lags `revealed` during the collapse slide)
   ptyDims: { cols: 0, rows: 0 }
 }
 
@@ -155,19 +156,82 @@ function handleZoomKey (input) {
 }
 
 function layout () {
+  // INSTANT placement — boot and window resizes. Reveal/collapse transitions go
+  // through animatePane instead (workspace-va2s); a resize mid-flight snaps here.
   const { win, termView, pageView } = state
   if (!win || win.isDestroyed()) return
+  stopPaneAnim()
   const [w, h] = win.getContentSize()
   if (state.revealed) {
     const pageW = Math.round(w * PAGE_FRACTION)
     termView.setBounds({ x: 0, y: 0, width: w - pageW, height: h })
     pageView.setVisible(true)
     pageView.setBounds({ x: w - pageW, y: 0, width: pageW, height: h })
+    state.paneShown = true
   } else {
     termView.setBounds({ x: 0, y: 0, width: w, height: h })
     pageView.setVisible(false)
+    state.paneShown = false
   }
   positionPopup()
+}
+
+// Pane reveal/collapse animation (workspace-va2s): a macOS-minimize-style eased slide.
+// Two hard rules: the TERMINAL reflows exactly ONCE per transition (animating its
+// width would storm the pty with resizes and thrash the TUI), and the page view
+// animates POSITION only, at final size (animating its width would reflow the live
+// site every frame). Reveal: the terminal narrows up front — the slide draws the eye
+// past that single reflow — and the pane glides in from the right edge (ease-out).
+// Collapse: the pane glides out (ease-in), and only THEN does the terminal expand.
+// Reversible mid-flight; window resizes snap via layout().
+const PANE_ANIM_MS = 240
+const PANE_ANIM_DISABLED = process.env.WIRECOPY_SHELL_NO_ANIM === '1'
+let paneAnim = null
+
+function stopPaneAnim () {
+  if (paneAnim) {
+    clearInterval(paneAnim.timer)
+    paneAnim = null
+  }
+}
+
+function animatePane (show) {
+  const { win, termView, pageView } = state
+  if (!win || win.isDestroyed()) return
+  const [w, h] = win.getContentSize()
+  const pageW = Math.round(w * PAGE_FRACTION)
+  const dockedX = w - pageW
+  const wasMidFlight = !!paneAnim
+  stopPaneAnim()
+  if (show) {
+    termView.setBounds({ x: 0, y: 0, width: dockedX, height: h })
+    // A fresh reveal starts at the right edge; reversing a mid-flight collapse
+    // resumes from wherever the pane currently sits.
+    const resume = wasMidFlight || state.paneShown
+    const startX = resume ? Math.max(dockedX, Math.min(w, pageView.getBounds().x)) : w
+    pageView.setBounds({ x: startX, y: 0, width: pageW, height: h })
+    pageView.setVisible(true)
+    state.paneShown = true
+  }
+  const fromX = pageView.getBounds().x
+  const toX = show ? dockedX : w
+  const ease = show ? (t => 1 - Math.pow(1 - t, 3)) : (t => t * t * t)
+  const t0 = Date.now()
+  const timer = setInterval(() => {
+    if (win.isDestroyed()) { stopPaneAnim(); return }
+    const t = Math.min(1, (Date.now() - t0) / PANE_ANIM_MS)
+    pageView.setBounds({ x: Math.round(fromX + (toX - fromX) * ease(t)), y: 0, width: pageW, height: h })
+    if (t >= 1) {
+      stopPaneAnim()
+      if (!show) {
+        pageView.setVisible(false)
+        state.paneShown = false
+        termView.setBounds({ x: 0, y: 0, width: w, height: h })
+      }
+      positionPopup()
+    }
+  }, 16)
+  paneAnim = { timer, show }
 }
 
 // The SSO popup pane sits centered over the PAGE pane (never over the reader) at a
@@ -238,10 +302,15 @@ function createTaggedPage (tag) {
 }
 
 function setPaneVisible (on) {
-  state.revealed = !!on
-  if (!on) closePopupPane() // a popup must never float orphaned over the full reader
-  layout()
-  if (!on) focusTerm()
+  const next = !!on
+  // The .NET side reconciles pane state on every navigation — a repeated same-state
+  // call must NOT retrigger (or snap) an animation in flight.
+  if (state.revealed === next) return
+  state.revealed = next
+  if (!next) closePopupPane() // a popup must never float orphaned over the full reader
+  if (PANE_ANIM_DISABLED) layout()
+  else animatePane(next)
+  if (!next) focusTerm()
 }
 
 // Reroute a key that landed on a page (reader mode) into the terminal — the user's
@@ -524,6 +593,8 @@ app.whenReady().then(() => {
     termFontSize,
     popupOpen: !!state.popupView,
     popupBounds: state.popupView ? state.popupView.getBounds() : null,
+    paneAnimating: !!paneAnim,
+    paneShown: state.paneShown,
     contentSize: state.win.getContentSize(),
     termBounds: state.termView.getBounds(),
     pageBounds: state.pageView.getBounds(),
