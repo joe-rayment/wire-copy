@@ -107,6 +107,19 @@
         (!document.activeElement || document.activeElement.tagName !== 'TEXTAREA')) term.focus()
   }, 250)
 
+  // Keystroke-never-lost, page edition (workspace-ai4c audit): between keeper ticks a
+  // key can land on this PAGE while xterm's textarea isn't focused — it would die
+  // silently (xterm reads only from its textarea; the field shape: the first 'o' after
+  // a pane reveal does nothing). Feed such keys straight to the pty, then refocus.
+  const GAP_KEYS = { Enter: '\r', Escape: '\u001b', Tab: '\t', Backspace: '\u007f', ArrowUp: '\u001b[A', ArrowDown: '\u001b[B', ArrowRight: '\u001b[C', ArrowLeft: '\u001b[D' }
+  document.addEventListener('keydown', e => {
+    if (shellMode !== 'reader' || e.isComposing) return
+    if (term.textarea && document.activeElement === term.textarea) return // xterm owns it
+    const seq = (e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey) ? e.key : GAP_KEYS[e.key]
+    if (seq) { e.preventDefault(); wc.input(seq) }
+    term.focus()
+  }, true)
+
   // Gate/debug hooks (read-only introspection of the pane).
   window.__dims = () => ({ cols: term.cols, rows: term.rows })
   window.__font = () => term.options.fontSize
