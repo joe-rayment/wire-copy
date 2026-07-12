@@ -671,23 +671,31 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         try
         {
-            // Ensure the attach + lens exist, reveal the pane (sticky dock intent —
-            // matches the user's explicit "show me this in the browser" gesture),
-            // then drive the lens and hand the keyboard to the page.
+            // Reveal the pane FIRST (instant feedback; sticky dock intent — this is the
+            // user's explicit "show me this in the browser" gesture), then adopt the lens
+            // and drive it. Lens adoption can queue behind a prefetch holding the session
+            // lock — the log brackets make that wait visible in the field.
+            _logger.LogInformation("Opening in pane: {Url}", url);
             await GetOrCreatePageAsync().ConfigureAwait(false);
-            var lens = await GetLensPageAsync().ConfigureAwait(false)
-                ?? throw new InvalidOperationException("The shell lens page is unavailable");
             if (await DockWindowAsync().ConfigureAwait(false) != BrowserWindowState.Docked)
             {
                 throw new InvalidOperationException("The shell pane did not reveal");
             }
 
+            var lens = await GetLensPageAsync().ConfigureAwait(false)
+                ?? throw new InvalidOperationException("The shell lens page is unavailable");
             await lens.GotoAsync(url, new PageGotoOptions
             {
                 WaitUntil = WaitUntilState.DOMContentLoaded,
                 Timeout = 20000,
             }).ConfigureAwait(false);
             await _shell.SetModeAsync("browser").ConfigureAwait(false);
+
+            // A queued background MinimizeWindowAsync must not consume a STALE
+            // interaction latch and stomp the mode back to reader moments after the
+            // user's explicit open — their gesture supersedes any pending hand-back.
+            Interlocked.Exchange(ref _pendingInteractionHandback, 0);
+            _logger.LogInformation("Opened in pane: {Url}", url);
             return PaneOpenResult.Opened;
         }
         catch (Exception ex)

@@ -371,7 +371,7 @@ app.whenReady().then(() => {
   // asset URLs resolve against the per-platform DEPS dir (file:// can't parameterize
   // that), and module/wasm loading gets a real origin for future pane variants.
   const http = require('http')
-  const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm' }
+  const MIME = { '.html': 'text/html', '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css', '.wasm': 'application/wasm', '.ttf': 'font/ttf', '.woff2': 'font/woff2' }
   const termSrv = http.createServer((req, res) => {
     const rel = decodeURIComponent(new URL(req.url, 'http://x/').pathname)
     const fp = rel.startsWith('/node_modules/')

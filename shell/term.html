@@ -3,6 +3,11 @@
 <title>Wire Copy</title>
 <style>
   /* Styling WE own — no user terminal dictates any of this. */
+  /* Bundled brand font (workspace-vcpf): identical cell metrics + glyph coverage on
+     every platform — braille spinners U+28xx, box drawing, ▌★⇒ all ship with the app;
+     color emoji (🎧) intentionally falls through to the platform emoji font. */
+  @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono.ttf') format('truetype'); font-weight: normal; font-style: normal; }
+  @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono-Bold.ttf') format('truetype'); font-weight: bold; font-style: normal; }
   html, body { margin: 0; height: 100%; background: #0e0e14; overflow: hidden; }
   #pad  { height: 100%; box-sizing: border-box; padding: 16px 8px 8px 16px; }
   #term { height: 100%; }
@@ -13,19 +18,26 @@
 <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
 <script>
-  // Type scale (workspace-9d04): the shell owns the initial size (persisted zoom) via the
-  // query string, and a per-platform stack replaces bare 'monospace' (whose fallback ran
-  // small in the field) until the bundled brand font lands (P6).
+  // Type scale (workspace-9d04): the shell owns the initial size (persisted zoom) via
+  // the query string. The BUNDLED font leads the stack (workspace-vcpf) so metrics and
+  // glyph coverage are identical on every platform; the per-platform names remain as
+  // fallback only (e.g. while the bundled files are missing in a broken install).
   const params = new URLSearchParams(location.search)
   const plat = params.get('plat') || 'linux'
-  const FONT_STACK = plat === 'darwin'
+  const FALLBACKS = plat === 'darwin'
     ? "'SF Mono', Menlo, Monaco, monospace"
     : plat === 'win32'
       ? "'Cascadia Mono', Consolas, monospace"
       : "'DejaVu Sans Mono', 'Noto Sans Mono', 'Liberation Mono', monospace"
+  const FONT_STACK = `'WireCopy Mono', ${FALLBACKS}`
+  const FONT_PX = Number(params.get('font')) || 16
   const term = new Terminal({
     fontFamily: FONT_STACK,
-    fontSize: Number(params.get('font')) || 16,
+    fontSize: FONT_PX,
+    // Cell metrics pinned (workspace-vcpf): the terminal look must not drift with
+    // renderer defaults. lineHeight 1 keeps box-drawing rows contiguous.
+    lineHeight: 1.0,
+    letterSpacing: 0,
     cursorBlink: false,
     allowProposedApi: true,
     scrollback: 200,
@@ -34,12 +46,36 @@
       foreground: '#e8e6f0',
       cursor: '#ff87d7',
       selectionBackground: '#3d2a4d',
+      // ANSI 16 pinned to the CLASSIC XTERM palette (workspace-vcpf): xterm.js
+      // defaults to Tango (olive green #4e9a06 etc), which visibly diverges from
+      // terminal mode (TERM=xterm-256color; the 256 cube already matches xterm).
+      // The two magentas stay brand-pink — a deliberate theme override, kept.
+      black: '#000000',
+      red: '#cd0000',
+      green: '#00cd00',
+      yellow: '#cdcd00',
+      blue: '#0000ee',
       magenta: '#ff87d7',
-      brightMagenta: '#ffa8e2'
+      cyan: '#00cdcd',
+      white: '#e5e5e5',
+      brightBlack: '#7f7f7f',
+      brightRed: '#ff0000',
+      brightGreen: '#00ff00',
+      brightYellow: '#ffff00',
+      brightBlue: '#5c5cff',
+      brightMagenta: '#ffa8e2',
+      brightCyan: '#00ffff',
+      brightWhite: '#ffffff'
     }
   })
   const fit = new FitAddon.FitAddon()
   term.loadAddon(fit)
+  // The bundled font MUST be resolved before xterm measures its cell box — measuring
+  // against the fallback caches wrong metrics and the first paint renders off-grid.
+  Promise.all([
+    document.fonts.load(`${FONT_PX}px 'WireCopy Mono'`),
+    document.fonts.load(`bold ${FONT_PX}px 'WireCopy Mono'`)
+  ]).catch(() => {}).then(() => {
   term.open(document.getElementById('term'))
   fit.fit()
   term.focus()
@@ -87,4 +123,5 @@
     nav: u => wc.nav(u),
     probeCertDefaultSession: u => wc.probeCertDefaultSession(u)
   }
+  }) // font-load gate
 </script>
