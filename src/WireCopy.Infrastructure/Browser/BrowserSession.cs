@@ -4,6 +4,8 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Microsoft.Playwright;
 using WireCopy.Application.Interfaces;
+using WireCopy.Application.Interfaces.Browser;
+using WireCopy.Infrastructure.Browser.Shell;
 using WireCopy.Infrastructure.Configuration;
 
 namespace WireCopy.Infrastructure.Browser;
@@ -26,14 +28,70 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // workspace-9k27.17: the coordinate itself is BrowserConfiguration.ParkCoordinate —
     // tunable because window managers differ (some Linux WMs clamp/refuse the move,
     // Windows treats -32000 as the legacy minimize coordinate).
+    // Shared by the launch path (persistent context) and the desktop-shell attach path.
+    private const string AntiDetectionInitScript = @"
+                // workspace-mya7: takeover detection — note when a HUMAN uses any
+                // page of the shared browser so prefetch can yield instantly.
+                // workspace-6yb7.5: input during an armed PickScript session is
+                // wizard input, not a takeover — the marker (which owns this
+                // signal) skips it rather than PickScript patching the global.
+                (() => {
+                    const mark = () => {
+                        if (window.__wcPick && window.__wcPick.active) return;
+                        window.__wcLastUserInput = Date.now();
+                    };
+                    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'pointermove']
+                        .forEach((e) => window.addEventListener(e, mark, { capture: true, passive: true }));
+                })();
+
+                // Patch navigator.webdriver (primary automation indicator)
+                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
+
+                // Ensure chrome object looks realistic
+                if (!window.chrome) window.chrome = {};
+                if (!window.chrome.runtime) window.chrome.runtime = {};
+
+                // Patch permissions query to avoid automation detection
+                const originalQuery = window.navigator.permissions?.query;
+                if (originalQuery) {
+                    window.navigator.permissions.query = (parameters) =>
+                        parameters.name === 'notifications'
+                            ? Promise.resolve({ state: Notification.permission })
+                            : originalQuery(parameters);
+                }
+
+                // Ensure plugins array is not empty (empty = headless indicator)
+                if (navigator.plugins.length === 0) {
+                    Object.defineProperty(navigator, 'plugins', {
+                        get: () => [1, 2, 3, 4, 5],
+                    });
+                }
+
+                // Ensure languages array is populated
+                if (!navigator.languages || navigator.languages.length === 0) {
+                    Object.defineProperty(navigator, 'languages', {
+                        get: () => ['en-US', 'en'],
+                    });
+                }
+            ";
+
     private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
+
+    // Desktop-shell mode (single-window): live control channel to the Electron shell.
+    // NullShellChannel in plain terminal mode, so every _shell.IsConnected branch is dead there.
+    private readonly IShellChannel _shell;
     private readonly string _userDataDir;
     private readonly SemaphoreSlim _lock = new(1, 1);
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private IPage? _page;
+
+    // Shell attach mode: the CDP connection to the shell's embedded Chromium, and a counter
+    // for unique page tags (fetch-N / bg-N) so re-attaches never adopt a stale page.
+    private IBrowser? _attachedBrowser;
+    private int _shellPageCounter;
 
     // workspace-qigc: dedicated LENS tab — the page the docked sidecar shows and the
     // dock spotlight navigates. Fetches (PageLoader) keep _page to themselves, so a
@@ -122,11 +180,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
         ILogger<BrowserSession> logger,
-        ICookieManager cookieManager)
+        ICookieManager cookieManager,
+        IShellChannel? shellChannel = null)
     {
         _browserConfig = browserConfig.Value;
         _logger = logger;
         _cookieManager = cookieManager;
+        _shell = shellChannel ?? new NullShellChannel();
 
         // Sidecar mode starts in the configured state (workspace-exbz): when on, the
         // first headed launch docks beside the terminal; the dock toggle drops to the
@@ -246,6 +306,21 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 {
                     _lensPage = null; // dead tab — recreate below
                 }
+            }
+
+            if (_shell.IsConnected)
+            {
+                // Single-window shell: the lens IS the shell's visible pane — adopt it over
+                // CDP. NewPageAsync would create a detached target no pane ever shows.
+                await _shell.CreatePageAsync("lens").ConfigureAwait(false);
+                _lensPage = await AdoptTaggedPageAsync("lens").ConfigureAwait(false);
+                if (_lensPage != null)
+                {
+                    _lensPage.Close += OnLensPageClosed;
+                    _logger.LogDebug("Adopted the shell's lens pane");
+                }
+
+                return _lensPage;
             }
 
             _lensPage = await _context.NewPageAsync().ConfigureAwait(false);
@@ -378,6 +453,22 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
+        if (_shell.IsConnected)
+        {
+            // Single-window shell: "bring the browser forward for interaction" (captcha,
+            // manual login) = reveal the pane and hand it the keyboard (browser mode).
+            // Esc returns to the reader; the next MinimizeWindowAsync hand-back also
+            // switches the mode back. No OS window exists to un-minimize or raise.
+            Interlocked.Exchange(ref _pendingInteractionHandback, 1);
+            if (await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false))
+            {
+                _isDocked = true;
+            }
+
+            await _shell.SetModeAsync("browser").ConfigureAwait(false);
+            return;
+        }
+
         // workspace-fihe follow-up: several restore-for-interaction flows (manual login,
         // ':cred test', the podcast provider's bot-challenge) have NO dedicated cleanup call —
         // the window is eventually hidden by the NEXT background MinimizeWindowAsync. Record
@@ -447,6 +538,31 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
+        if (_shell.IsConnected)
+        {
+            // Single-window shell: nothing to park — reconcile pane visibility with the
+            // sticky dock intent, and hand the keyboard back to the reader when this is an
+            // interaction-cleanup call. Background prefetch calls stay pane-neutral.
+            var shellHandBack = weJustActivatedBrowser
+                || Interlocked.Exchange(ref _pendingInteractionHandback, 0) == 1;
+            if (_userWantsDock && !_isDocked)
+            {
+                _isDocked = await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false);
+            }
+            else if (!_userWantsDock && _isDocked)
+            {
+                await _shell.SetPaneVisibleAsync(false).ConfigureAwait(false);
+                _isDocked = false;
+            }
+
+            if (shellHandBack)
+            {
+                await _shell.SetModeAsync("reader").ConfigureAwait(false);
+            }
+
+            return;
+        }
+
         // workspace-fihe follow-up: fold in any pending hand-back recorded by RestoreWindowAsync.
         // Restore-for-interaction flows without a dedicated cleanup rely on the NEXT hide (often a
         // background prefetch park) to return focus; consuming the latch here restores the pre-fihe
@@ -503,6 +619,21 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         if (_disposed || _page == null)
         {
             return null;
+        }
+
+        if (_shell.IsConnected)
+        {
+            if (_isDocked)
+            {
+                // Explicit un-dock: drop the sticky intent, hide the pane, reader keeps keys.
+                _userWantsDock = false;
+                await _shell.SetPaneVisibleAsync(false).ConfigureAwait(false);
+                _isDocked = false;
+                await _shell.SetModeAsync("reader").ConfigureAwait(false);
+                return BrowserWindowState.Minimized;
+            }
+
+            return await DockWindowAsync().ConfigureAwait(false);
         }
 
         if (_isDocked)
@@ -699,6 +830,28 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             if (ctx == null)
             {
                 return null;
+            }
+
+            if (_shell.IsConnected)
+            {
+                // Single-window shell: hidden pages are created BY the shell (invisible views
+                // of the one headful window — quiet by construction, nothing can pop or steal
+                // focus) and adopted here over CDP.
+                var tag = $"bg-{Interlocked.Increment(ref _shellPageCounter)}";
+                if (!await _shell.CreatePageAsync(tag).ConfigureAwait(false))
+                {
+                    return null;
+                }
+
+                var shellPage = await AdoptTaggedPageAsync(tag).ConfigureAwait(false);
+                if (shellPage == null)
+                {
+                    return null;
+                }
+
+                await ApplyFetchViewportAsync(shellPage).ConfigureAwait(false);
+                _logger.LogDebug("Created hidden shell page {Tag} (total pages: {Count})", tag, ctx.Pages.Count);
+                return shellPage;
             }
 
             // workspace-v7g7: create the tab QUIETLY — CDP Target.createTarget background:true is
@@ -1319,6 +1472,15 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // `run` script provides Xvfb); it never silently degrades to headless.
     private async Task LaunchBrowserAsync()
     {
+        if (_shell.IsConnected)
+        {
+            // Single-window shell: never launch a second browser — attach to the shell's
+            // embedded Chromium over CDP. Headful by construction (the shell IS the window),
+            // so none of the terminal-focus/park/window plumbing below applies.
+            await AttachToShellAsync().ConfigureAwait(false);
+            return;
+        }
+
         // workspace-75ng: capture the terminal's bundle id NOW — before Playwright spawns the
         // headed browser — while the terminal is still the frontmost app, so the later
         // RefocusTerminalAsync re-activates the right app (fixes Ghostty). Runs once ever.
@@ -1476,51 +1638,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             _context = await launchTask.ConfigureAwait(false);
 
-            await _context.AddInitScriptAsync(@"
-                // workspace-mya7: takeover detection — note when a HUMAN uses any
-                // page of the shared browser so prefetch can yield instantly.
-                // workspace-6yb7.5: input during an armed PickScript session is
-                // wizard input, not a takeover — the marker (which owns this
-                // signal) skips it rather than PickScript patching the global.
-                (() => {
-                    const mark = () => {
-                        if (window.__wcPick && window.__wcPick.active) return;
-                        window.__wcLastUserInput = Date.now();
-                    };
-                    ['pointerdown', 'keydown', 'wheel', 'touchstart', 'pointermove']
-                        .forEach((e) => window.addEventListener(e, mark, { capture: true, passive: true }));
-                })();
-
-                // Patch navigator.webdriver (primary automation indicator)
-                Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-
-                // Ensure chrome object looks realistic
-                if (!window.chrome) window.chrome = {};
-                if (!window.chrome.runtime) window.chrome.runtime = {};
-
-                // Patch permissions query to avoid automation detection
-                const originalQuery = window.navigator.permissions?.query;
-                if (originalQuery) {
-                    window.navigator.permissions.query = (parameters) =>
-                        parameters.name === 'notifications'
-                            ? Promise.resolve({ state: Notification.permission })
-                            : originalQuery(parameters);
-                }
-
-                // Ensure plugins array is not empty (empty = headless indicator)
-                if (navigator.plugins.length === 0) {
-                    Object.defineProperty(navigator, 'plugins', {
-                        get: () => [1, 2, 3, 4, 5],
-                    });
-                }
-
-                // Ensure languages array is populated
-                if (!navigator.languages || navigator.languages.length === 0) {
-                    Object.defineProperty(navigator, 'languages', {
-                        get: () => ['en-US', 'en'],
-                    });
-                }
-            ").ConfigureAwait(false);
+            await _context.AddInitScriptAsync(AntiDetectionInitScript).ConfigureAwait(false);
 
             _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync().ConfigureAwait(false);
 
@@ -1578,6 +1696,108 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             await DisposeContextUnsafeAsync().ConfigureAwait(false);
             throw;
         }
+    }
+
+    /// <summary>
+    /// Desktop-shell attach path: connects Patchright to the shell's embedded Chromium
+    /// (ConnectOverCDPAsync) and adopts a fresh hidden shell page as the fetch tab.
+    /// Replaces LaunchPersistentContextAsync entirely — one browser, one window, no
+    /// OS-window management, headful by construction.
+    /// </summary>
+    private async Task AttachToShellAsync()
+    {
+        await DisposeContextUnsafeAsync().ConfigureAwait(false);
+
+        var endpoint = await _shell.GetCdpEndpointAsync().ConfigureAwait(false)
+            ?? throw new InvalidOperationException("Shell channel is connected but provided no CDP endpoint");
+
+        var createTask = Playwright.CreateAsync();
+        if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) != createTask)
+        {
+            throw new TimeoutException("Playwright.CreateAsync timed out after 15 seconds");
+        }
+
+        _playwright = await createTask.ConfigureAwait(false);
+
+        var connectTask = _playwright.Chromium.ConnectOverCDPAsync(endpoint);
+        if (await Task.WhenAny(connectTask, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) != connectTask)
+        {
+            throw new TimeoutException($"ConnectOverCDPAsync({endpoint}) timed out after 15 seconds");
+        }
+
+        _attachedBrowser = await connectTask.ConfigureAwait(false);
+
+        // Fresh hidden fetch tab, uniquely tagged so a re-attach never adopts a stale page.
+        var tag = $"fetch-{Interlocked.Increment(ref _shellPageCounter)}";
+        if (!await _shell.CreatePageAsync(tag).ConfigureAwait(false))
+        {
+            throw new InvalidOperationException("The shell failed to create the fetch page");
+        }
+
+        _page = await AdoptTaggedPageAsync(tag).ConfigureAwait(false)
+            ?? throw new InvalidOperationException($"Could not adopt the shell page tagged '{tag}' over CDP");
+        _context = _page.Context;
+
+        try
+        {
+            await _context.AddInitScriptAsync(AntiDetectionInitScript).ConfigureAwait(false);
+        }
+        catch (PlaywrightException ex)
+        {
+            // Defense-in-depth only: the shell pages already ARE a real headful browser.
+            _logger.LogDebug(ex, "Init script not applied on the attached context (non-fatal)");
+        }
+
+        await ApplyFetchViewportAsync(_page).ConfigureAwait(false);
+        await InjectStoredCookiesAsync().ConfigureAwait(false);
+        _page.Close += OnHeadedPageClosed;
+        _logger.LogInformation(
+            "Attached to the desktop shell browser at {Endpoint} (single-window, headful)", endpoint);
+
+        if (_userWantsDock)
+        {
+            _isDocked = await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Finds the shell page whose URL carries the #wc-&lt;tag&gt; marker (the shell tags every
+    /// page it creates). Polls briefly because CDP target attachment races page creation.
+    /// </summary>
+    private async Task<IPage?> AdoptTaggedPageAsync(string tag)
+    {
+        var marker = "#wc-" + tag;
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
+        while (DateTime.UtcNow < deadline)
+        {
+            var browser = _attachedBrowser;
+            if (browser == null)
+            {
+                return null;
+            }
+
+            foreach (var ctx in browser.Contexts)
+            {
+                foreach (var page in ctx.Pages)
+                {
+                    try
+                    {
+                        if (page.Url.EndsWith(marker, StringComparison.Ordinal))
+                        {
+                            return page;
+                        }
+                    }
+                    catch (PlaywrightException)
+                    {
+                        // Page torn down mid-scan — skip it.
+                    }
+                }
+            }
+
+            await Task.Delay(150).ConfigureAwait(false);
+        }
+
+        return null;
     }
 
 #pragma warning disable SA1202 // helper kept adjacent to its sole caller (LaunchBrowserAsync) for readability (workspace-j0b8).
@@ -2028,6 +2248,21 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return null;
         }
 
+        if (_shell.IsConnected)
+        {
+            // Single-window shell: docking = revealing the page pane. Geometry, focus and
+            // z-order are the shell's problem (reader-primary by construction), and the lens
+            // renders at the REAL pane width — no phone-viewport emulation.
+            if (!await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false))
+            {
+                return null;
+            }
+
+            _isDocked = true;
+            _userWantsDock = true;
+            return BrowserWindowState.Docked;
+        }
+
         // workspace-v7g7: docking is an explicit "window on-screen" request — void any pending
         // return-to-user-minimized intent, and drop the corner memory so the park after an
         // un-dock re-places the tile instead of "respecting" the dock position.
@@ -2228,6 +2463,26 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
     private async Task DisposeContextUnsafeAsync()
     {
+        if (_attachedBrowser != null)
+        {
+            // Shell attach mode: DISCONNECT only. Closing pages/contexts over CDP would
+            // destroy the shell's own panes (the visible lens included) — they belong to
+            // the shell window, not to this client.
+            _lensPage = null;
+            _page = null;
+            _context = null;
+            try
+            {
+                await _attachedBrowser.CloseAsync().ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Error disconnecting from the shell browser during cleanup");
+            }
+
+            _attachedBrowser = null;
+        }
+
         if (_lensPage != null)
         {
             try

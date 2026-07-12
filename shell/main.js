@@ -32,6 +32,9 @@ app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
 const CHROME_UA = `Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/${process.versions.chrome} Safari/537.36`
 app.userAgentFallback = CHROME_UA
 
+// Gates isolate their state: a throwaway userData keeps partitions/cookies per run.
+if (process.env.WIRECOPY_SHELL_USERDATA) app.setPath('userData', process.env.WIRECOPY_SHELL_USERDATA)
+
 // One instance only: the TUI owns a shared browser profile + wirecopy.db.
 // app.exit (not quit): quit() is async and pre-ready it can leave the process lingering.
 if (!app.requestSingleInstanceLock()) {

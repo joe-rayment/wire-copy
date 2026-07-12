@@ -1,7 +1,8 @@
 // Shared harness for shell gates: fresh Xvfb + openbox + the shell, raw CDP, OS-level keys.
 // Headful always (never headless); xdotool injects REAL X keys so focus routing is honest.
 import { execFileSync, spawn } from 'node:child_process'
-import { mkdirSync, existsSync } from 'node:fs'
+import { mkdirSync, mkdtempSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -30,10 +31,20 @@ export function buildTui (config = 'Release') {
 }
 
 export class Env {
-  constructor ({ display, cdpPort, env = {} }) {
+  constructor ({ display, cdpPort, env = {}, isolateData = true }) {
     this.display = display
     this.cdpPort = String(cdpPort)
-    this.extraEnv = env
+    // Fresh per-run state: app data (XDG) + Electron userData (browser partition), so
+    // caches/scroll-restore/cookies from prior runs can't leak into asserts.
+    this.extraEnv = { ...env }
+    if (isolateData) {
+      // Unique throwaway dir per run under /tmp — no pre-delete needed (avoid-rm-rf policy).
+      const base = mkdtempSync(path.join(os.tmpdir(), `wc-gate-${this.cdpPort}-`))
+      mkdirSync(path.join(base, 'xdg'), { recursive: true })
+      mkdirSync(path.join(base, 'electron'), { recursive: true })
+      this.extraEnv.XDG_DATA_HOME = path.join(base, 'xdg')
+      this.extraEnv.WIRECOPY_SHELL_USERDATA = path.join(base, 'electron')
+    }
     this.procs = []
   }
 
@@ -137,12 +148,15 @@ export async function attach (port, urlPart, label = urlPart) {
   const t = await findTarget(port, t => t.url.includes(urlPart), 25000, label)
   return Cdp.connect(t.webSocketDebuggerUrl)
 }
+// Matches on whitespace-NORMALIZED text: the TUI wraps lines at pane width, so a
+// phrase can straddle a line break — content asserts must not depend on layout.
 export async function pollTermText (term, substr, timeoutMs = 20000) {
   const t0 = Date.now()
+  const want = substr.replace(/\s+/g, ' ')
   let txt = ''
   while (Date.now() - t0 < timeoutMs) {
     txt = await term.eval('window.__termText()').catch(() => '')
-    if (txt.includes(substr)) return { ok: true, txt }
+    if (txt.replace(/\s+/g, ' ').includes(want)) return { ok: true, txt }
     await sleep(400)
   }
   return { ok: false, txt }

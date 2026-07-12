@@ -15,7 +15,7 @@ try {
   const term = await attach(env.cdpPort, 'term.html', 'terminal pane')
   const boot = await pollTermText(term, 'Go to URL', 30000)
   check('P1.1 TUI launcher rendered in owned pane', boot.ok, boot.ok ? '' : boot.txt.slice(-300))
-  const tiles = await pollTermText(term, 'NPR TEXT', 10000)
+  const tiles = await pollTermText(term, 'READING LIST', 30000) // universal tile (fresh state boots the demo content, not dev bookmarks)
   check('P1.2 launcher tiles rendered', tiles.ok)
   const st0 = await term.eval('window.__wc.state()')
   check('P1.3 boot is app-primary (terminal full-width, pane hidden)',
@@ -27,11 +27,13 @@ try {
   env.shot('p1-boot')
 
   console.log('\n== P1: typing round-trip ==')
-  env.key('Up')
-  await sleep(300)
+  env.type('o') // launcher "go to url" edit mode — deterministic focus for the URL bar
+  await sleep(400)
   env.type('p1x')
   const typed = await pollTermText(term, 'p1x', 6000)
   check('P1.5 OS-level keys round-trip into the TUI URL bar', typed.ok)
+  env.key('Escape') // leave URL edit — the resize assert reads the launcher tiles
+  await sleep(400)
 
   console.log('\n== P1: real window resize reflows the TUI ==')
   const colsBefore = (await term.eval('window.__dims()')).cols
@@ -46,7 +48,7 @@ try {
   check('P1.6 resize chain: xterm cols shrank and pty told',
     dims.cols > 20 && dims.cols < colsBefore && dims.cols === ptyd.cols,
     `before=${colsBefore} after=${dims.cols} pty=${ptyd.cols}`)
-  const alive = await pollTermText(term, 'NPR TEXT', 8000) // stable tile text (URL bar now holds our typed chars)
+  const alive = await pollTermText(term, 'READING LIST', 15000) // universal tile text (URL bar now holds our typed chars)
   check('P1.7 TUI re-rendered at new size (still shows launcher)', alive.ok)
   await sleep(600)
   env.shot('p1-resized')
