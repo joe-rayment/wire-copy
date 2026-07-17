@@ -4,6 +4,16 @@
 sizing has been off vs. how it looked in my terminal … the tiles are skinny and long now. I liked
 the old proportions." · **Decision:** responsive fill (user-selected), story list included.
 
+**Status (2026-07-17): IMPLEMENTED & VERIFIED.** Both grids derive their column count from
+`ResponsiveGrid` (target 52, clamp 1..5). Verified end-to-end headful: `gate-columns.mjs` — launcher
+renders 2/3/4 columns at 900/1360/2100px with the selection highlight stepping column 0→1→2, and the
+reader story list renders ≥3 columns with cross-column nav; `gate-d4-highlight.mjs` 36/36 (pixel-level
+bar integrity across 1/2/3 cols × dsf{1,2}); `gate-o-pane.mjs` 9/9. Screenshots read (launcher 3-up;
+story list Dispatch 1/4/7 | 2/5/8 | 3/6/9 with the middle-column selection correct). Root-caused and
+fixed a latent gate-infra bug (`buildTui` incremental Release build silently ran STALE code). Adversarial
+code review: no correctness defects; one confirmed test-adequacy gap (render-level last-column width),
+now closed with render-invoking unit tests for both grids.
+
 ## Problem (identified, evidence-backed)
 
 The launcher and story-list grids hardcode a **maximum of 2 columns**:

@@ -52,6 +52,39 @@ public class LauncherBoxedGridTests
     }
 
     [Fact]
+    public void Grid_ThreeColumns_NonzeroRemainder_SeparatorRowsFillFullWidth()
+    {
+        // Width 170 → inner 168 → 3 columns with base cell 55 and a REMAINDER-absorbing last
+        // cell of 56. This invokes the REAL renderer (BuildGridRowLine) — unlike the composed
+        // reconstruction tests — so it catches a regression where the last column used
+        // layout.CellWidth instead of ResponsiveGrid.LastCellWidthFor: the separator rule would
+        // fall short by the remainder, a ragged/clipped right edge (workspace-ehon review).
+        const int width = 170;
+        var layout = LauncherRenderer.ComputeLayout(width, TerminalHeight, "Grid");
+        layout.Columns.Should().Be(3);
+
+        // The TUI positions lines with cursor escapes (no newlines); each WriteLine emits a
+        // leading clear-line \x1b[K, so split on that to recover individual lines, then strip
+        // the colour/cursor escapes to measure the visible width.
+        var raw = RenderLauncherCapture(CreateBookmarks(6), selectedIndex: -1, terminalWidth: width);
+        var ruleRows = 0;
+        foreach (var seg in raw.Split(new[] { "\x1b[K" }, StringSplitOptions.None))
+        {
+            var text = System.Text.RegularExpressions.Regex.Replace(seg, @"\x1b\[[0-9;]*[A-Za-z]", string.Empty);
+            if (!text.Contains('┼'))
+            {
+                continue;
+            }
+
+            ruleRows++;
+            text.Length.Should().Be(layout.Width,
+                "every 3-column separator rule row must fill the full content width (last column absorbs the remainder)");
+        }
+
+        ruleRows.Should().BeGreaterThan(0, "the 3-column grid must render separator rule rows");
+    }
+
+    [Fact]
     public void Grid_RendersAccentBar_OnSelectedCell()
     {
         // workspace-bs93: selection is signalled by an accent bar `▌` on the
@@ -161,7 +194,8 @@ public class LauncherBoxedGridTests
         List<Bookmark> bookmarks,
         int selectedIndex,
         int scrollOffset = 0,
-        string variant = "Grid")
+        string variant = "Grid",
+        int terminalWidth = LargeTerminalWidth)
     {
         var themeProvider = Substitute.For<IThemeProvider>();
         themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
@@ -171,7 +205,7 @@ public class LauncherBoxedGridTests
 
         var options = new RenderOptions
         {
-            TerminalWidth = LargeTerminalWidth,
+            TerminalWidth = terminalWidth,
             TerminalHeight = TerminalHeight,
             LayoutVariant = variant,
         };

@@ -153,18 +153,21 @@ internal class LinkTreeRenderer
     {
         const int headerLines = 3;
         const int statusBarLines = 2;
-        const int columnThreshold = 50;
         const int standardCellHeight = 5;
         const int compactCellHeight = 3;
 
         var width = Math.Max(1, terminalWidth - 2);
         var availableHeight = Math.Max(4, terminalHeight - headerLines - statusBarLines);
 
-        var columns = width >= columnThreshold ? 2 : 1;
+        // Responsive column count (workspace-ehon): derive from a target tile
+        // width so the story list fills a wide desktop-shell window with more
+        // readable columns instead of stretching two. Shares ResponsiveGrid with
+        // the launcher so the two card grids keep one proportion.
+        var columns = ResponsiveGrid.ColumnsFor(width);
         var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
 
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
-        var cellWidth = Math.Max(1, columns == 1 ? width : (width - 1) / 2);
+        var cellWidth = ResponsiveGrid.CellWidthFor(width, columns);
 
         return new LinkTreeLayout(
             Width: width,
@@ -389,16 +392,13 @@ internal class LinkTreeRenderer
                 // Cards write at column 0 of the line. The title text sits after the
                 // leading prefix character (accent bar/space/dot) + 1 separator space = col 2.
                 const int leftCardTitleCol = 2;
-                int col;
-                if (gridCol == 0)
-                {
-                    col = leftCardTitleCol;
-                }
-                else
-                {
-                    // Right column cards start after left cell + 1-char divider.
-                    col = layout.CellWidth + 1 + leftCardTitleCol;
-                }
+
+                // Responsive N columns (workspace-ehon): every non-last cell is
+                // CellWidth wide with a 1-char divider between, so column c starts
+                // at c*(CellWidth+1) and the title text sits leftCardTitleCol into
+                // it. The spotlight must land on the SELECTED cell's title, not a
+                // fixed left/right pair.
+                var col = (gridCol * (layout.CellWidth + 1)) + leftCardTitleCol;
 
                 return (screenLine + titleLineIdx, col);
             }
@@ -883,23 +883,35 @@ internal class LinkTreeRenderer
         for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
         {
             var sb = new StringBuilder();
-            var leftToggled = selectedIds != null && selectedIds.Contains(row.Left.Id);
-            sb.Append(BuildCardLine(row.Left, row.Left.IsSelected, layout.CellHeight, lineIdx, layout.CellWidth, p, cachedUrls, leftToggled, searchQuery));
+            var isSeparatorLine = lineIdx == layout.CellHeight - 1 && layout.CellHeight > 1;
 
-            if (layout.Columns == 2)
+            // Responsive N columns (workspace-ehon): render one cell per column
+            // slot, a divider between them (\u253c on the separator line so the card
+            // rule reads as continuous, \u2502 otherwise), with the last column
+            // absorbing the width remainder. Slots past this row's cell count are
+            // blank-padded so a short last row still fills the full width.
+            for (var col = 0; col < layout.Columns; col++)
             {
-                var isSeparatorLine = lineIdx == layout.CellHeight - 1 && layout.CellHeight > 1;
-                var divider = isSeparatorLine ? "\u253c" : "\u2502";
-                sb.Append($"{p.SecondaryText.AnsiFg}{divider}{Reset}");
-                if (row.Right != null)
+                if (col > 0)
                 {
-                    var rightToggled = selectedIds != null && selectedIds.Contains(row.Right.Id);
-                    var rightWidth = layout.Width - layout.CellWidth - 1;
-                    sb.Append(BuildCardLine(row.Right, row.Right.IsSelected, layout.CellHeight, lineIdx, rightWidth, p, cachedUrls, rightToggled, searchQuery));
+                    var divider = isSeparatorLine ? "\u253c" : "\u2502";
+                    sb.Append($"{p.SecondaryText.AnsiFg}{divider}{Reset}");
+                }
+
+                var isLastCol = col == layout.Columns - 1;
+                var cellW = isLastCol
+                    ? ResponsiveGrid.LastCellWidthFor(layout.Width, layout.Columns)
+                    : layout.CellWidth;
+
+                if (col < row.Cells.Count)
+                {
+                    var node = row.Cells[col];
+                    var toggled = selectedIds != null && selectedIds.Contains(node.Id);
+                    sb.Append(BuildCardLine(node, node.IsSelected, layout.CellHeight, lineIdx, cellW, p, cachedUrls, toggled, searchQuery));
                 }
                 else
                 {
-                    sb.Append(new string(' ', layout.Width - layout.CellWidth - 1));
+                    sb.Append(new string(' ', cellW));
                 }
             }
 

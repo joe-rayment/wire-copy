@@ -256,6 +256,146 @@ public class LinkTreeGridMapperTests
 
     #endregion
 
+    #region Three-column responsive grid (workspace-ehon)
+
+    [Fact]
+    public void MapToGrid_ThreeColumns_TriplesRegularLinks()
+    {
+        var nodes = CreateFlatNodes(6);
+
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        grid.Should().HaveCount(2);
+        grid[0].Cells.Should().HaveCount(3);
+        grid[1].Cells.Should().HaveCount(3);
+        grid[0].StartNodeIndex.Should().Be(0);
+        grid[1].StartNodeIndex.Should().Be(3);
+    }
+
+    [Fact]
+    public void MapToGrid_ThreeColumns_OddTail_ShortLastRow()
+    {
+        var nodes = CreateFlatNodes(4);
+
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        grid.Should().HaveCount(2);
+        grid[0].Cells.Should().HaveCount(3);
+        grid[1].Cells.Should().HaveCount(1); // last row holds the single remaining link
+    }
+
+    [Fact]
+    public void MapToGrid_ThreeColumns_GroupHeaderStillFullWidth()
+    {
+        var root = LinkNode.CreateRoot();
+        var header = root.AddChild(CreateGroupHeaderInfo("Content"));
+        var l1 = root.AddChild(CreateLinkInfo("A"));
+        var l2 = root.AddChild(CreateLinkInfo("B"));
+        var l3 = root.AddChild(CreateLinkInfo("C"));
+
+        var nodes = new List<LinkNode> { header, l1, l2, l3 };
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        grid.Should().HaveCount(2);
+        grid[0].IsGroupHeader.Should().BeTrue();
+        grid[0].Cells.Should().HaveCount(1); // header spans full width as a single cell
+        grid[1].IsGroupHeader.Should().BeFalse();
+        grid[1].Cells.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public void NodeIndexToGridPosition_ThreeColumns()
+    {
+        var nodes = CreateFlatNodes(6);
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        LinkTreeGridMapper.NodeIndexToGridPosition(grid, 0).Should().Be((0, 0));
+        LinkTreeGridMapper.NodeIndexToGridPosition(grid, 2).Should().Be((0, 2));
+        LinkTreeGridMapper.NodeIndexToGridPosition(grid, 3).Should().Be((1, 0));
+        LinkTreeGridMapper.NodeIndexToGridPosition(grid, 5).Should().Be((1, 2));
+    }
+
+    [Fact]
+    public void NodeIndex_RoundTrips_ThreeColumns()
+    {
+        var nodes = CreateFlatNodes(7); // 3 + 3 + 1 (short last row)
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        for (var i = 0; i < nodes.Count; i++)
+        {
+            var (row, col) = LinkTreeGridMapper.NodeIndexToGridPosition(grid, i);
+            LinkTreeGridMapper.GridPositionToNodeIndex(grid, row, col)
+                .Should().Be(i, because: $"node {i} should round-trip through ({row},{col})");
+        }
+    }
+
+    [Fact]
+    public void MoveDown_ThreeColumns_PreservesColumn()
+    {
+        var nodes = CreateFlatNodes(6);
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        // From (0,2) = node 2, down preserves column 2 → (1,2) = node 5.
+        LinkTreeGridMapper.MoveDown(grid, 0, 2).Should().Be(5);
+    }
+
+    [Fact]
+    public void MoveDown_ThreeColumns_ClampsToShortLastRow()
+    {
+        var nodes = CreateFlatNodes(4); // row0 = [0,1,2], row1 = [3]
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        // From (0,2) = node 2, the next row has only 1 cell → clamp to node 3.
+        LinkTreeGridMapper.MoveDown(grid, 0, 2).Should().Be(3);
+    }
+
+    [Fact]
+    public void GridPositionToNodeIndex_ThreeColumns_ClampsOutOfRangeColumn()
+    {
+        var nodes = CreateFlatNodes(4); // row1 = [3], one cell
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        // Column 2 does not exist on the short last row → clamps to its only cell.
+        LinkTreeGridMapper.GridPositionToNodeIndex(grid, 1, 2).Should().Be(3);
+    }
+
+    [Fact]
+    public void MoveUp_ThreeColumns_PreservesColumn()
+    {
+        var nodes = CreateFlatNodes(6);
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        // From (1,2) = node 5, up preserves column 2 → (0,2) = node 2.
+        LinkTreeGridMapper.MoveUp(grid, 1, 2).Should().Be(2);
+    }
+
+    [Fact]
+    public void MoveUp_ThreeColumns_FromShortRow_ClampsColumn()
+    {
+        var nodes = CreateFlatNodes(4); // row0 = [0,1,2], row1 = [3]
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 3);
+
+        // Up from the short last row's only cell (node 3, col 0) → (0,0) = node 0.
+        LinkTreeGridMapper.MoveUp(grid, 1, 0).Should().Be(0);
+    }
+
+    [Fact]
+    public void MapToGrid_FourColumns_QuadruplesRegularLinks()
+    {
+        var nodes = CreateFlatNodes(9); // 4 cols: [0,1,2,3] [4,5,6,7] [8]
+
+        var grid = LinkTreeGridMapper.MapToGrid(nodes, 4);
+
+        grid.Should().HaveCount(3);
+        grid[0].Cells.Should().HaveCount(4);
+        grid[1].Cells.Should().HaveCount(4);
+        grid[2].Cells.Should().HaveCount(1); // short last row
+        LinkTreeGridMapper.NodeIndexToGridPosition(grid, 7).Should().Be((1, 3));
+        LinkTreeGridMapper.NodeIndexToGridPosition(grid, 8).Should().Be((2, 0));
+    }
+
+    #endregion
+
     private static List<LinkNode> CreateFlatNodes(int count)
     {
         var root = LinkNode.CreateRoot();

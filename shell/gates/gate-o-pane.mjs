@@ -102,7 +102,13 @@ try {
   env.key('Escape')
   for (let i = 0; i < 20; i++) { mode = (await term.eval('window.__wc.state()')).mode; if (mode === 'reader') break; await sleep(400) }
   check('O.6 Esc returned to reader mode', mode === 'reader', `mode=${mode}`)
-  env.key('Right'); await sleep(800) // story1 → story2 in the two-tile row
+  // Move selection to the OTHER story. The reader story list is responsive
+  // (workspace-ehon): the two stories may render as one 2-column row OR two
+  // stacked 1-column rows depending on the reader pane width. Down then Right
+  // lands on story2 in EITHER layout — each is a no-op where it doesn't apply,
+  // and with only two stories neither can overshoot.
+  env.type('j'); await sleep(300)
+  env.key('Right'); await sleep(600)
   env.type('o')
   const lens2 = await lensUrlAt(paneW, '/story2.html', 25000)
   check('O.7 second o opened the NEWLY selected story (story2)', !!lens2, String(lens2))

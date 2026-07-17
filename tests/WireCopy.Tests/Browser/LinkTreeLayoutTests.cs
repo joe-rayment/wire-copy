@@ -81,6 +81,31 @@ public class LinkTreeLayoutTests
         layout.CellWidth.Should().Be(layout.Width);
     }
 
+    // Responsive columns (workspace-ehon): a wide desktop-shell window yields more
+    // columns of readable tiles instead of two stretched ones.
+    [Fact]
+    public void ComputeLayout_Width160_ReturnsThreeColumns()
+    {
+        var layout = LinkTreeRenderer.ComputeLayout(160, 40);
+        layout.Columns.Should().Be(3);
+    }
+
+    [Fact]
+    public void ComputeLayout_UltraWide_ReturnsFourColumns()
+    {
+        var layout = LinkTreeRenderer.ComputeLayout(212, 40);
+        layout.Columns.Should().Be(4);
+    }
+
+    [Fact]
+    public void CellWidth_ThreeColumns_IsInnerMinusDividersOverThree()
+    {
+        var layout = LinkTreeRenderer.ComputeLayout(160, 40);
+        layout.Columns.Should().Be(3);
+        // Base (non-remainder) cell width reserves one cell per inter-column divider.
+        layout.CellWidth.Should().Be((layout.Width - (layout.Columns - 1)) / layout.Columns);
+    }
+
     [Fact]
     public void CellHeight_IsCompactWhenShort()
     {
@@ -723,6 +748,89 @@ public class LinkTreeLayoutTests
         var visibleWidth = StripAnsi(composed).Length;
 
         visibleWidth.Should().Be(layout.Width);
+    }
+
+    [Fact]
+    public void ComposedGridRow_TotalVisibleWidth_EqualsLayoutWidth_ThreeColumns()
+    {
+        // Width 170 gives a NONZERO remainder (inner 168 \u2192 base cell 55, last cell 56), so the
+        // test actually distinguishes LastCellWidthFor from CellWidth \u2014 at a zero-remainder
+        // width the two coincide and a last-column bug would slip through (workspace-ehon review).
+        var layout = LinkTreeRenderer.ComputeLayout(170, 40);
+        layout.Columns.Should().Be(3);
+        var lastWidth = layout.Width - (layout.CellWidth * (layout.Columns - 1)) - (layout.Columns - 1);
+        lastWidth.Should().BeGreaterThan(layout.CellWidth, "the last column must absorb the remainder");
+
+        var nodes = new[]
+        {
+            CreateLinkNode("Alpha", "https://example.com/a", LinkType.Content),
+            CreateLinkNode("Beta", "https://example.com/b", LinkType.Content),
+            CreateLinkNode("Gamma", "https://example.com/c", LinkType.Content),
+        };
+
+        for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
+        {
+            var isSeparatorLine = lineIdx == layout.CellHeight - 1 && layout.CellHeight > 1;
+            var divider = isSeparatorLine ? "\u253c" : "\u2502";
+
+            var composed = string.Empty;
+            for (var col = 0; col < layout.Columns; col++)
+            {
+                if (col > 0)
+                {
+                    composed += divider;
+                }
+
+                var isLastCol = col == layout.Columns - 1;
+                var cellW = isLastCol ? lastWidth : layout.CellWidth;
+                composed += LinkTreeRenderer.BuildCardLine(nodes[col], false, layout.CellHeight, lineIdx, cellW, TestPalette);
+            }
+
+            StripAnsi(composed).Length.Should().Be(layout.Width,
+                $"line {lineIdx}: three cells + two dividers should fill layout width {layout.Width}");
+        }
+    }
+
+    #endregion
+
+    #region Spotlight column math (workspace-ehon)
+
+    // The dock/spotlight targets the selected story via TryGetSelectedRowScreenPosition.
+    // This is the exact "spotlight highlights the WRONG element" bug class the Verification
+    // Doctrine calls out — at 3 columns the flash must land on the SELECTED cell's column,
+    // not a fixed left/right pair.
+    [Fact]
+    public void TryGetSelectedRowScreenPosition_ThreeColumns_XOffsetTracksSelectedColumn()
+    {
+        var nodes = new List<LinkNode>
+        {
+            CreateLinkNode("A", "https://example.com/a", LinkType.Content),
+            CreateLinkNode("B", "https://example.com/b", LinkType.Content),
+            CreateLinkNode("C", "https://example.com/c", LinkType.Content),
+            CreateLinkNode("D", "https://example.com/d", LinkType.Content),
+            CreateLinkNode("E", "https://example.com/e", LinkType.Content),
+            CreateLinkNode("F", "https://example.com/f", LinkType.Content),
+        };
+        var layout = LinkTreeRenderer.ComputeLayout(160, 40);
+        layout.Columns.Should().Be(3);
+
+        // Row 0 = nodes[0,1,2] in columns 0,1,2.
+        var p0 = LinkTreeRenderer.TryGetSelectedRowScreenPosition(nodes, 0, 0, layout, 100);
+        var p1 = LinkTreeRenderer.TryGetSelectedRowScreenPosition(nodes, 1, 0, layout, 100);
+        var p2 = LinkTreeRenderer.TryGetSelectedRowScreenPosition(nodes, 2, 0, layout, 100);
+
+        p0.Should().NotBeNull();
+        p1.Should().NotBeNull();
+        p2.Should().NotBeNull();
+
+        // Each column c starts at c*(CellWidth+1); the title text sits 2 cells in.
+        p0!.Value.Col.Should().Be(2);
+        p1!.Value.Col.Should().Be(layout.CellWidth + 1 + 2);
+        p2!.Value.Col.Should().Be((2 * (layout.CellWidth + 1)) + 2);
+
+        // All three sit on the same screen row (row 0's title line).
+        p0.Value.Row.Should().Be(p1.Value.Row);
+        p1.Value.Row.Should().Be(p2.Value.Row);
     }
 
     #endregion

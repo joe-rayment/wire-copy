@@ -47,7 +47,7 @@ async function measurePoint (env, term, label, dsf) {
   const ruleLine = lines[r + 2] || ''
   let ruleStart = -1; let ruleEnd = -1
   for (let c = c0; c < ruleLine.length; c++) {
-    if (ruleLine[c] === '─') { if (ruleStart < 0) ruleStart = c; ruleEnd = c } else if (ruleStart >= 0 && c > ruleEnd + 1) break
+    if (ruleLine[c] === '─') { if (ruleStart < 0) ruleStart = c; ruleEnd = c } else if (ruleLine[c] === '┼') { if (ruleStart >= 0) break } else if (ruleStart >= 0 && c > ruleEnd + 1) break
   }
   check(`${label}: tile rule row found`, ruleStart >= 0 && ruleEnd > ruleStart, `rule ${ruleStart}..${ruleEnd}`)
   if (ruleStart < 0) return
@@ -97,7 +97,12 @@ async function measurePoint (env, term, label, dsf) {
   // Seam check on the pure-fill padding row: every pixel inside the bar must be selBg.
   // Window starts past the ▌ accent-bar cell — its glyph edge antialiases into the fill
   // at devicePixelRatio 2 (one blend pixel, not a seam).
-  const inBar = rowP0.filter(p => p.x >= ruleLeftPx + 2 * cell.w * dsf && p.x <= barMax - 2)
+  // Scan the tile's solid interior only: exclude the ▌ left edge (blend pixel) AND the
+  // right column divider — a NON-last tile now has a │ divider at its right edge whose
+  // thin glyph reads as background (workspace-ehon: Reading List is the middle column at
+  // 3 columns). A genuine retina stripe fills the whole interior, so this still catches it.
+  const seamRight = Math.min(barMax - 2, ruleRightPx - cell.w * dsf)
+  const inBar = rowP0.filter(p => p.x >= ruleLeftPx + 2 * cell.w * dsf && p.x <= seamRight)
   const seams = inBar.filter(p => !near(p, sample, 12))
   check(`${label}: SEAM-FREE solid fill on the padding row`, seams.length === 0,
     seams.length ? `first seam @x=${seams[0].x} (${seams[0].r},${seams[0].g},${seams[0].b}) of ${inBar.length}px` : `${inBar.length}px solid`)
@@ -120,7 +125,12 @@ for (const cfg of [
     const wid = env.activate()
     env.x('windowsize', wid, String(cfg.w), String(cfg.h))
     await sleep(1500) // refit + TUI reflow
-    env.key('Right') // Daily Gazette [1] → Reading List [2]
+    // Select the Reading List tile (virtual index 1). Responsive columns (workspace-ehon):
+    // Right crosses a column when the grid has ≥2 columns; a narrow window (e.g. the dsf2
+    // point renders ~66 cols → 1 column) has no column to cross, so Down steps to the next
+    // stacked tile instead.
+    const cols0 = (await term.eval('window.__dims()')).cols
+    env.key(cols0 >= 80 ? 'Right' : 'Down') // Daily Gazette [1] → Reading List [2]
     await sleep(1200)
     const sel = await pollTermText(term, 'READING LIST', 5000)
     check(`${cfg.label}: launcher present after resize`, sel.ok)

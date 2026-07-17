@@ -124,6 +124,22 @@ public class ResponsiveReflowTests
         layout.CellWidth.Should().BeLessThan(layout.Width);
     }
 
+    // Responsive fill (workspace-ehon): the desktop-shell window is far wider than
+    // a terminal, so the grid grows past two columns instead of stretching them.
+    [Fact]
+    public void ComputeLayout_DesktopWindow_ThreeColumns()
+    {
+        var layout = LinkTreeRenderer.ComputeLayout(160, 40);
+        layout.Columns.Should().Be(3);
+    }
+
+    [Fact]
+    public void ComputeLayout_UltraWide_FourColumns()
+    {
+        var layout = LinkTreeRenderer.ComputeLayout(212, 40);
+        layout.Columns.Should().Be(4);
+    }
+
     [Fact]
     public void ComputeLayout_ShortTerminal_CompactCells()
     {

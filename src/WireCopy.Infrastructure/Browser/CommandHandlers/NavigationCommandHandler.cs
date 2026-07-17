@@ -745,22 +745,19 @@ internal static class NavigationCommandHandler
         var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
         var (row, col) = LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedIndex);
 
-        int targetCol;
-        if (right)
+        // Responsive N columns (workspace-ehon): step one cell left/right within
+        // the row, bounded by the row's actual cell count (was a fixed 2-column
+        // left/right toggle).
+        if (row < 0 || row >= gridRows.Count)
         {
-            targetCol = 1;
-            if (col == 1 || row >= gridRows.Count || gridRows[row].Right == null)
-            {
-                return;
-            }
+            return;
         }
-        else
+
+        var cellCount = gridRows[row].Cells.Count;
+        var targetCol = right ? col + 1 : col - 1;
+        if (targetCol < 0 || targetCol >= cellCount)
         {
-            targetCol = 0;
-            if (col == 0)
-            {
-                return;
-            }
+            return;
         }
 
         var newNodeIndex = LinkTreeGridMapper.GridPositionToNodeIndex(gridRows, row, targetCol);

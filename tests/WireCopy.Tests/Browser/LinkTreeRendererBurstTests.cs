@@ -33,6 +33,81 @@ public class LinkTreeRendererBurstTests
     private const string AccentBar = "▌"; // ▌
 
     /// <summary>
+    /// Render-level width guard for the responsive story-list grid (workspace-ehon). Invokes the
+    /// REAL RenderGridRow at a NONZERO-remainder 3-column width, so a regression where the last
+    /// column used layout.CellWidth instead of ResponsiveGrid.LastCellWidthFor shows up as a short
+    /// separator rule (a ragged / clipped right edge). The composed reconstruction tests can't catch
+    /// this — they re-do the last-cell arithmetic themselves — and the earlier width test split
+    /// evenly (remainder 0), so the renderer's width-selection was never exercised (review finding).
+    /// </summary>
+    [Fact]
+    public void RenderLinkTree_ThreeColumns_NonzeroRemainder_SeparatorRowsFillFullWidth()
+    {
+        const int width = 170; // inner 168 → 3 cols, base cell 55, remainder-absorbing last cell 56
+        var layout = LinkTreeRenderer.ComputeLayout(width, 40);
+        layout.Columns.Should().Be(3);
+
+        var linkMap = new Dictionary<LinkType, List<LinkInfo>>
+        {
+            [LinkType.Content] = Enumerable.Range(0, 6).Select(i => new LinkInfo
+            {
+                Url = $"https://example.com/a-{i}",
+                DisplayText = $"Article {i} headline",
+                Type = LinkType.Content,
+                ImportanceScore = 70,
+            }).ToList(),
+        };
+        var tree = NavigationTree.BuildWithGroups(linkMap);
+        tree.EnsureSelection();
+
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var helpers = new RenderHelpers { TerminalHeight = 40 };
+        var renderer = new LinkTreeRenderer(helpers, themeProvider);
+        var options = new RenderOptions
+        {
+            TerminalWidth = width,
+            TerminalHeight = 40,
+            MaxContentWidth = width - 4,
+            LayoutVariant = "Cards",
+        };
+        var context = new NavigationContext { ScrollOffset = 0 };
+
+        var originalOut = Console.Out;
+        string captured;
+        try
+        {
+            using var sw = new StringWriter();
+            Console.SetOut(sw);
+            renderer.RenderLinkTree(tree, context, maxLines: 35, options);
+            captured = sw.ToString();
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+
+        // The TUI positions lines with cursor escapes (no newlines); each WriteLine emits a
+        // leading clear-line \x1b[K, so split on that to recover individual lines, then strip
+        // the colour/cursor escapes to measure the visible width.
+        var ruleRows = 0;
+        foreach (var seg in captured.Split(new[] { "\x1b[K" }, StringSplitOptions.None))
+        {
+            var text = Regex.Replace(seg, @"\x1b\[[0-9;]*[A-Za-z]", string.Empty);
+            if (!text.Contains('┼'))
+            {
+                continue;
+            }
+
+            ruleRows++;
+            text.Length.Should().Be(layout.Width,
+                "every 3-column separator row must fill the content width (last column absorbs the remainder)");
+        }
+
+        ruleRows.Should().BeGreaterThan(0, "the 3-column story list must render ┼ separator rows");
+    }
+
+    /// <summary>
     /// workspace-1f5a: simulates the user's reported scenario — 25 rapid 'j'
     /// keystrokes advancing the selection one row per frame — and asserts the
     /// cursor highlight escape is present in EVERY captured frame across all

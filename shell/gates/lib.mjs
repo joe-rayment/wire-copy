@@ -28,15 +28,20 @@ export function summary () {
 }
 
 export function buildTui (config = 'Release') {
+  // --no-incremental: the vendored SDK's incremental build has skipped rebuilding a
+  // referenced project (Infrastructure) whose sources changed, so a gate silently ran
+  // STALE code and "verified" the old behavior (workspace-ehon). A clean build is the
+  // only way a gate proves the current tree — correctness over the ~15s it costs.
   execFileSync(path.join(ROOT, 'dotnet'),
-    ['build', 'src/WireCopy.API/WireCopy.API.csproj', '-c', config, '--nologo', '-v', 'q'],
+    ['build', 'src/WireCopy.API/WireCopy.API.csproj', '-c', config, '--no-incremental', '--nologo', '-v', 'q'],
     { cwd: ROOT, stdio: 'inherit', timeout: 300000 })
 }
 
 export class Env {
-  constructor ({ display, cdpPort, env = {}, isolateData = true }) {
+  constructor ({ display, cdpPort, env = {}, isolateData = true, screen = '1600x1000x24' }) {
     this.display = display
     this.cdpPort = String(cdpPort)
+    this.screen = screen
     // Fresh per-run state: app data (XDG) + Electron userData (browser partition), so
     // caches/scroll-restore/cookies from prior runs can't leak into asserts.
     this.extraEnv = { ...env }
@@ -53,7 +58,7 @@ export class Env {
 
   async up () {
     try { execFileSync('bash', ['-c', `pgrep -f "[X]vfb ${this.display} " | xargs -r kill`]) } catch {}
-    this.xvfb = spawn('Xvfb', [this.display, '-screen', '0', '1600x1000x24'], { stdio: 'ignore' })
+    this.xvfb = spawn('Xvfb', [this.display, '-screen', '0', this.screen], { stdio: 'ignore' })
     this.procs.push(this.xvfb)
     await sleep(1000)
     this.wm = spawn('openbox', [], { stdio: 'ignore', env: { ...process.env, DISPLAY: this.display } })

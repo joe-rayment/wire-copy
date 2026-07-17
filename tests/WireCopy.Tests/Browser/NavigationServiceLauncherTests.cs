@@ -183,6 +183,37 @@ public class NavigationServiceLauncherTests
         result.Should().Be(1);
     }
 
+    // Responsive columns (workspace-ehon): the launcher grid now reaches 3-4
+    // columns on a wide desktop-shell window; nav must follow the live count.
+    // 9 items, 3 columns: [0,1,2] [3,4,5] [6,7,8].
+    [Fact]
+    public void MoveInGrid_ThreeColumns_Right_StepsAcrossAllColumns()
+    {
+        NavigationService.MoveInGrid(0, 9, direction: 3, columns: 3).Should().Be(1);
+        NavigationService.MoveInGrid(1, 9, direction: 3, columns: 3).Should().Be(2);
+    }
+
+    [Fact]
+    public void MoveInGrid_ThreeColumns_Right_AtLastColumn_StaysInPlace()
+    {
+        NavigationService.MoveInGrid(2, 9, direction: 3, columns: 3).Should().Be(2);
+    }
+
+    [Fact]
+    public void MoveInGrid_ThreeColumns_Down_PreservesColumn()
+    {
+        NavigationService.MoveInGrid(2, 9, direction: 1, columns: 3).Should().Be(5);
+        NavigationService.MoveInGrid(1, 9, direction: 1, columns: 3).Should().Be(4);
+    }
+
+    [Fact]
+    public void MoveInGrid_ThreeColumns_Down_OntoShortLastRow_ClampsToLastItem()
+    {
+        // 7 items, 3 cols: [0,1,2] [3,4,5] [6]. Down from index 5 (col 2) would be
+        // index 8 but clamps to the last existing item, 6.
+        NavigationService.MoveInGrid(5, 7, direction: 1, columns: 3).Should().Be(6);
+    }
+
     [Fact]
     public void MoveInGrid_Down_ClampedToLastItem()
     {

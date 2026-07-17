@@ -6,104 +6,68 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
 /// Stateless utility that maps a flat visible-node list into a 2D grid structure.
-/// Group headers always get their own full-width row.
-/// Regular links are paired left-right within each section.
+/// Group headers always get their own full-width row. Regular links fill
+/// left-to-right across up to <c>columns</c> cells WITHIN each section between
+/// headers (workspace-ehon — was a fixed left/right pair).
 /// </summary>
 internal static class LinkTreeGridMapper
 {
     /// <summary>
-    /// Maps visible nodes into grid rows. Group headers get full-width rows.
-    /// Regular links are paired left-right (within each section between headers).
+    /// Maps visible nodes into grid rows. Group headers get full-width single-cell
+    /// rows. Regular links are chunked into runs of <paramref name="columns"/>
+    /// cells within each section; the last row of a section may hold fewer cells.
     /// </summary>
     public static List<GridRow> MapToGrid(List<LinkNode> visibleNodes, int columns)
     {
+        var cols = Math.Max(1, columns);
         var rows = new List<GridRow>();
 
-        if (columns <= 1)
+        var i = 0;
+        while (i < visibleNodes.Count)
         {
-            // Single column: each node is its own row
-            for (var i = 0; i < visibleNodes.Count; i++)
-            {
-                rows.Add(new GridRow(visibleNodes[i], null, visibleNodes[i].IsGroupHeader, i));
-            }
+            var node = visibleNodes[i];
 
-            return rows;
-        }
-
-        // Two-column mode: group headers get full width, links are paired within sections
-        var i2 = 0;
-        while (i2 < visibleNodes.Count)
-        {
-            var node = visibleNodes[i2];
-
+            // Group header: its own full-width row. Advancing by 1 also stops a
+            // link chunk from spanning a section boundary.
             if (node.IsGroupHeader)
             {
-                rows.Add(new GridRow(node, null, true, i2));
-                i2++;
+                rows.Add(new GridRow(new[] { node }, true, i));
+                i++;
                 continue;
             }
 
-            // Regular link: pair with next non-header node if available
-            LinkNode? rightNode = null;
-            var nextIndex = i2 + 1;
-            if (nextIndex < visibleNodes.Count && !visibleNodes[nextIndex].IsGroupHeader)
+            // Consume a run of consecutive non-header nodes, up to `cols` per row.
+            var chunk = new List<LinkNode> { node };
+            var j = i + 1;
+            while (chunk.Count < cols && j < visibleNodes.Count && !visibleNodes[j].IsGroupHeader)
             {
-                rightNode = visibleNodes[nextIndex];
-                i2 = nextIndex + 1;
-            }
-            else
-            {
-                i2++;
+                chunk.Add(visibleNodes[j]);
+                j++;
             }
 
-            rows.Add(new GridRow(node, rightNode, false, 0));
-        }
-
-        // Fix StartNodeIndex to track actual visible node indices
-        var nodeIdx = 0;
-        for (var r = 0; r < rows.Count; r++)
-        {
-            rows[r] = rows[r] with { StartNodeIndex = nodeIdx };
-            if (rows[r].IsGroupHeader)
-            {
-                nodeIdx++;
-            }
-            else
-            {
-                nodeIdx += rows[r].Right != null ? 2 : 1;
-            }
+            // StartNodeIndex is the flat index of the row's first cell, which
+            // equals the count of nodes consumed before it — so cell c of this
+            // row is flat node index i + c.
+            rows.Add(new GridRow(chunk, false, i));
+            i = j;
         }
 
         return rows;
     }
 
     /// <summary>
-    /// Converts a flat node index to a (row, col) grid position.
+    /// Converts a flat node index to a (row, col) grid position. Col is the
+    /// node's offset within its row's cells.
     /// </summary>
     public static (int Row, int Col) NodeIndexToGridPosition(List<GridRow> gridRows, int nodeIndex)
     {
         for (var row = 0; row < gridRows.Count; row++)
         {
             var gr = gridRows[row];
-
-            if (gr.IsGroupHeader)
+            var offset = nodeIndex - gr.StartNodeIndex;
+            if (offset >= 0 && offset < gr.Cells.Count)
             {
-                if (gr.StartNodeIndex == nodeIndex)
-                {
-                    return (row, 0);
-                }
-
-                continue;
-            }
-
-            if (gr.StartNodeIndex == nodeIndex)
-            {
-                return (row, 0);
-            }
-
-            if (gr.Right != null && gr.StartNodeIndex + 1 == nodeIndex)
-            {
-                return (row, 1);
+                return (row, offset);
             }
         }
 
@@ -111,7 +75,8 @@ internal static class LinkTreeGridMapper
     }
 
     /// <summary>
-    /// Converts a (row, col) grid position to a flat node index.
+    /// Converts a (row, col) grid position to a flat node index. An out-of-range
+    /// col clamps to the row's last cell.
     /// </summary>
     public static int GridPositionToNodeIndex(List<GridRow> gridRows, int row, int col)
     {
@@ -121,18 +86,13 @@ internal static class LinkTreeGridMapper
         }
 
         var gr = gridRows[row];
-
-        if (gr.IsGroupHeader || col == 0)
-        {
-            return gr.StartNodeIndex;
-        }
-
-        // Column 1 (right side)
-        return gr.Right != null ? gr.StartNodeIndex + 1 : gr.StartNodeIndex;
+        var c = Math.Clamp(col, 0, gr.Cells.Count - 1);
+        return gr.StartNodeIndex + c;
     }
 
     /// <summary>
-    /// Moves down from the current position, preserving column across group headers.
+    /// Moves down from the current position, preserving column across group
+    /// headers and clamping to a narrower next row's cell count.
     /// </summary>
     public static int MoveDown(List<GridRow> gridRows, int currentRow, int currentCol)
     {
@@ -148,18 +108,13 @@ internal static class LinkTreeGridMapper
             return GridPositionToNodeIndex(gridRows, nextRow, 0);
         }
 
-        // Preserve column; if right is null and col==1, fall back to left
-        var col = currentCol;
-        if (col == 1 && gr.Right == null)
-        {
-            col = 0;
-        }
-
+        var col = Math.Min(currentCol, gr.Cells.Count - 1);
         return GridPositionToNodeIndex(gridRows, nextRow, col);
     }
 
     /// <summary>
-    /// Moves up from the current position, preserving column across group headers.
+    /// Moves up from the current position, preserving column across group headers
+    /// and clamping to a narrower previous row's cell count.
     /// </summary>
     public static int MoveUp(List<GridRow> gridRows, int currentRow, int currentCol)
     {
@@ -175,12 +130,7 @@ internal static class LinkTreeGridMapper
             return GridPositionToNodeIndex(gridRows, prevRow, 0);
         }
 
-        var col = currentCol;
-        if (col == 1 && gr.Right == null)
-        {
-            col = 0;
-        }
-
+        var col = Math.Min(currentCol, gr.Cells.Count - 1);
         return GridPositionToNodeIndex(gridRows, prevRow, col);
     }
 }

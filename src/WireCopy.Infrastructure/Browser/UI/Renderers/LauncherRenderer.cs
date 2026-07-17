@@ -206,8 +206,12 @@ internal class LauncherRenderer
 
             default: // Grid
             {
-                const int columnThreshold = 40;
-                columns = width >= columnThreshold ? 2 : 1;
+                // Responsive column count (workspace-ehon): derive the column
+                // count from a target tile width (ResponsiveGrid) so tiles keep
+                // the readable ~52-char proportion and the grid FILLS a wide
+                // desktop-shell window with more columns (3 at ~160 cols, 4
+                // ultra-wide) instead of stretching two into skinny-long ribbons.
+                columns = ResponsiveGrid.ColumnsFor(width);
 
                 // Card cell (workspace-bs93): blank pad + title + subtitle +
                 // separator rule = 4 lines. Adjacent cards stack directly —
@@ -221,9 +225,7 @@ internal class LauncherRenderer
         }
 
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
-        var cellWidth = columns <= 1
-            ? width
-            : Math.Max(1, (width - (columns - 1)) / columns);
+        var cellWidth = ResponsiveGrid.CellWidthFor(width, columns);
 
         return new LauncherLayout(
             Width: width,
@@ -999,53 +1001,54 @@ internal class LauncherRenderer
         int? readingListCount = null)
     {
         // 4-line card stride (workspace-bs93): blank pad + title + subtitle
-        // + separator. Mirrors LinkTreeRenderer's row layout — including the
-        // `│` divider between columns, with `┼` on the separator row so the
-        // intersection reads as continuous.
+        // + separator. Mirrors LinkTreeRenderer's row layout — a `│` divider
+        // between columns, with `┼` on the separator row so the intersection
+        // reads as continuous. Responsive N columns (workspace-ehon): loop over
+        // every column (was a 2-column special case) so a wide window fills with
+        // more cards; the last column absorbs the width remainder so the right
+        // edge stays flush and empty trailing cells continue the separator rule.
         if (line >= GridCardHeight)
         {
             return new string(' ', layout.Width);
         }
 
+        var isSeparatorLine = line == GridCardHeight - 1;
         var sb = new System.Text.StringBuilder();
-        var leftIdx = row * layout.Columns;
-        sb.Append(BuildCardCellLine(
-            bookmarks,
-            leftIdx,
-            selectedIndex,
-            layout.CellWidth,
-            line,
-            p,
-            readingListCount));
 
-        if (layout.Columns == 2)
+        for (var col = 0; col < layout.Columns; col++)
         {
-            var isSeparatorLine = line == GridCardHeight - 1;
-            var divider = isSeparatorLine ? "┼" : "│";
-            sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{divider}{Reset}");
+            if (col > 0)
+            {
+                var divider = isSeparatorLine ? "┼" : "│";
+                sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{divider}{Reset}");
+            }
 
-            var rightIdx = leftIdx + 1;
-            var rightWidth = layout.Width - layout.CellWidth - 1;
-            if (rightIdx < totalItems)
+            var itemIdx = (row * layout.Columns) + col;
+            var isLastCol = col == layout.Columns - 1;
+            var cellW = isLastCol
+                ? ResponsiveGrid.LastCellWidthFor(layout.Width, layout.Columns)
+                : layout.CellWidth;
+
+            if (itemIdx < totalItems)
             {
                 sb.Append(BuildCardCellLine(
                     bookmarks,
-                    rightIdx,
+                    itemIdx,
                     selectedIndex,
-                    rightWidth,
+                    cellW,
                     line,
                     p,
                     readingListCount));
             }
             else if (isSeparatorLine)
             {
-                // Continue the separator rule across the empty right cell so
-                // the bottom edge reads as a single line.
-                sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{new string('─', rightWidth)}{Reset}");
+                // Continue the separator rule across the empty cell so the
+                // bottom edge reads as a single line.
+                sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellW)}{Reset}");
             }
             else
             {
-                sb.Append(new string(' ', rightWidth));
+                sb.Append(new string(' ', cellW));
             }
         }
 
