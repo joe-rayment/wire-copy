@@ -114,21 +114,15 @@ public class Program
             }
 
             var runNow = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IScheduleRunNow>();
-            await runNow.RunAsync(recipe);
 
-            var repo = host.Services.GetRequiredService<WireCopy.Application.Interfaces.Scheduling.IScheduledRunRepository>();
-            var finished = (await repo.GetUnacknowledgedFinishedRunsAsync())
-                .Where(r => r.RecipeId == recipe.Id)
-                .OrderByDescending(r => r.StartedAtUtc)
-                .FirstOrDefault();
-            Console.WriteLine("RUN_RESULT:" + System.Text.Json.JsonSerializer.Serialize(new
-            {
-                status = finished?.Status.ToString() ?? "Unknown",
-                feedUrl = finished?.TargetFeedUrl,
-                localPath = finished?.TargetLocalPath,
-                itemCount = finished?.ItemCount ?? 0,
-                error = finished?.ErrorMessage,
-            }));
+            // workspace-ua0c: report the EXACT row run-now created and finalized. The
+            // old code re-queried "latest unacknowledged finished run for this recipe",
+            // but this host also starts SchedulerHostedService, whose startup tick writes
+            // a Skipped row for a past-grace slot — and that Skipped row (later StartedAtUtc)
+            // won the re-query, mis-attributing the verb's result. RunAsync now returns its
+            // own run, so the Skipped row can never be reported here.
+            var result = await runNow.RunAsync(recipe);
+            Console.WriteLine("RUN_RESULT:" + BuildRunResultJson(result));
             return 0;
         }
         catch (Exception ex)
@@ -149,6 +143,28 @@ public class Program
 
             host.Dispose();
         }
+    }
+
+    /// <summary>
+    /// workspace-ua0c — builds the run-recipe verb's RUN_RESULT payload from the
+    /// run-now result. Reports the fields of the EXACT run run-now created and
+    /// finalized (never a re-queried "latest finished run" a concurrent scheduler
+    /// Skipped row could win), or "Busy" when the generation gate was already held.
+    /// Extracted so the attribution/serialization is unit-tested directly.
+    /// </summary>
+    internal static string BuildRunResultJson(WireCopy.Application.Interfaces.Scheduling.RunNowResult result)
+    {
+        var run = result.Run;
+        return System.Text.Json.JsonSerializer.Serialize(new
+        {
+            status = result.Outcome == WireCopy.Application.Interfaces.Scheduling.RunNowOutcome.Busy
+                ? "Busy"
+                : run?.Status.ToString() ?? "Unknown",
+            feedUrl = run?.TargetFeedUrl,
+            localPath = run?.TargetLocalPath,
+            itemCount = run?.ItemCount ?? 0,
+            error = run?.ErrorMessage,
+        });
     }
 
     private static async Task<int> RunResolveSectionAsync(string[] args)

@@ -54,12 +54,14 @@ public class ScheduleRunNowTests
         var h = new Harness();
         var recipe = Recipe();
 
-        var outcome = await h.Build().RunAsync(recipe);
+        var result = await h.Build().RunAsync(recipe);
 
-        outcome.Should().Be(RunNowOutcome.Started);
+        result.Outcome.Should().Be(RunNowOutcome.Started);
         h.Pipeline.Calls.Should().Be(1);
         var run = h.Runs.All.Should().ContainSingle().Subject;
+        result.Run.Should().BeSameAs(run, "run-now returns the very row it wrote so the verb reports THAT run — workspace-ua0c");
         run.OccurrenceKey.Should().StartWith("run-now@", "a manual run uses a unique key so it never collides with a scheduled occurrence's dedup row");
+        run.Status.Should().Be(ScheduledRunStatus.Completed, "the pipeline finalizes the returned instance in place");
         h.Gate.IsHeld.Should().BeFalse("the gate is released after the run");
     }
 
@@ -69,13 +71,61 @@ public class ScheduleRunNowTests
         var h = new Harness();
         h.Gate.TryAcquire(out var lease).Should().BeTrue(); // a generation is already running
 
-        var outcome = await h.Build().RunAsync(Recipe());
+        var result = await h.Build().RunAsync(Recipe());
 
-        outcome.Should().Be(RunNowOutcome.Busy);
+        result.Outcome.Should().Be(RunNowOutcome.Busy);
+        result.Run.Should().BeNull("nothing started, so there is no run to report");
         h.Pipeline.Calls.Should().Be(0);
         h.Runs.All.Should().BeEmpty("no row is written when the gate is busy");
         lease!.Dispose();
     }
+
+    [Fact]
+    public async Task RunAsync_ReportsItsOwnRun_NotAConcurrentSchedulerSkippedRow()
+    {
+        // workspace-ua0c regression: the run-recipe verb's host also starts the
+        // scheduler, whose startup tick writes a Skipped row for a past-grace slot of
+        // the SAME recipe (SchedulerHostedService: MissedPastGrace). The verb used to
+        // re-query "latest unacknowledged finished run for this recipe" ordered by
+        // StartedAtUtc and reported THAT Skipped row. RunAsync now returns the exact run
+        // it created, so the Skipped row can never be reported by the verb.
+        var h = new Harness();
+        var recipe = Recipe();
+
+        var result = await h.Build().RunAsync(recipe);
+
+        // A scheduler tick lands a Skipped row for the same recipe, STARTED LATER than
+        // the run-now — precisely the missed-past-grace row the verb's host produces.
+        var skipped = ScheduledRun.Start(recipe.Id, recipe.Name, "2026-06-01@07:00");
+        skipped.Finish(
+            ScheduledRunStatus.Skipped,
+            itemCount: 0,
+            errorClass: "MissedPastGrace",
+            errorMessage: "App was not open within the recipe's grace window");
+        SetStartedAt(skipped, result.Run!.StartedAtUtc.AddMinutes(1));
+        h.Runs.All.Add(skipped);
+
+        // The fix: the verb reports THIS run — Completed, run-now key — never the Skipped row.
+        result.Outcome.Should().Be(RunNowOutcome.Started);
+        result.Run!.OccurrenceKey.Should().StartWith("run-now@");
+        result.Run.Status.Should().Be(ScheduledRunStatus.Completed);
+
+        // Guard the regression: the OLD "latest finished run" re-query would still pick
+        // the later Skipped row here — proving this test exercises the real failure mode.
+        var buggyPick = h.Runs.All
+            .Where(r => r.RecipeId == recipe.Id && r.AcknowledgedAtUtc == null && r.FinishedAtUtc != null)
+            .OrderByDescending(r => r.StartedAtUtc)
+            .First();
+        buggyPick.Status.Should().Be(ScheduledRunStatus.Skipped, "the old re-query, ordered by StartedAtUtc, selects the scheduler's Skipped row");
+        result.Run.Should().NotBeSameAs(buggyPick, "the fix reports the run-now row, not whatever the ordering picks");
+    }
+
+    // Test-only: forces a deterministic StartedAtUtc (the entity stamps DateTime.UtcNow in
+    // Start(), which cannot be injected) so the adversarial ordering above is reproducible.
+    private static void SetStartedAt(ScheduledRun run, DateTime value) =>
+        typeof(ScheduledRun).GetProperty(nameof(ScheduledRun.StartedAtUtc))!
+            .GetSetMethod(nonPublic: true)!
+            .Invoke(run, new object[] { value });
 
     [Fact]
     public async Task TwoRunNows_ProduceDistinctOccurrenceKeys()

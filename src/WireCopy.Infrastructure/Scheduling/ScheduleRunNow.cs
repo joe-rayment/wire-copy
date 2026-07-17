@@ -62,14 +62,14 @@ internal sealed class ScheduleRunNow : IScheduleRunNow
         return RunNowOutcome.Started;
     }
 
-    public async Task<RunNowOutcome> RunAsync(ScheduleRecipe recipe, CancellationToken cancellationToken = default)
+    public async Task<RunNowResult> RunAsync(ScheduleRecipe recipe, CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(recipe);
 
         if (!_gate.TryAcquire(out var lease))
         {
             _logger.LogInformation("Run-now for {Recipe} skipped — a generation is already in progress", recipe.Name);
-            return RunNowOutcome.Busy;
+            return new RunNowResult(RunNowOutcome.Busy, null);
         }
 
         try
@@ -93,11 +93,16 @@ internal sealed class ScheduleRunNow : IScheduleRunNow
             {
                 run.Finish(ScheduledRunStatus.Failed, itemCount: 0, errorClass: "NoPipeline", errorMessage: "Recipe run pipeline is not registered");
                 await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-                return RunNowOutcome.Started;
+                return new RunNowResult(RunNowOutcome.Started, run);
             }
 
+            // The pipeline finalizes THIS run instance (Finish/MarkInterrupted mutate it
+            // in place), so returning it hands the caller the exact, terminal row it
+            // started — workspace-ua0c: the run-recipe verb reports this instead of
+            // re-querying "latest finished run", which a concurrent scheduler Skipped
+            // row (same recipe, past-grace slot) could otherwise win.
             await pipeline.RunAsync(recipe, run, cancellationToken).ConfigureAwait(false);
-            return RunNowOutcome.Started;
+            return new RunNowResult(RunNowOutcome.Started, run);
         }
         finally
         {

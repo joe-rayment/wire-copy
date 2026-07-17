@@ -185,10 +185,13 @@ def create_recipe(t):
     t.send_keys("Enter")
     time.sleep(0.6)
 
-    # A FUTURE-today slot: the run-recipe host also ticks the scheduler, and a
-    # past slot makes that tick write a 'Skipped (missed past grace)' row that
-    # the verb then reports instead of the real run-now result. Run-now itself
-    # is user-initiated and ignores the cadence.
+    # workspace-ua0c FIXED the attribution bug: the run-recipe verb now reports the
+    # exact run-now row it created (IScheduleRunNow.RunAsync returns it), so a past
+    # slot's 'Skipped (missed past grace)' row written by this host's scheduler tick
+    # can no longer be reported instead of the real result. The future-today slot is
+    # therefore NO LONGER REQUIRED for correct attribution; it is kept only so the
+    # startup tick stays "not due" and never contends for the generation gate mid-run.
+    # Run-now itself is user-initiated and ignores the cadence.
     now = time.localtime()
     slot = "23:59" if now.tm_hour >= 23 else f"{now.tm_hour + 1:02d}:{now.tm_min:02d}"
     type_field(t, slot, clear_first=True)
