@@ -1,15 +1,44 @@
-// P5 gate (workspace-y0bi, credential-free slice): login/session persistence.
-// A fixture "account" page renders SIGNED OUT until a login button (clicked in the
-// pane, browser mode) sets a session cookie. The shell is then QUIT and relaunched
-// with the SAME browser partition but a FRESH app data dir (no app cache): the reader
-// must render the SIGNED-IN copy — proving the login session lives in the partition
-// and survives an app restart, with zero external credentials.
-// Run from shell/: node gates/gate-p5.mjs
+// P5 gate (workspace-y0bi): in-pane login + session persistence — the FULL acceptance
+// ("logged-in session renders subscriber prose in reader + LIVE PANE, session persists
+// across restart"), credential-free. A fixture "account" page renders SIGNED OUT until a
+// login button (clicked in the pane, browser mode) sets a session cookie; the live lens
+// pane AND the reader must then render the signed-in subscriber prose. The shell is then
+// QUIT and relaunched with the SAME browser partition but a FRESH app data dir (no app
+// cache): both the reader and the live pane must render the SIGNED-IN copy — proving the
+// session lives in the browser partition and survives an app restart, with zero external
+// credentials (nytreader-EQUIVALENT: a real subscriber site is a dogfood confidence item,
+// not a capability gap, and must never be parked on the user — see bd memory
+// never-park-beads-on-user-mac). Run from shell/: node gates/gate-p5.mjs
 import http from 'node:http'
 import { mkdtempSync, mkdirSync } from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import { Env, attach, pollTermText, check, summary, buildTui, sleep } from './lib.mjs'
+import { Env, attach, targets, Cdp, pollTermText, check, summary, buildTui, sleep } from './lib.mjs'
+
+// Read the VISIBLE lens pane's rendered DOM text — width-matched to the page pane like
+// gate-p5-sso, so the assert lands on the live page the USER sees, never a hidden
+// fetch/prefetch WebContents that shares the same URL. Polls until `want` appears.
+async function lensText (env, term, urlPart, want, timeoutMs = 40000) {
+  const t0 = Date.now()
+  const wantN = want.replace(/\s+/g, ' ')
+  let last = ''
+  while (Date.now() - t0 < timeoutMs) {
+    const st = await term.eval('window.__wc.state()').catch(() => null)
+    const list = await targets(env.cdpPort).catch(() => [])
+    for (const t of list.filter(t => t.type === 'page' && t.url.includes(urlPart))) {
+      const c = await Cdp.connect(t.webSocketDebuggerUrl).catch(() => null)
+      if (!c) continue
+      const w = await c.eval('innerWidth').catch(() => -1)
+      if (st?.pageBounds && Math.abs(w - st.pageBounds.width) <= 2) {
+        last = await c.eval('document.body.innerText').catch(() => '')
+        c.close()
+        if (last.replace(/\s+/g, ' ').includes(wantN)) return { ok: true, txt: last }
+      } else { c.close() }
+    }
+    await sleep(500)
+  }
+  return { ok: false, txt: last }
+}
 
 const FPORT = 8127
 const FILLER = Array.from({ length: 10 }, (_, i) =>
@@ -71,6 +100,13 @@ try {
   await sleep(2000)
   env.shot('p5-logged-in-pane')
 
+  // Acceptance is "reader + LIVE PANE": assert the live lens page itself rendered the
+  // signed-in subscriber prose after the in-pane login — not only the reader mirror.
+  const preLens = await lensText(env, term, 'account.html', 'Signed in as Wire Reader')
+  check('P5.2c LIVE PANE renders the signed-in subscriber prose after in-pane login',
+    preLens.ok && preLens.txt.replace(/\s+/g, ' ').includes('the account desk kept meticulous notes'),
+    preLens.ok ? '' : preLens.txt.slice(-260))
+
   console.log('\n== P5: quit and relaunch — same partition, fresh app data ==')
   env.key('Escape') // back to reader mode so 'q' reaches the TUI
   await sleep(600)
@@ -92,6 +128,20 @@ try {
     signedIn.ok ? '' : signedIn.txt.slice(-300))
   await sleep(400)
   env.shot('p5-signed-in-after-restart')
+
+  // The reader proved persistence; now prove the LIVE PANE also renders the signed-in
+  // prose AFTER the restart — the full "reader + live pane, survives restart" acceptance,
+  // credential-free (the session lives in the browser partition, not app-side cache).
+  env.activate(); await sleep(300)
+  env.type('|')
+  let st2 = null
+  for (let i = 0; i < 30; i++) { st2 = await term.eval('window.__wc.state()').catch(() => null); if (st2?.revealed) break; await sleep(500) }
+  check('P5.6 pane revealed after restart', !!st2?.revealed)
+  const postLens = await lensText(env, term, 'account.html', 'Signed in as Wire Reader')
+  check('P5.7 LIVE PANE shows the signed-in prose AFTER restart (session persisted in the partition)',
+    postLens.ok && postLens.txt.replace(/\s+/g, ' ').includes('the account desk kept meticulous notes'),
+    postLens.ok ? '' : postLens.txt.slice(-260))
+  env.shot('p5-live-pane-signed-in-after-restart')
   term.close()
 } catch (err) {
   console.error('GATE ERROR:', err)

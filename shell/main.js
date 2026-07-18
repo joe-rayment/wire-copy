@@ -12,6 +12,7 @@
 //   3. forwarding: keys that still land on a page are re-sent to the terminal, never lost
 // 'browser' mode is an explicit user gesture (click into the pane); Esc returns to reader.
 const { app, BaseWindow, WebContentsView, ipcMain, Menu, screen, session } = require('electron')
+const { buildAppMenuTemplate } = require('./menu')
 const path = require('path')
 const os = require('os')
 const fs = require('fs')
@@ -463,16 +464,10 @@ function spawnTui () {
 app.whenReady().then(() => {
   // macOS keeps a REAL app menu (About/Quit + Edit clipboard roles + Window) — without
   // an Edit menu Cmd+C/V never reach a page input, and the default menu says "Electron".
-  // Linux/Windows shows no menu bar at all.
-  if (process.platform === 'darwin') {
-    Menu.setApplicationMenu(Menu.buildFromTemplate([
-      { role: 'appMenu' },
-      { role: 'editMenu' },
-      { role: 'windowMenu' }
-    ]))
-  } else {
-    Menu.setApplicationMenu(null)
-  }
+  // Linux/Windows shows no menu bar at all. Template built by a pure, in-env-tested
+  // helper (workspace-k60z / gate-d8-menu.mjs) rather than confirmed by a Mac eyeball.
+  const menuTemplate = buildAppMenuTemplate(process.platform)
+  Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : null)
 
   state.win = new BaseWindow({ ...initialBounds(), title: 'Wire Copy', backgroundColor: '#0e0e14' })
 

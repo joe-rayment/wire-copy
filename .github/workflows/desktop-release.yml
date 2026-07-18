@@ -1,0 +1,95 @@
+name: desktop-release
+
+# workspace-k6zl — build the WireCopy Desktop artifacts on a matrix of REAL OS runners.
+# The macOS zips (arm64/x64) cannot be cross-built from linux (native node-pty + the .app
+# bundle), so they are produced here on macOS runners — never on a developer's machine.
+# Each leg runs the SAME shell/build-desktop.sh the local dev flow uses; the linux leg is
+# the one verified locally on this repo's linux-arm64 box (build-desktop.sh + gate-p7-
+# packaged). win-x64 is intentionally absent: build-desktop.sh and ./dotnet do not yet
+# handle Windows (see the follow-up bead) — this covers the 4 RIDs the pipeline supports.
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+permissions:
+  contents: write # the release job attaches artifacts to the tag's Release
+
+jobs:
+  build:
+    name: build ${{ matrix.rid }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-14, rid: osx-arm64 } # Apple silicon
+          - { os: macos-13, rid: osx-x64 } # Intel
+          - { os: ubuntu-24.04-arm, rid: linux-arm64 }
+          - { os: ubuntu-22.04, rid: linux-x64 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      # Per-platform shell deps. node-pty is a native module and MUST be rebuilt against
+      # Electron's ABI. This mirrors ./run:53-58 EXACTLY: shell/deps/ is gitignored, so a
+      # clean checkout has no deps dir — seed it from the git-tracked shell/package.json
+      # (which is the deps manifest: xterm + node-pty + electron + electron-builder).
+      - name: Set up shell deps (electron-builder + node-pty for this ABI)
+        shell: bash
+        run: |
+          PLAT=$(node -p 'process.platform + "-" + process.arch')
+          mkdir -p "shell/deps/$PLAT"
+          cp shell/package.json "shell/deps/$PLAT/"
+          (cd "shell/deps/$PLAT" && npm install --no-fund --no-audit && npx electron-rebuild -f -w node-pty)
+
+      # Publishes the self-contained .NET API for this RID (via the vendored ./dotnet,
+      # which bootstraps its own SDK on first use), installs the app's runtime deps, and
+      # runs electron-builder. Linux -> AppImage + tar.gz; mac -> zip arm64/x64.
+      - name: Build desktop artifacts
+        shell: bash
+        run: bash shell/build-desktop.sh
+
+      # electron-builder writes to a throwaway /tmp stage dir (the repo tree is a shared
+      # volume across hosts — platform binaries must never persist in it); build-desktop.sh
+      # records the path in shell/.last-desktop-build.
+      - name: Collect artifacts + checksums
+        shell: bash
+        run: |
+          STAGE=$(cat shell/.last-desktop-build)
+          mkdir -p out
+          find "$STAGE/app/dist" -maxdepth 1 -type f \
+            \( -name '*.zip' -o -name '*.AppImage' -o -name '*.tar.gz' \) -exec cp {} out/ \;
+          (cd out && for f in *; do shasum -a 256 "$f" >> SHA256SUMS; done)
+          ls -la out
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.rid }}
+          path: out/*
+          if-no-files-found: error
+
+  release:
+    needs: build
+    if: startsWith(github.ref, 'refs/tags/')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Publish GitHub Release (unsigned v1 — curl|sh installer dodges Gatekeeper)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FILES=$(find artifacts -type f)
+          echo "$FILES"
+          gh release create "${{ github.ref_name }}" \
+            --repo "${{ github.repository }}" \
+            --title "WireCopy Desktop ${{ github.ref_name }}" \
+            --notes "Automated desktop build (unsigned; v1 ships unsigned per the install-onboarding analysis)." \
+            $FILES
