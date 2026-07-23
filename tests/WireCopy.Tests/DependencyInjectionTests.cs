@@ -244,7 +244,6 @@ public class DependencyInjectionTests : IDisposable
             ["Auth:BaseUrl"] = "https://www.nytimes.com",
             ["Auth:MaxArticles"] = "10",
             ["Auth:RateLimitDelayMs"] = "3000",
-            ["Browser:BrowserType"] = "Chrome",
             ["Browser:Headless"] = "true",
             ["Browser:ImplicitWaitSeconds"] = "10",
             ["Browser:PageLoadTimeoutSeconds"] = "30",

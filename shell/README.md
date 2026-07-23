@@ -21,7 +21,7 @@ Env knobs: `WIRECOPY_SHELL_CDP_PORT` (default 9223, loopback CDP for the .NET dr
 
 - **Reader-primary**: boots full-window TUI; the page pane is revealed on demand (`|` semantics
   arrive with the control channel) at a fixed minority fraction — never dominant.
-- **Focus doctrine, three layers** (empirically derived — see `scripts/electron-shell-spike/README.md`):
+- **Focus doctrine, three layers** (empirically derived — see `docs/qa/electron-shell-spike/`):
   bounce, enforcement loop, and **key forwarding** (a keystroke that lands on a page in reader
   mode is re-sent to the terminal, never dropped). Click into the pane = deliberate → browser
   mode; Esc returns to reader. Page JS cannot fake the click (no synthetic mouseDown arrives via

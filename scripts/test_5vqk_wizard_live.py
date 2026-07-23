@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 Live gate for epic workspace-5vqk (aggregator-robust AI layout). Drives the REAL
-Ctrl+L (g l) wizard on ./run --web against the pinned techmeme FIXTURE served
+Ctrl+L (g l) wizard on ./run against the pinned techmeme FIXTURE served
 locally, under Xvfb with real OpenAI round trips, and asserts the USER-VISIBLE
 outcomes the epic promises:
 

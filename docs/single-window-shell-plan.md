@@ -1,6 +1,6 @@
 # WireCopy Desktop: single-window shell (real Chromium + owned terminal) — findings & plan
 
-**Date:** 2026-07-11 · **Spike:** `scripts/electron-shell-spike/` · **Evidence:** `docs/qa/electron-shell-spike/` · **Status:** VIABLE — 19/19 outcome-asserted gates green on this box (headful Xvfb, linux-arm64) · **Beads:** epic `workspace-pdp8` (P1–P7: `workspace-ysmb`, `-4b14`, `-cnyl`, `-xjce`, `-y0bi`, `-vcpf`, `-mwer`)
+**Date:** 2026-07-11 · **Spike:** `scripts/electron-shell-spike/` (removed 2026-07-23, workspace-lizq.5 — evidence retained below) · **Evidence:** `docs/qa/electron-shell-spike/` · **Status:** VIABLE — 19/19 outcome-asserted gates green on this box (headful Xvfb, linux-arm64) · **Beads:** epic `workspace-pdp8` (P1–P7: `workspace-ysmb`, `-4b14`, `-cnyl`, `-xjce`, `-y0bi`, `-vcpf`, `-mwer`)
 
 ## Verdict
 

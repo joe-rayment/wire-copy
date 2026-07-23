@@ -19,10 +19,6 @@ public class BrowserConfiguration
     /// <inheritdoc cref="FetchViewportWidth"/>
     public const int FetchViewportHeight = 720;
 
-    public string BrowserType { get; init; } = "Chrome"; // "Chrome" or "Firefox" - Primary browser
-
-    public string FallbackBrowserType { get; init; } = "Firefox"; // Fallback browser if primary is blocked
-
     /// <summary>
     /// SUPERSEDED by <see cref="Visibility"/> (workspace-8cf2) and no longer read by
     /// the app — kept only so existing settings files bind without error.

@@ -5,7 +5,7 @@
 // NEVER headless: this process IS a headful browser; on displayless Linux the launcher
 // wraps it in Xvfb (see ../run), it does not degrade.
 //
-// Focus doctrine (three layers — see scripts/electron-shell-spike/README.md for the
+// Focus doctrine (three layers — see docs/qa/electron-shell-spike/ for the
 // empirical history; electron#42578 focus-steal-after-load is real):
 //   1. bounce: page-side focus gain in reader mode → refocus terminal
 //   2. enforcement loop: renderer-internal focus() emits no event — cheap poll restores
