@@ -260,7 +260,12 @@ internal class RenderHelpers
 
     /// <summary>
     /// Emits the buffered frame as a single atomic write and clears buffering.
-    /// Safe to call when BeginFrame was not invoked (no-op).
+    /// Safe to call when BeginFrame was not invoked (no-op). The write is framed
+    /// in DEC private mode 2026 (synchronized update, workspace-tj1z.6): the
+    /// terminal holds presentation until the reset, so a repaint can never tear
+    /// mid-frame. Emitted unconditionally — non-supporting terminals ignore the
+    /// DECSET per spec; xterm.js 6 implements it (with a 1s safety auto-flush),
+    /// as do iTerm2/kitty/wezterm.
     /// </summary>
     public void EndFrame()
     {
@@ -271,7 +276,7 @@ internal class RenderHelpers
 
         try
         {
-            Console.Out.Write(_frameBuffer.ToString());
+            Console.Out.Write("\x1b[?2026h" + _frameBuffer.ToString() + "\x1b[?2026l");
             Console.Out.Flush();
         }
         catch
