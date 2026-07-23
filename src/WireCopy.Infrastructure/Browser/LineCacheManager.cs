@@ -239,7 +239,7 @@ internal class LineCacheManager
 
     /// <summary>
     /// workspace-1m3h.4: builds the end-of-article footer lines (blank, centered
-    /// "— end —", centered "N min read · X words", blank) that are appended to
+    /// "— end —", centered "N words · ~M min read", blank) that are appended to
     /// the line cache so they scroll into view like any other content. Centered
     /// within the content column; the renderer's LeftMargin centers the column
     /// itself in the terminal.
