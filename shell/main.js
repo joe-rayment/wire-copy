@@ -469,7 +469,7 @@ app.whenReady().then(() => {
   const menuTemplate = buildAppMenuTemplate(process.platform)
   Menu.setApplicationMenu(menuTemplate ? Menu.buildFromTemplate(menuTemplate) : null)
 
-  state.win = new BaseWindow({ ...initialBounds(), title: 'Wire Copy', backgroundColor: '#0e0e14' })
+  state.win = new BaseWindow({ ...initialBounds(), title: 'Wire Copy', backgroundColor: '#000000' })
 
   const wcSession = session.fromPartition('persist:wirecopy')
   wcSession.setUserAgent(CHROME_UA)

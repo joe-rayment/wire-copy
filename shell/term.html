@@ -8,7 +8,7 @@
      color emoji (🎧) intentionally falls through to the platform emoji font. */
   @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono.ttf') format('truetype'); font-weight: normal; font-style: normal; }
   @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono-Bold.ttf') format('truetype'); font-weight: bold; font-style: normal; }
-  html, body { margin: 0; height: 100%; background: #0e0e14; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #000000; overflow: hidden; }
   #pad  { height: 100%; box-sizing: border-box; padding: 16px 8px 8px 16px; }
   #term { height: 100%; }
   .xterm .xterm-viewport { background: transparent !important; }
@@ -41,11 +41,16 @@
     cursorBlink: false,
     allowProposedApi: true,
     scrollback: 200,
+    // Design system (workspace-7t0a.1): bold must NOT brighten classic-ANSI green
+    // to neon #00ff00 — the same washout class that hit the Avalonia shell.
+    drawBoldTextInBrightColors: false,
     theme: {
-      background: '#0e0e14',
-      foreground: '#e8e6f0',
+      // Pure terminal black (--tr-bg-pure); body fallback is the phosphor green —
+      // the TUI colors nearly everything explicitly, so unstyled spill reads green.
+      background: '#000000',
+      foreground: '#00d700',
       cursor: '#ff87d7',
-      selectionBackground: '#3d2a4d',
+      selectionBackground: '#005f87',
       // ANSI 16 pinned to the CLASSIC XTERM palette (workspace-vcpf): xterm.js
       // defaults to Tango (olive green #4e9a06 etc), which visibly diverges from
       // terminal mode (TERM=xterm-256color; the 256 cube already matches xterm).
