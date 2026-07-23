@@ -21,7 +21,8 @@ try {
   check('P1.3 boot is app-primary (terminal full-width, pane hidden)',
     st0.revealed === false && st0.termBounds.width === st0.contentSize[0], JSON.stringify(st0.termBounds))
   const bg = await term.eval('getComputedStyle(document.body).backgroundColor')
-  check('P1.4 pane styling is ours', bg === 'rgb(14, 14, 20)', bg)
+  // Pure terminal black per the design system (workspace-7t0a.1).
+  check('P1.4 pane styling is ours', bg === 'rgb(0, 0, 0)', bg)
   const wid = env.activate()
   await sleep(400)
   env.shot('p1-boot')
