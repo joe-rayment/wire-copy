@@ -87,6 +87,13 @@ class TermTest:
         if self.url:
             cmd += f" {self.url}"
 
+        # workspace-lizq.2: browse refuses to start without the shell channel env (the
+        # desktop shell is the only interactive front end). This harness IS the shell's
+        # rendering mechanism (TUI in a pty), so satisfy the guard with a dummy socket
+        # path — the channel connect fails soft into NullShellChannel and the TUI runs.
+        if "WIRECOPY_SHELL_CHANNEL" not in os.environ:
+            cmd = f"env WIRECOPY_SHELL_CHANNEL=/nonexistent/wc-termtest.sock {cmd}"
+
         subprocess.check_call(
             [
                 "tmux", "new-session",

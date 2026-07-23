@@ -273,6 +273,16 @@ public class Program
         // which surface via exceptions.
         Environment.SetEnvironmentVariable("npm_config_loglevel", "silent");
 
+        // workspace-lizq.2: the interactive reader exists only inside the desktop shell.
+        // Without the shell's channel there is nothing to render into — refuse instead of
+        // half-running a terminal reader. Unattended verbs (run-recipe/resolve-section)
+        // never come through here and keep running with NullShellChannel.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(WireCopy.Infrastructure.Browser.Shell.ShellChannel.EnvVar)))
+        {
+            Console.Error.WriteLine("WireCopy is a desktop app — launch it with ./run");
+            return 1;
+        }
+
         // Validate browse options
         var validationErrors = options.Validate();
         if (validationErrors.Any())
@@ -313,19 +323,6 @@ public class Program
                 var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
                 await dbContext.InitializeDatabaseAsync();
             }
-
-            // workspace-9k27.6: if a previous session crashed while the sidecar had
-            // tiled the terminal, put the user's terminal window back (macOS only;
-            // instant no-op when no recovery record exists).
-            await WireCopy.Infrastructure.Browser.TerminalTileRecovery.RecoverAtStartupAsync(
-                host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
-                    .CreateLogger("TerminalTileRecovery"));
-
-            // workspace-9k27.7: capture the terminal's identity NOW, while it is
-            // guaranteed to be the frontmost app — the old first-browser-launch
-            // capture recorded whatever app the user had switched to by then and
-            // cached it forever, sending focus to the wrong app on every refocus.
-            await host.Services.GetRequiredService<IBrowserSessionControl>().CaptureTerminalIdentityAsync();
 
             // No startup warmup: the browser is always headful (never-headless law), and a
             // headed warmup here would pop a visible Chrome window before the user navigates
