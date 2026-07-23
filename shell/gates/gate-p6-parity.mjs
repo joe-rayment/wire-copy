@@ -141,7 +141,10 @@ try {
   const sock = `wc-p6-${process.pid}`
   const tuiXdg = env.extraEnv.XDG_DATA_HOME + '-tmux'
   execFileSync('mkdir', ['-p', tuiXdg])
-  const tuiCmd = `XDG_DATA_HOME='${tuiXdg}' TERM=xterm-256color COLORTERM=truecolor '${path.join(ROOT, 'dotnet')}' exec '${path.join(ROOT, 'src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll')}'`
+  // workspace-lizq.2: browse refuses to start without the shell channel env; this pty
+  // harness IS the shell's rendering mechanism, so a dummy socket path (fails soft into
+  // NullShellChannel) satisfies the guard — same trick as scripts/termtest.py.
+  const tuiCmd = `XDG_DATA_HOME='${tuiXdg}' TERM=xterm-256color COLORTERM=truecolor WIRECOPY_SHELL_CHANNEL='/nonexistent/wc-gate-p6.sock' '${path.join(ROOT, 'dotnet')}' exec '${path.join(ROOT, 'src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll')}'`
   execFileSync('tmux', ['-L', sock, 'new-session', '-d', '-x', String(dims.cols), '-y', String(dims.rows), tuiCmd])
   let tmuxText = ''
   for (let i = 0; i < 40; i++) {
