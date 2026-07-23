@@ -30,4 +30,13 @@ public interface IShellChannel
     /// at about:blank#wc-&lt;tag&gt;). Returns false when not connected or on failure.
     /// </summary>
     Task<bool> CreatePageAsync(string tag, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Tells the shell a frame has been RENDERED at the given terminal dimensions
+    /// (workspace-tj1z.3): the shell's transition overlay uses this as the deterministic
+    /// "resize rewrap done" signal for its settle capture — pty byte heuristics cannot
+    /// distinguish the rewrap frame from an unrelated repaint. Returns false when not
+    /// connected or on failure.
+    /// </summary>
+    Task<bool> NotifyResizeRenderedAsync(int cols, int rows, CancellationToken cancellationToken = default);
 }

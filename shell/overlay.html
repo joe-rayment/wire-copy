@@ -1,0 +1,134 @@
+<!doctype html>
+<!-- Transition overlay (workspace-tj1z.2): an opaque full-window stage that plays the
+     pane reveal/collapse as compositor-driven WAAPI transforms over capturePage
+     snapshots. The REAL WebContentsViews never animate — they snap underneath while
+     this stage covers the window. Inert by doctrine: never focused, all input is
+     forwarded to the terminal by main. Loaded ONCE from the loopback static server
+     with no #wc- fragment so the CDP driver can never adopt it. -->
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+  html, body { margin: 0; height: 100%; background: #000000; overflow: hidden; }
+  /* Backdrop pair: the reader snapshot behind the sliding card. #backA is the frame
+     captured before the transition; #backB fades in over it after the single pty
+     reflow settles (crossfade masks the rewrap). Top-left anchored, CSS-px sized. */
+  #backA, #backB { position: absolute; top: 0; left: 0; }
+  #backB { opacity: 0; }
+  /* Scrim: opacity-only dimmer over the reader while the card is in flight. */
+  #scrim { position: absolute; inset: 0; background: #000; opacity: 0; }
+  /* Page card: moved ONLY by translateX. Shadow + a left-corner radius that eases
+     away as it docks sell the macOS-sheet glide. */
+  #card {
+    position: absolute; top: 0; left: 0;
+    box-shadow: -24px 0 48px rgba(0, 0, 0, .45), -4px 0 12px rgba(0, 0, 0, .35);
+    border-top-left-radius: 8px; border-bottom-left-radius: 8px;
+    overflow: hidden; display: none;
+  }
+  #card img { display: block; }
+</style>
+</head>
+<body>
+  <img id="backA" alt="">
+  <img id="backB" alt="">
+  <div id="scrim"></div>
+  <div id="card"><img id="cardImg" alt=""></div>
+<script>
+  const backA = document.getElementById('backA')
+  const backB = document.getElementById('backB')
+  const card = document.getElementById('card')
+  const cardImg = document.getElementById('cardImg')
+  const scrim = document.getElementById('scrim')
+
+  const anim = { phase: 'idle', gen: 0, slide: null, corner: null, scrimAnim: null, fade: null, x0: 0, x1: 0 }
+
+  function cancelAll () {
+    for (const a of [anim.slide, anim.corner, anim.scrimAnim, anim.fade]) { try { a && a.cancel() } catch {} }
+    anim.slide = anim.corner = anim.scrimAnim = anim.fade = null
+    anim.phase = 'idle'
+    card.style.display = 'none'
+    backA.removeAttribute('src')
+    backB.removeAttribute('src')
+    backB.style.opacity = '0'
+  }
+
+  window.wcov.onBegin(async p => {
+    cancelAll()
+    anim.gen = p.gen
+    anim.phase = 'prep'
+    anim.x0 = p.cardX0
+    anim.x1 = p.cardX1
+    anim.params = p
+    backA.src = p.backImg
+    backA.style.width = p.backW + 'px'
+    backA.style.height = p.h + 'px'
+    backB.style.opacity = '0'
+    cardImg.src = p.cardImg
+    cardImg.style.width = p.pageW + 'px'
+    cardImg.style.height = p.h + 'px'
+    card.style.width = p.pageW + 'px'
+    card.style.height = p.h + 'px'
+    card.style.transform = `translateX(${p.cardX0}px)`
+    card.style.display = 'block'
+    try { await Promise.all([backA.decode(), cardImg.decode()]) } catch {}
+    window.wcov.armed(p.gen)
+  })
+
+  window.wcov.onGo(p => {
+    if (p.gen !== anim.gen) return
+    const { durMs, easing, scrimFrom, scrimTo, cornerFrom, cornerTo } = anim.params
+    anim.phase = 'slide'
+    anim.slide = card.animate(
+      [{ transform: `translateX(${anim.x0}px)` }, { transform: `translateX(${anim.x1}px)` }],
+      { duration: durMs, easing, fill: 'forwards' })
+    // Left-corner radius eases over the final 80ms of the slide (radius only matters
+    // as the card meets the edge). fill:forwards pins the end state.
+    anim.corner = card.animate(
+      [{ borderTopLeftRadius: cornerFrom + 'px', borderBottomLeftRadius: cornerFrom + 'px', offset: 0 },
+        { borderTopLeftRadius: cornerFrom + 'px', borderBottomLeftRadius: cornerFrom + 'px', offset: Math.max(0, 1 - 80 / durMs) },
+        { borderTopLeftRadius: cornerTo + 'px', borderBottomLeftRadius: cornerTo + 'px', offset: 1 }],
+      { duration: durMs, fill: 'forwards' })
+    anim.scrimAnim = scrim.animate(
+      [{ opacity: scrimFrom }, { opacity: scrimTo }],
+      { duration: durMs, easing: 'linear', fill: 'forwards' })
+    anim.slide.onfinish = () => { window.wcov.done(anim.gen, 'slide') }
+  })
+
+  window.wcov.onCrossfade(async p => {
+    if (p.gen !== anim.gen) return
+    backB.src = p.img
+    backB.style.width = p.backW + 'px'
+    backB.style.height = p.h + 'px'
+    try { await backB.decode() } catch {}
+    anim.fade = backB.animate([{ opacity: 0 }, { opacity: 1 }], { duration: p.durMs, easing: 'ease', fill: 'forwards' })
+    anim.fade.onfinish = () => { window.wcov.done(anim.gen, 'crossfade') }
+  })
+
+  // Mid-flight reversal (workspace-tj1z.4): the SAME snapshots serve both directions —
+  // WAAPI reverse() replays the slide/corner/scrim back to their starting states.
+  // onfinish still fires at the reversed end, so main's slide-done handling is uniform.
+  window.wcov.onReverse(p => {
+    if (p.gen !== anim.gen || !anim.slide) return
+    anim.phase = 'slide'
+    for (const a of [anim.slide, anim.corner, anim.scrimAnim]) { try { a && a.reverse() } catch {} }
+  })
+
+  window.wcov.onAbort(() => cancelAll())
+
+  // Gate introspection (workspace-tj1z.5): live card position in CSS px.
+  window.__anim = () => {
+    let cardX = null
+    if (card.style.display !== 'none') {
+      const m = getComputedStyle(card).transform
+      const match = /matrix\(([^)]+)\)/.exec(m)
+      if (match) cardX = Math.round(parseFloat(match[1].split(',')[4]))
+      else if (m === 'none') cardX = 0
+    }
+    const progress = anim.slide && anim.slide.effect
+      ? (anim.slide.currentTime || 0) / (anim.slide.effect.getTiming().duration || 1)
+      : null
+    return { phase: anim.phase, gen: anim.gen, cardX, progress }
+  }
+</script>
+</body>
+</html>

@@ -120,6 +120,13 @@ internal class CommandContext
 
     public required Func<RenderOptions, CancellationToken, Task> RenderCurrentPageAsync { get; init; }
 
+    /// <summary>
+    /// Tells the desktop shell a frame has been rendered at the given terminal
+    /// dimensions (workspace-tj1z.3) — the transition overlay's deterministic
+    /// settle signal. No-ops without a shell.
+    /// </summary>
+    public Func<int, int, Task<bool>>? NotifyResizeRendered { get; init; }
+
     public required Func<CancellationToken, Task> RefreshCollectionsAsync { get; init; }
 
     public required Func<CancellationToken, Task> RefreshBookmarksAsync { get; init; }

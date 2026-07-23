@@ -124,6 +124,15 @@ internal static class ViewCommandHandler
 
         ctx.LineCacheManager.ClampScrollOffset();
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
+
+        // workspace-tj1z.3: the rewrap frame is on the wire — tell the shell so its
+        // transition overlay can take the settle capture deterministically (pty byte
+        // heuristics cannot tell this frame from an unrelated repaint). Fire-and-forget:
+        // the ack must never stall the render loop.
+        if (ctx.NotifyResizeRendered is { } notify)
+        {
+            _ = notify(newOptions.TerminalWidth, newOptions.TerminalHeight);
+        }
     }
 
     public static Task HandleShowHelp(CommandContext ctx, RenderOptions options, CancellationToken ct)

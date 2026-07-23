@@ -40,7 +40,7 @@ echo "build-desktop: publishing self-contained WireCopy.API ($RID)..."
 
 echo "build-desktop: staging shell sources..."
 mkdir -p "$STAGE/app/fonts"
-for f in main.js menu.js preload.js popup-preload.js channel.js term.html package.json; do
+for f in main.js menu.js preload.js popup-preload.js overlay-preload.js channel.js term.html overlay.html package.json; do
   cp "$HERE/$f" "$STAGE/app/"
 done
 cp "$HERE"/fonts/* "$STAGE/app/fonts/"

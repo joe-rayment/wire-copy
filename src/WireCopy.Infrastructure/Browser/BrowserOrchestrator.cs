@@ -66,6 +66,7 @@ public partial class BrowserOrchestrator : IBrowserService
     private readonly ILayoutVariantProvider _layoutVariantProvider;
     private readonly IThemeProvider _themeProvider;
     private readonly DockSpotlight _dockSpotlight;
+    private readonly IShellChannel? _shellChannel;
 
     // Tracks FetchMethod from the last LoadPageAsync call for NavigateToAsync
     private FetchMethod _lastLoadFetchMethod;
@@ -153,7 +154,8 @@ public partial class BrowserOrchestrator : IBrowserService
         ILogger<BrowserOrchestrator> logger,
         PageLoadPipeline pipeline,
         ILayoutVariantProvider layoutVariantProvider,
-        DockSpotlight dockSpotlight)
+        DockSpotlight dockSpotlight,
+        IShellChannel? shellChannel = null)
     {
         _pageLoader = pageLoader;
         _treeBuilder = treeBuilder;
@@ -175,6 +177,7 @@ public partial class BrowserOrchestrator : IBrowserService
         _layoutVariantProvider = layoutVariantProvider;
         _themeProvider = themeProvider;
         _dockSpotlight = dockSpotlight;
+        _shellChannel = shellChannel;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
 
         // workspace-mctt: the user navigated the lens themselves — offer to read it
@@ -220,6 +223,8 @@ public partial class BrowserOrchestrator : IBrowserService
             RefreshCollectionsAsync = RefreshCollectionsAsync,
             RefreshBookmarksAsync = RefreshBookmarksAsync,
             GetCurrentRenderOptions = GetCurrentRenderOptions,
+            NotifyResizeRendered = (cols, rows) =>
+                _shellChannel?.NotifyResizeRenderedAsync(cols, rows) ?? Task.FromResult(false),
             CreateCollectionService = CreateCollectionService,
             GetReaderViewportHeight = GetReaderViewportHeight,
             GetHierarchicalViewportHeight = GetHierarchicalViewportHeight,

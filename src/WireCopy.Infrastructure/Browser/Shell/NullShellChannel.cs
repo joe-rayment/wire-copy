@@ -42,4 +42,8 @@ public sealed class NullShellChannel : IShellChannel
     /// <inheritdoc />
     public Task<bool> CreatePageAsync(string tag, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
+
+    /// <inheritdoc />
+    public Task<bool> NotifyResizeRenderedAsync(int cols, int rows, CancellationToken cancellationToken = default)
+        => Task.FromResult(false);
 }

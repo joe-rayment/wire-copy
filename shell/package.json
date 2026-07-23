@@ -30,8 +30,10 @@
       "menu.js",
       "preload.js",
       "popup-preload.js",
+      "overlay-preload.js",
       "channel.js",
       "term.html",
+      "overlay.html",
       "fonts/**"
     ],
     "extraResources": [

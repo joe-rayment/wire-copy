@@ -105,6 +105,10 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
         => await RequestAsync("createPage", new { tag }).ConfigureAwait(false) is not null;
 
     /// <inheritdoc />
+    public async Task<bool> NotifyResizeRenderedAsync(int cols, int rows, CancellationToken cancellationToken = default)
+        => await RequestAsync("resized", new { cols, rows }).ConfigureAwait(false) is not null;
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         _dead = true;

@@ -76,6 +76,8 @@ const state = {
   win: null,
   termView: null,
   pageView: null,     // the visible "lens" pane
+  overlayView: null,  // transition overlay (workspace-tj1z) — inert, shown only mid-transition
+  overlayShown: false,
   popupView: null,    // SSO/auth popup pane (workspace-y0bi) — at most one, over the page pane
   pages: new Map(),   // tag → WebContentsView ("lens" + hidden fetch/prefetch pages)
   channelServer: null,
@@ -156,83 +158,284 @@ function handleZoomKey (input) {
   return false
 }
 
-function layout () {
-  // INSTANT placement — boot and window resizes. Reveal/collapse transitions go
-  // through animatePane instead (workspace-va2s); a resize mid-flight snaps here.
-  const { win, termView, pageView } = state
-  if (!win || win.isDestroyed()) return
-  stopPaneAnim()
-  const [w, h] = win.getContentSize()
-  if (state.revealed) {
-    const pageW = Math.round(w * PAGE_FRACTION)
-    termView.setBounds({ x: 0, y: 0, width: w - pageW, height: h })
-    pageView.setVisible(true)
-    pageView.setBounds({ x: w - pageW, y: 0, width: pageW, height: h })
-    state.paneShown = true
-  } else {
-    termView.setBounds({ x: 0, y: 0, width: w, height: h })
-    pageView.setVisible(false)
-    state.paneShown = false
-  }
-  positionPopup()
-}
-
-// Pane reveal/collapse animation (workspace-va2s): a macOS-minimize-style eased slide.
-// Two hard rules: the TERMINAL reflows exactly ONCE per transition (animating its
-// width would storm the pty with resizes and thrash the TUI), and the page view
-// animates POSITION only, at final size (animating its width would reflow the live
-// site every frame). Reveal: the terminal narrows up front — the slide draws the eye
-// past that single reflow — and the pane glides in from the right edge (ease-out).
-// Collapse: the pane glides out (ease-in), and only THEN does the terminal expand.
-// Reversible mid-flight; window resizes snap via layout().
-const PANE_ANIM_MS = 240
-const PANE_ANIM_DISABLED = process.env.WIRECOPY_SHELL_NO_ANIM === '1'
-let paneAnim = null
-
-function stopPaneAnim () {
-  if (paneAnim) {
-    clearInterval(paneAnim.timer)
-    paneAnim = null
-  }
-}
-
-function animatePane (show) {
+// INSTANT placement of the REAL views. Both branches keep the page pane a live,
+// paintable surface: collapsed means PARKED at {x:w} — zero visible pixels at final
+// size — never setVisible(false) (workspace-tj1z.1), so capturePage always has a real
+// frame (first-ever reveal included). Parked bounds equal the old post-collapse
+// numbers, so wcdev:state.pageBounds consumers are unaffected; paneShown keeps
+// meaning "visually docked".
+function place () {
   const { win, termView, pageView } = state
   if (!win || win.isDestroyed()) return
   const [w, h] = win.getContentSize()
   const pageW = Math.round(w * PAGE_FRACTION)
-  const dockedX = w - pageW
-  const wasMidFlight = !!paneAnim
-  stopPaneAnim()
-  if (show) {
-    termView.setBounds({ x: 0, y: 0, width: dockedX, height: h })
-    // A fresh reveal starts at the right edge; reversing a mid-flight collapse
-    // resumes from wherever the pane currently sits.
-    const resume = wasMidFlight || state.paneShown
-    const startX = resume ? Math.max(dockedX, Math.min(w, pageView.getBounds().x)) : w
-    pageView.setBounds({ x: startX, y: 0, width: pageW, height: h })
-    pageView.setVisible(true)
+  pageView.setVisible(true)
+  if (state.revealed) {
+    termView.setBounds({ x: 0, y: 0, width: w - pageW, height: h })
+    pageView.setBounds({ x: w - pageW, y: 0, width: pageW, height: h })
     state.paneShown = true
+  } else {
+    termView.setBounds({ x: 0, y: 0, width: w, height: h })
+    pageView.setBounds({ x: w, y: 0, width: pageW, height: h })
+    state.paneShown = false
   }
-  const fromX = pageView.getBounds().x
-  const toX = show ? dockedX : w
-  const ease = show ? (t => 1 - Math.pow(1 - t, 3)) : (t => t * t * t)
-  const t0 = Date.now()
-  const timer = setInterval(() => {
-    if (win.isDestroyed()) { stopPaneAnim(); return }
-    const t = Math.min(1, (Date.now() - t0) / PANE_ANIM_MS)
-    pageView.setBounds({ x: Math.round(fromX + (toX - fromX) * ease(t)), y: 0, width: pageW, height: h })
-    if (t >= 1) {
-      stopPaneAnim()
-      if (!show) {
-        pageView.setVisible(false)
-        state.paneShown = false
-        termView.setBounds({ x: 0, y: 0, width: w, height: h })
-      }
-      positionPopup()
+}
+
+function layout () {
+  // Boot and window resizes: a resize in ANY transition phase aborts to an instant
+  // snap (workspace-tj1z.3) — the overlay's snapshots are the wrong size the moment
+  // the window changes.
+  abortTransition()
+  place()
+  positionPopup()
+}
+
+// ---- Pane reveal/collapse transitions (workspace-tj1z) --------------------------
+// The REAL WebContentsViews never animate — they snap via place() while a full-window
+// OVERLAY (overlay.html) plays the whole transition as compositor-driven WAAPI
+// transforms over capturePage snapshots: the page card slides with shadow + spring,
+// the reader backdrop crossfades wide<->narrow to mask the single pty reflow, and a
+// subtle scrim dips the reader. State machine: idle -> prep -> slide <-> reverse ->
+// drop, with a gen counter discarding stale async work.
+const PANE_ANIM_DISABLED = process.env.WIRECOPY_SHELL_NO_ANIM === '1'
+const REVEAL_MS = 340
+const COLLAPSE_MS = 300
+const XFADE_MS = 140
+const REVEAL_EASE = 'cubic-bezier(0.32, 0.72, 0, 1)'
+const COLLAPSE_EASE = 'cubic-bezier(0.5, 0, 0.75, 0.4)'
+// Measured on the dev container (gate probe): the reflow frame lands ~380-440ms after
+// the snap — renderer ResizeObserver->IPC (~40ms) + the detector's 100ms TIOCGWINSZ
+// poll + a ~300ms full-width render — as ONE atomic DEC-2026-framed burst.
+const SETTLE_BURST_MS = 550 // reflow frame must start within this after the PTY RESIZE
+const SETTLE_FALLBACK_QUIET_MS = 250 // ack-less fallback: long byte-quiet = reflow done
+const SETTLE_CAP_MS = 800 // ...never wait longer than this after the snap
+const SETTLE_NO_RESIZE_MS = 300 // no pty resize at all (cols unchanged): settle early
+const PAINT_GRACE_MS = 40 // xterm paint catches up before the settle capture
+let trans = null // live transition; null = idle
+let transGen = 0
+let lastSeamDirty = 0 // pty bytes between the settle capture and the drop (gate seam)
+
+function overlayWc () {
+  const v = state.overlayView
+  return v && !v.webContents.isDestroyed() ? v.webContents : null
+}
+
+function showOverlay () {
+  // Re-add on EVERY show: tops the z-order above a possible SSO popup (same pattern
+  // as openPopupPane's addChildView).
+  const [w, h] = state.win.getContentSize()
+  state.win.contentView.addChildView(state.overlayView)
+  state.overlayView.setBounds({ x: 0, y: 0, width: w, height: h })
+  state.overlayView.setVisible(true)
+  state.overlayShown = true
+}
+
+function hideOverlay () {
+  if (!state.overlayView) return
+  state.overlayView.setVisible(false)
+  state.overlayShown = false
+}
+
+function clearTransTimers (t) {
+  clearTimeout(t.armedTimer)
+  clearInterval(t.settlePoll)
+  clearTimeout(t.settleTimer)
+  clearTimeout(t.dropCap)
+}
+
+function abortTransition () {
+  if (!trans) return
+  const t = trans
+  trans = null
+  clearTransTimers(t)
+  hideOverlay()
+  const wc = overlayWc()
+  if (wc) wc.send('wcov:abort', { gen: t.gen })
+}
+
+async function beginTransition (show) {
+  const { win, termView, pageView } = state
+  if (!win || win.isDestroyed()) return
+  const gen = ++transGen
+  const [w, h] = win.getContentSize()
+  const pageW = Math.round(w * PAGE_FRACTION)
+  const dockedX = w - pageW
+  const t = {
+    gen,
+    target: show ? 'revealed' : 'collapsed',
+    phase: 'prep',
+    w,
+    h,
+    pageW,
+    dockedX,
+    slideDone: false,
+    xfadeDone: false,
+    xfadeSkipped: false,
+    captured: false,
+    seamBytes: 0,
+    resizeSeen: false,
+    resizeAt: 0,
+    postResizeBurst: false,
+    reflowRendered: false,
+    ptyLast: 0,
+    armedTimer: null,
+    settlePoll: null,
+    settleTimer: null,
+    dropCap: null
+  }
+  trans = t
+  // (1) Capture BOTH panes FIRST — before anything is covered (occlusion defense).
+  // The parked pane paints thanks to park-not-hide + backgroundThrottling:false.
+  let termImg = null
+  let pageImg = null
+  try {
+    ;[termImg, pageImg] = await Promise.all([
+      termView.webContents.capturePage(),
+      pageView.webContents.capturePage()
+    ])
+  } catch {}
+  if (trans !== t || gen !== transGen) return // superseded/aborted mid-capture
+  const wc = overlayWc()
+  if (!termImg || !pageImg || termImg.isEmpty() || pageImg.isEmpty() || !wc) {
+    // No material to animate with (capture failed/empty, overlay dead): snap instantly
+    // rather than glide a black card.
+    trans = null
+    place()
+    positionPopup()
+    return
+  }
+  // (2) Arm the overlay: it decodes the snapshots off-screen and acks, so showing it
+  // never flashes an empty stage (~2 frames).
+  wc.send('wcov:begin', {
+    gen,
+    h,
+    pageW,
+    backW: show ? w : w - pageW, // the reader as it looks BEFORE the snap
+    backImg: termImg.toDataURL(),
+    cardImg: pageImg.toDataURL(),
+    cardX0: show ? w : dockedX,
+    cardX1: show ? dockedX : w,
+    durMs: show ? REVEAL_MS : COLLAPSE_MS,
+    easing: show ? REVEAL_EASE : COLLAPSE_EASE,
+    cornerFrom: show ? 8 : 0,
+    cornerTo: show ? 0 : 8,
+    scrimFrom: show ? 0 : 0.10,
+    scrimTo: show ? 0.10 : 0
+  })
+  t.armedTimer = setTimeout(() => {
+    // Overlay never armed (wedged renderer): bail to an instant snap.
+    if (trans === t) { abortTransition(); place(); positionPopup() }
+  }, 600)
+}
+
+function onOverlayArmed (t) {
+  clearTimeout(t.armedTimer)
+  // (3) Cover the window, then snap the REAL layout underneath — exactly one
+  // ResizeObserver fire -> one term:resize -> one pty reflow, all hidden.
+  showOverlay()
+  place()
+  positionPopup()
+  t.phase = 'slide'
+  // (4) Card slide + scrim run in the overlay's compositor.
+  const wc = overlayWc()
+  if (wc) wc.send('wcov:go', { gen: t.gen })
+  startSettle(t)
+  // Absolute backstop: the overlay must never be left covering the window.
+  t.dropCap = setTimeout(() => { if (trans === t) finishDrop(t) }, 1200)
+}
+
+// (5) Settle heuristic, anchored on the REAL pty resize (measured empirically: the
+// snap's renderer ResizeObserver -> term:resize IPC -> the .NET detector's 100ms
+// TIOCGWINSZ poll -> a full rewrap render puts the reflow frame ~250-400ms after the
+// snap, as ONE atomic DEC-2026-framed burst). So: wait for the term:resize that the
+// snap provoked, then for the first burst AFTER it, then a short quiet, then a paint
+// grace. Absent a resize (cols unchanged) or a burst, settle on the early timeouts;
+// SETTLE_CAP_MS bounds the whole wait.
+function startSettle (t) {
+  t.settleStart = Date.now()
+  t.resizeSeen = false
+  t.resizeAt = 0
+  t.postResizeBurst = false
+  t.reflowRendered = false
+  t.ptyLast = 0
+  clearInterval(t.settlePoll)
+  clearTimeout(t.settleTimer)
+  t.settlePoll = setInterval(() => {
+    if (trans !== t) { clearInterval(t.settlePoll); return }
+    const now = Date.now()
+    const elapsed = now - t.settleStart
+    // Primary: the TUI's deterministic 'resized' ack + a short byte-quiet (the ack can
+    // outrun the tail of the frame through the pty relay).
+    const rendered = t.reflowRendered && now - t.ptyLast >= 50
+    // Fallbacks for a TUI without the ack: a LONG quiet after the first post-resize
+    // burst (an unrelated repaint mid-transition would otherwise be mistaken for the
+    // rewrap — observed empirically with the dock-toggle's own render).
+    const quietDone = !t.reflowRendered && t.postResizeBurst && now - t.ptyLast >= SETTLE_FALLBACK_QUIET_MS
+    const noBurst = t.resizeSeen && !t.postResizeBurst && now - t.resizeAt >= SETTLE_BURST_MS
+    const noResize = !t.resizeSeen && elapsed >= SETTLE_NO_RESIZE_MS
+    if (rendered || quietDone || noBurst || noResize || elapsed >= SETTLE_CAP_MS) {
+      clearInterval(t.settlePoll)
+      t.settlePoll = null
+      t.settleTimer = setTimeout(() => { if (trans === t) settleCapture(t) }, PAINT_GRACE_MS)
     }
-  }, 16)
-  paneAnim = { timer, show }
+  }, 20)
+}
+
+// (6) Capture the post-reflow reader and crossfade it in over the stale backdrop.
+async function settleCapture (t) {
+  let img = null
+  try { img = await state.termView.webContents.capturePage() } catch {}
+  if (trans !== t) return
+  t.captured = true
+  const wc = overlayWc()
+  if (!img || img.isEmpty() || !wc) {
+    // Occluded-capture fallback (verified empirically in the gate): skip the
+    // crossfade and drop at slide end — the snap is already correct underneath.
+    t.xfadeSkipped = true
+    maybeDrop(t)
+    return
+  }
+  wc.send('wcov:crossfade', {
+    gen: t.gen,
+    img: img.toDataURL(),
+    backW: t.target === 'revealed' ? t.w - t.pageW : t.w,
+    h: t.h,
+    durMs: XFADE_MS
+  })
+}
+
+function maybeDrop (t) {
+  if (t.slideDone && (t.xfadeDone || t.xfadeSkipped)) finishDrop(t)
+}
+
+// (7) Drop: everything settled — uncover the (already correct) real layout.
+function finishDrop (t) {
+  clearTransTimers(t)
+  lastSeamDirty = t.seamBytes
+  trans = null
+  hideOverlay()
+  const wc = overlayWc()
+  if (wc) wc.send('wcov:abort', { gen: t.gen }) // clear the stage for the next episode
+  positionPopup()
+}
+
+// Mid-flight reversal (workspace-tj1z.4): | pressed again during the slide. The REAL
+// views re-snap to the new target under the overlay; the overlay replays the same
+// snapshots backwards (WAAPI reverse); the settle heuristic restarts for the new
+// reflow. A reversal during prep (before the overlay armed) just bails to a snap.
+function reverseTransition () {
+  const t = trans
+  t.target = t.target === 'revealed' ? 'collapsed' : 'revealed'
+  t.slideDone = false
+  t.xfadeDone = false
+  t.xfadeSkipped = false
+  t.captured = false
+  t.seamBytes = 0
+  place()
+  positionPopup()
+  const wc = overlayWc()
+  if (wc) wc.send('wcov:reverse', { gen: t.gen })
+  startSettle(t)
 }
 
 // The SSO popup pane sits centered over the PAGE pane (never over the reader) at a
@@ -309,8 +512,21 @@ function setPaneVisible (on) {
   if (state.revealed === next) return
   state.revealed = next
   if (!next) closePopupPane() // a popup must never float orphaned over the full reader
-  if (PANE_ANIM_DISABLED) layout()
-  else animatePane(next)
+  if (PANE_ANIM_DISABLED) {
+    layout()
+  } else if (trans) {
+    if (trans.phase === 'prep') {
+      // Flipped again before the overlay armed: nothing is covering the window yet —
+      // snap instantly to the (new) target.
+      abortTransition()
+      place()
+      positionPopup()
+    } else {
+      reverseTransition()
+    }
+  } else {
+    beginTransition(next)
+  }
   if (!next) focusTerm()
 }
 
@@ -452,6 +668,13 @@ function spawnTui () {
     env
   })
   state.ptyProc.onData(d => {
+    // Transition settle heuristic (workspace-tj1z.3): the post-snap reflow is a byte
+    // burst on this relay; bytes AFTER the settle capture dirty the seam (gate metric).
+    if (trans) {
+      trans.ptyLast = Date.now()
+      if (trans.resizeSeen) trans.postResizeBurst = true
+      if (trans.captured) trans.seamBytes += d.length
+    }
     if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('pty:data', d)
   })
   state.ptyProc.onExit(({ exitCode }) => {
@@ -483,14 +706,29 @@ app.whenReady().then(() => {
     webPreferences: { preload: path.join(__dirname, 'preload.js') }
   })
   state.pageView = new WebContentsView({
-    webPreferences: { partition: 'persist:wirecopy' }
+    // backgroundThrottling:false (workspace-tj1z.1): the PARKED pane must keep painting
+    // so capturePage returns a real final-size frame at any time — matches the tagged
+    // pages below.
+    webPreferences: { partition: 'persist:wirecopy', backgroundThrottling: false }
   })
   // Tag the lens pane so the .NET driver can adopt it over CDP by URL.
   state.pageView.webContents.loadURL('about:blank#wc-lens').catch(() => {})
   state.pages.set('lens', state.pageView)
 
+  // Transition overlay (workspace-tj1z.2): created ONCE at boot, hidden until a
+  // transition shows it (showOverlay re-adds it topmost). Inert by doctrine — it is
+  // never focused; its input is forwarded to the terminal below.
+  state.overlayView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'overlay-preload.js'),
+      backgroundThrottling: false
+    }
+  })
+  state.overlayView.setVisible(false)
+
   state.win.contentView.addChildView(state.pageView)
   state.win.contentView.addChildView(state.termView)
+  state.win.contentView.addChildView(state.overlayView)
   layout()
   state.win.on('resize', () => { layout(); rememberBounds() })
   state.win.on('move', rememberBounds)
@@ -498,6 +736,16 @@ app.whenReady().then(() => {
   state.win.on('closed', () => { try { state.ptyProc && state.ptyProc.kill() } catch {} })
 
   attachFocusDoctrine(state.pageView)
+
+  // Overlay focus doctrine (workspace-tj1z.2): never .focus() it; every key that lands
+  // on it mid-transition is forwarded to the pty (keystroke-never-lost); a stolen focus
+  // bounces back within 30ms; the enforcement loop below is the third net. Mouse during
+  // the ~400ms transition is absorbed (WebContentsView has no setIgnoreMouseEvents).
+  state.overlayView.webContents.on('before-input-event', (e, input) => {
+    e.preventDefault()
+    forwardToTerm(input)
+  })
+  state.overlayView.webContents.on('focus', () => setTimeout(() => focusTerm(), 30))
   // Type-scale zoom is a shell concern: intercept Cmd/Ctrl +/-/0 on the terminal pane
   // before xterm sees them (the TUI binds no such chords — Ctrl+D/U/P/L only).
   state.termView.webContents.on('before-input-event', (e, input) => {
@@ -522,6 +770,13 @@ app.whenReady().then(() => {
     handlers: {
       hello: () => ({ cdpEndpoint: `http://127.0.0.1:${CDP_PORT}` }),
       setPane: p => { setPaneVisible(!!p.visible); return { visible: state.revealed } },
+      // Deterministic settle signal (workspace-tj1z.3): the TUI rendered a frame at
+      // these dims. Only the CURRENT pty size counts — an ack for the pre-snap size
+      // is not the reflow the transition is waiting for.
+      resized: p => {
+        if (trans && Number(p.cols) === state.ptyDims.cols) trans.reflowRendered = true
+        return {}
+      },
       setMode: p => { setMode(p.mode === 'browser' ? 'browser' : 'reader'); return { mode: state.mode } },
       createPage: p => createTaggedPage(String(p.tag || ''))
     }
@@ -547,6 +802,25 @@ app.whenReady().then(() => {
     // the right cell size (no boot-time double resize); live zoom arrives over wc:font.
     state.termView.webContents.loadURL(
       `http://127.0.0.1:${termSrv.address().port}/term.html?font=${termFontSize}&plat=${process.platform}`)
+    // Overlay loads ONCE from the same loopback server — no #wc- fragment, so the CDP
+    // driver can never adopt it; a per-transition loadURL would risk the electron#42578
+    // focus steal (workspace-tj1z.2).
+    state.overlayView.webContents.loadURL(
+      `http://127.0.0.1:${termSrv.address().port}/overlay.html`)
+  })
+
+  // Overlay transition acks (workspace-tj1z.3/.4).
+  ipcMain.on('wcov:armed', (e, gen) => {
+    if (e.sender !== state.overlayView.webContents) return
+    if (trans && trans.gen === gen && trans.phase === 'prep') onOverlayArmed(trans)
+  })
+  ipcMain.on('wcov:done', (e, p) => {
+    if (e.sender !== state.overlayView.webContents) return
+    const t = trans
+    if (!t || !p || p.gen !== t.gen) return
+    if (p.phase === 'slide') t.slideDone = true
+    if (p.phase === 'crossfade') t.xfadeDone = true
+    maybeDrop(t)
   })
 
   // SSO popup opener bridge (workspace-y0bi): the popup's shimmed opener.postMessage
@@ -574,6 +848,12 @@ app.whenReady().then(() => {
   ipcMain.on('term:resize', (_e, dims) => {
     state.ptyDims = dims
     if (state.ptyProc) state.ptyProc.resize(dims.cols, dims.rows)
+    // Settle anchor (workspace-tj1z.3): the reflow the transition waits for follows
+    // THIS resize.
+    if (trans) {
+      trans.resizeSeen = true
+      trans.resizeAt = Date.now()
+    }
   })
 
   // Dev/gate hooks (local IPC via the terminal pane; production control arrives over
@@ -588,7 +868,12 @@ app.whenReady().then(() => {
     termFontSize,
     popupOpen: !!state.popupView,
     popupBounds: state.popupView ? state.popupView.getBounds() : null,
-    paneAnimating: !!paneAnim,
+    paneAnimating: !!trans,
+    overlayShown: !!state.overlayShown,
+    transPhase: trans ? trans.phase : null,
+    transTarget: trans ? trans.target : null,
+    transGen,
+    seamDirty: lastSeamDirty,
     paneShown: state.paneShown,
     contentSize: state.win.getContentSize(),
     termBounds: state.termView.getBounds(),
