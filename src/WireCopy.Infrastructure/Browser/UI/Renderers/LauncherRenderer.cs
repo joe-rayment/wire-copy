@@ -26,19 +26,26 @@ internal class LauncherRenderer
 
     private const int WordmarkWidth = 87;
 
-    // Grid card cell layout (workspace-bs93) — mirrors LinkTreeRenderer's
-    // BuildSelectedCardLine vocabulary so launcher and link-list tiles read
-    // as one product:
+    // Grid card cell layout (workspace-bs93, height aligned in workspace-stby) —
+    // mirrors LinkTreeRenderer's 5-line BuildSelectedCardLine vocabulary
+    // (standardCellHeight = 5, LinkTreeRenderer.cs) so launcher and link-list
+    // tiles read as one product. The launcher card was 4 rows, one shorter than
+    // a link-list card, which made the tiles look crowded and pushed the
+    // separator closer to the text even though the glyphs were identical:
     //   line 0: blank padding    (breathing room above the title)
     //   line 1: title row        " NAME                [N]"  ← ▌ replaces the leading
     //                                                          space when selected or
     //                                                          on the Reading List slot
     //   line 2: subtitle row     " domain.example"           ← same ▌ rule
-    //   line 3: separator rule   "────────────────"          ← dim secondary, always
+    //   line 3: interior padding (breathing room below the subtitle — the
+    //                             launcher has no title2/author rows to fill it,
+    //                             so it pads while keeping the selBg + ▌ bar)
+    //   line 4: separator rule   "────────────────"          ← dim secondary, always
     //                                                          rendered (matches link-list)
     // No box-drawing characters around the card; the separator rule provides
-    // the visual cap. cellHeight stays 4 so adjacent cards stack directly.
-    private const int GridCardHeight = 4;
+    // the visual cap. cellHeight = 5 so adjacent cards stack directly and align
+    // row-for-row with the link-list view.
+    private const int GridCardHeight = 5;
 
     // URL bar block height (workspace-0rde): blank + top border + content
     // + bottom border = 4 lines. The trailing blank that previously padded
@@ -213,12 +220,13 @@ internal class LauncherRenderer
                 // ultra-wide) instead of stretching two into skinny-long ribbons.
                 columns = ResponsiveGrid.ColumnsFor(width);
 
-                // Card cell (workspace-bs93): blank pad + title + subtitle +
-                // separator rule = 4 lines. Adjacent cards stack directly —
-                // the separator rule provides the visual break, matching the
-                // link-list card vocabulary so the two views feel like the
-                // same product. Scroll math treats the 4-line block as the
-                // logical row height so a row never partially scrolls in.
+                // Card cell (workspace-bs93/stby): blank pad + title + subtitle +
+                // interior pad + separator rule = 5 lines, matching the link-list
+                // card height (LinkTreeRenderer standardCellHeight). Adjacent cards
+                // stack directly — the separator rule provides the visual break, so
+                // the two views feel like the same product. Scroll math treats the
+                // 5-line block as the logical row height so a row never partially
+                // scrolls in.
                 cellHeight = GridCardHeight;
                 break;
             }
@@ -401,36 +409,45 @@ internal class LauncherRenderer
         var borderFg = p.HeaderBorderFg.AnsiFg;
         var domainFg = p.SecondaryText.AnsiFg;
         var titleFg = isReadingList ? accentFg : p.PrimaryText.AnsiFg;
-        var badgeFg = $"{p.SecondaryText.AnsiFg}{Dim}";
+
+        // Design cards-states (workspace-7t0a.2): the [N] badge is a pressable key,
+        // so it wears the interactive cyan — 'cyan = interactive keys only' holds.
+        var badgeFg = accentFg;
 
         // Reading List always shows an accent bar; bookmark cells only show
         // it when selected. The bar colour identifies the slot — cyan for
-        // Reading List, HeaderBorderFg (matches link-list selection) otherwise.
+        // Reading List, the design's focus-bar muted green otherwise
+        // (--tr-focus-bar #5f875f, workspace-7t0a.2: HeaderBorderFg #005f00
+        // equals the selection fill, which made the rail invisible on it).
         var showAccentBar = isSelected || isReadingList;
-        var accentBarColor = isReadingList ? accentFg : borderFg;
+        var accentBarColor = isReadingList ? accentFg : p.GetMutedFg().AnsiFg;
         var contentWidth = Math.Max(1, cellWidth - 1);
+
+        // The separator rule is always the cell's LAST line (workspace-stby moved
+        // it off a hardcoded `case 3` so it tracks GridCardHeight). It's the visual
+        // border between cell rows and must not be eaten by the selection box —
+        // no selBg fill here (workspace-63jj: fill read as a 1-row-too-tall
+        // highlight punching through the `┼` cross), but the selected card's ▌
+        // rail continues through it so the rail runs the full card height
+        // (design cards-states, workspace-7t0a.2). Rule color is structural
+        // chrome (--tr-border #005f00), not dimmed metadata green.
+        if (lineIdx == GridCardHeight - 1)
+        {
+            var rule = $"{borderFg}{new string('─', Math.Max(0, cellWidth - (isSelected ? 1 : 0)))}{Reset}";
+            return isSelected ? $"{accentBarColor}▌{Reset}{rule}" : rule;
+        }
 
         switch (lineIdx)
         {
-            case 0:
-                if (isSelected)
-                {
-                    // workspace-zlv0 (refines mj9x + 63jj): top padding fills
-                    // with selBg so the green box reaches the cell's top edge.
-                    // The cell's BOTTOM edge is the separator row (line 3)
-                    // which stays as the dim ─ rule — that's the real divider
-                    // between cell rows and must survive.
-                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
-                }
-
-                return new string(' ', cellWidth);
-
             case 1:
             {
-                // Title row: optional accent bar + leading space + glyph (RL only)
-                // + NAME + right-aligned [N] badge.
+                // Title row: optional accent bar + leading space + NAME + glyph
+                // (RL only, trailing) + right-aligned [N] badge. badgeZone floors
+                // at 1 so the badgeless layout (items 10+) still reserves the
+                // trailing cell — without it the row ran one cell past cellWidth
+                // and shoved the next column's divider (workspace-7t0a.2).
                 var glyphWidth = isReadingList ? 2 : 0;
-                var badgeZone = badge.Length > 0 ? badge.Length + 1 : 0;
+                var badgeZone = badge.Length > 0 ? badge.Length + 1 : 1;
 
                 // contentWidth - 1 reserves the leading space inside the highlight.
                 var titleMax = Math.Max(1, contentWidth - 1 - glyphWidth - badgeZone);
@@ -440,18 +457,19 @@ internal class LauncherRenderer
                 if (isSelected)
                 {
                     // Painted highlight: bar (inside selBg) + leading space +
-                    // glyph + title + pad + badge + trailing space, all inside
+                    // title + glyph + pad + badge + trailing space, all inside
                     // selBg so the box reads as a continuous rectangle. The
-                    // star's own SGR keeps selBg — emitting Reset between glyph
-                    // and title drops the bg (workspace-ktg4). The accent bar
+                    // star's own SGR keeps selBg — emitting Reset between title
+                    // and glyph drops the bg (workspace-ktg4). The accent bar
                     // is also inside selBg so column 0 isn't a black gap
-                    // (workspace-mj9x).
+                    // (workspace-mj9x). The ★ trails the name per the design
+                    // cards-states spec ('NEW YORK TIMES ★', workspace-7t0a.2).
                     var glyphPainted = isReadingList
-                        ? $"{selBg}{accentFg}{ReadingListGlyph}{selFg} "
+                        ? $"{selFg} {accentFg}{ReadingListGlyph}{selFg}"
                         : string.Empty;
                     var sb = new System.Text.StringBuilder();
                     sb.Append($"{selBg}{accentBarColor}▌");
-                    sb.Append($"{selBg}{selFg}{Bold} {glyphPainted}{truncName}{Reset}");
+                    sb.Append($"{selBg}{selFg}{Bold} {truncName}{glyphPainted}{Reset}");
                     sb.Append($"{selBg}{new string(' ', gap)}");
                     if (badge.Length > 0)
                     {
@@ -468,14 +486,14 @@ internal class LauncherRenderer
                 var prefix = showAccentBar
                     ? $"{accentBarColor}▌{Reset}"
                     : " ";
-                var glyph = isReadingList ? $"{accentFg}{ReadingListGlyph}{Reset} " : string.Empty;
+                var glyph = isReadingList ? $" {accentFg}{ReadingListGlyph}{Reset}" : string.Empty;
                 var titleSegment = $"{Bold}{titleFg}{truncName}{Reset}";
                 if (badge.Length > 0)
                 {
-                    return $"{prefix} {glyph}{titleSegment}{new string(' ', gap)}{badgeFg}{badge}{Reset} ";
+                    return $"{prefix} {titleSegment}{glyph}{new string(' ', gap)}{badgeFg}{badge}{Reset} ";
                 }
 
-                return $"{prefix} {glyph}{titleSegment}{new string(' ', gap)} ";
+                return $"{prefix} {titleSegment}{glyph}{new string(' ', gap)} ";
             }
 
             case 2:
@@ -496,16 +514,19 @@ internal class LauncherRenderer
                 return $"{prefix} {domainFg}{truncDomain}{Reset}{new string(' ', pad)}";
             }
 
-            case 3:
-                // workspace-63jj: separator rule is rendered the same way for
-                // selected and unselected cells — it's the visual border
-                // between cell rows and must not be eaten by the selection
-                // box. The previous mj9x behaviour (selBg fill on this row)
-                // looked like a 1-row-too-tall highlight that punched through
-                // the divider that connects to the `┼` cross.
-                return $"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellWidth)}{Reset}";
-
             default:
+                // Padding rows: line 0 (above the title) and the interior line
+                // below the subtitle (workspace-stby). When selected they fill
+                // with selBg plus the accent ▌ bar, same as the title/subtitle
+                // rows, so the selection rectangle is a continuous block with no
+                // gap. Blank otherwise. (workspace-zlv0/mj9x/63jj: selBg must
+                // reach the cell's top edge but must NOT bleed onto the separator
+                // row, which is handled above as the last line.)
+                if (isSelected)
+                {
+                    return $"{selBg}{accentBarColor}▌{selBg}{new string(' ', contentWidth)}{Reset}";
+                }
+
                 return new string(' ', cellWidth);
         }
     }
@@ -536,7 +557,7 @@ internal class LauncherRenderer
 
         if (isReadingList)
         {
-            name = "★ READING LIST";
+            name = "READING LIST ★";
             domain = ReadingListSubtitle(readingListCount);
         }
         else
@@ -619,7 +640,7 @@ internal class LauncherRenderer
 
         if (isReadingList)
         {
-            name = "★LIST";
+            name = "LIST★";
             domain = ReadingListSubtitle(readingListCount);
         }
         else
@@ -855,12 +876,12 @@ internal class LauncherRenderer
             for (var i = 0; i < Wordmark.Length; i++)
             {
                 var rowColor = WordmarkUsesDark[i] ? titleColorDark : titleColor;
-                lines.Add(BoxLine($"{rowColor}{Bold}{Wordmark[i]}{Reset}", Wordmark[i].Length));
+                lines.Add(BoxLine($"{rowColor}{Wordmark[i]}{Reset}", Wordmark[i].Length));
             }
         }
         else
         {
-            lines.Add(BoxLine($" {titleColor}{Bold}{"Wire Copy"}{Reset}", "Wire Copy".Length + 1));
+            lines.Add(BoxLine($" {titleColor}{"Wire Copy"}{Reset}", "Wire Copy".Length + 1));
         }
 
         // Align tagline's left edge with the W glyph above (workspace-usr3).
@@ -1000,13 +1021,14 @@ internal class LauncherRenderer
         ThemePalette p,
         int? readingListCount = null)
     {
-        // 4-line card stride (workspace-bs93): blank pad + title + subtitle
-        // + separator. Mirrors LinkTreeRenderer's row layout — a `│` divider
-        // between columns, with `┼` on the separator row so the intersection
-        // reads as continuous. Responsive N columns (workspace-ehon): loop over
-        // every column (was a 2-column special case) so a wide window fills with
-        // more cards; the last column absorbs the width remainder so the right
-        // edge stays flush and empty trailing cells continue the separator rule.
+        // 5-line card stride (workspace-bs93/stby): blank pad + title + subtitle
+        // + interior pad + separator. Mirrors LinkTreeRenderer's row layout —
+        // a `│` divider between columns, with `┼` on the separator row so the
+        // intersection reads as continuous. Responsive N columns (workspace-ehon):
+        // loop over every column (was a 2-column special case) so a wide window
+        // fills with more cards; the last column absorbs the width remainder so
+        // the right edge stays flush and empty trailing cells continue the
+        // separator rule.
         if (line >= GridCardHeight)
         {
             return new string(' ', layout.Width);
@@ -1019,8 +1041,11 @@ internal class LauncherRenderer
         {
             if (col > 0)
             {
+                // Structural chrome (--tr-border #005f00, workspace-7t0a.2) — the
+                // grid skeleton recedes behind the content instead of matching
+                // metadata green.
                 var divider = isSeparatorLine ? "┼" : "│";
-                sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{divider}{Reset}");
+                sb.Append($"{p.HeaderBorderFg.AnsiFg}{divider}{Reset}");
             }
 
             var itemIdx = (row * layout.Columns) + col;
@@ -1044,7 +1069,7 @@ internal class LauncherRenderer
             {
                 // Continue the separator rule across the empty cell so the
                 // bottom edge reads as a single line.
-                sb.Append($"{p.SecondaryText.AnsiFg}{Dim}{new string('─', cellW)}{Reset}");
+                sb.Append($"{p.HeaderBorderFg.AnsiFg}{new string('─', cellW)}{Reset}");
             }
             else
             {
@@ -1132,14 +1157,55 @@ internal class LauncherRenderer
             return;
         }
 
-        // Build the full virtual content stream:
-        //   [0 .. headerLines)              wordmark / title (setup hint inside header card when ShowSetupHint)
-        //   [headerLines .. +UrlBarLines)   URL bar (4 rows)
-        //   [headerLines + UrlBarLines ..)  bookmark rows
-        var content = new List<string>();
-        content.AddRange(BuildHeaderLines(layout.Width, p, showSetupHint));
-        content.AddRange(BuildUrlBarLines(layout.Width, selectedIndex == -1, p));
-        content.AddRange(BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p, options.ReadingListItemCount));
+        // Build the launcher in three bands:
+        //   header  — wordmark / title (setup hint inside header card when ShowSetupHint)
+        //   urlBar  — URL bar (4 rows)
+        //   grid    — bookmark rows
+        var header = BuildHeaderLines(layout.Width, p, showSetupHint);
+        var urlBar = BuildUrlBarLines(layout.Width, selectedIndex == -1, p);
+        var grid = BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p, options.ReadingListItemCount);
+
+        var topBands = header.Count + urlBar.Count;
+        var totalContent = topBands + grid.Count;
+
+        if (totalContent <= viewportHeight)
+        {
+            // Responsive fill (workspace-sf9o): the content fits without scrolling, so instead of
+            // top-aligning it and leaving a large empty band above the bottom-pinned footer, keep the
+            // wordmark + URL bar as a top "header" and vertically CENTER the bookmark grid in the space
+            // beneath them — the launcher fills the window like the pre-wrapper terminal, and the
+            // elements reflow with the window size. The header / URL-bar rows are unchanged, so the
+            // URL-input cursor math (ComputeUrlBarInputRow) is unaffected.
+            foreach (var line in header)
+            {
+                _helpers.WriteLine(line);
+            }
+
+            foreach (var line in urlBar)
+            {
+                _helpers.WriteLine(line);
+            }
+
+            var gridArea = Math.Max(0, viewportHeight - topBands);
+            var gridPad = Math.Max(0, (gridArea - grid.Count) / 2);
+            for (var i = 0; i < gridPad; i++)
+            {
+                _helpers.WriteLine(string.Empty);
+            }
+
+            foreach (var line in grid)
+            {
+                _helpers.WriteLine(line);
+            }
+
+            return;
+        }
+
+        // Overflow: scroll the combined stream as one unit (the wordmark / URL bar collapse upward).
+        var content = new List<string>(totalContent);
+        content.AddRange(header);
+        content.AddRange(urlBar);
+        content.AddRange(grid);
 
         // Clamp scrollOffset so we don't scroll past the end of content.
         var maxScroll = Math.Max(0, content.Count - viewportHeight);

@@ -36,18 +36,33 @@ const near = (a, b, tol) => Math.abs(a.r - b.r) <= tol && Math.abs(a.g - b.g) <=
 async function measurePoint (env, term, label, dsf) {
   const dims = await term.eval('window.__dims()')
   const cell = await term.eval('(() => { const d = term._core._renderService.dimensions.css.cell; return { w: d.width, h: d.height } })()')
-  const lines = (await term.eval('window.__termText()')).split('\n')
-  const r = lines.findIndex(l => l.includes('READING LIST'))
+  // Search the LIVE VIEWPORT only: __termText spans the whole buffer including
+  // scrollback, and a pre-resize frame can scroll a stale (wider) copy of the
+  // launcher into scrollback — findIndex would then measure that dead row
+  // (bit with the 5-row card stride, workspace-7t0a.2). allLines keeps buffer
+  // indexing so getLine(r) below still addresses the same row.
+  const allLines = (await term.eval('window.__termText()')).split('\n')
+  const base = Math.max(0, allLines.length - dims.rows)
+  const lines = allLines
+  const rVp = allLines.slice(base).findIndex(l => l.includes('READING LIST'))
+  const r = rVp < 0 ? -1 : base + rVp
   check(`${label}: READING LIST row found`, r > 0, `row=${r} cols=${dims.cols}`)
   if (r <= 0) return
 
-  // Tile geometry from the buffer: the ★ sits two cells after the tile's left edge (▌ + space).
-  const starCol = lines[r].indexOf('★')
-  const c0 = Math.max(0, starCol - 2)
-  const ruleLine = lines[r + 2] || ''
+  // Tile geometry from the buffer: the name starts two cells after the tile's left
+  // edge (▌ + space); the ★ trails the name (workspace-7t0a.2). The separator rule
+  // is the card's LAST line — 5-row stride puts it at title+3 (workspace-stby), so
+  // scan the next few rows for the first ─ run instead of hardcoding an offset.
+  const nameCol = lines[r].indexOf('READING LIST')
+  const c0 = Math.max(0, nameCol - 2)
+  // Clamp the scan to the LIVE columns: after a narrowing resize the buffer rows
+  // keep their old width, with stale pre-resize glyphs right of dims.cols.
   let ruleStart = -1; let ruleEnd = -1
-  for (let c = c0; c < ruleLine.length; c++) {
-    if (ruleLine[c] === '─') { if (ruleStart < 0) ruleStart = c; ruleEnd = c } else if (ruleLine[c] === '┼') { if (ruleStart >= 0) break } else if (ruleStart >= 0 && c > ruleEnd + 1) break
+  for (let dr = 1; dr <= 4 && ruleStart < 0; dr++) {
+    const ruleLine = (lines[r + dr] || '').slice(0, dims.cols)
+    for (let c = c0; c < ruleLine.length; c++) {
+      if (ruleLine[c] === '─') { if (ruleStart < 0) ruleStart = c; ruleEnd = c } else if (ruleLine[c] === '┼') { if (ruleStart >= 0) break } else if (ruleStart >= 0 && c > ruleEnd + 1) break
+    }
   }
   check(`${label}: tile rule row found`, ruleStart >= 0 && ruleEnd > ruleStart, `rule ${ruleStart}..${ruleEnd}`)
   if (ruleStart < 0) return
