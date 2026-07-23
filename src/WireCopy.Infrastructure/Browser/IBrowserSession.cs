@@ -66,15 +66,6 @@ public interface IBrowserSession : IBrowserSessionControl
     bool IsShellAttached { get; }
 
     /// <summary>
-    /// Gets or sets the sink for the ONE-TIME user-visible notice raised when a macOS
-    /// osascript automation call fails (Automation/Accessibility permission missing) —
-    /// wired to the status bar by the orchestrator (workspace-9k27.7). Browse-mode
-    /// logs are file-only, so without this the degradation (focus not returning,
-    /// terminal not tiling/restoring) is invisible in the TUI. Null = no notice.
-    /// </summary>
-    Action<string>? PermissionNoticeSink { get; set; }
-
-    /// <summary>
     /// Gets a value indicating whether a background page can be created in the
     /// dedicated headless preload context. Unlike <see cref="HasBrowserContext"/>
     /// this does NOT require the foreground browser to have been launched first:

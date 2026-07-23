@@ -177,14 +177,6 @@ public partial class BrowserOrchestrator : IBrowserService
         _dockSpotlight = dockSpotlight;
         _dockSpotlight.StatusMessageSink = message => _navigationService.SetStatusMessage(message);
 
-        // workspace-9k27.7: browse-mode logs are file-only, so a macOS Automation/
-        // Accessibility failure must surface in the status bar (once) or the user
-        // just sees focus/tiling silently misbehave.
-        if (_browserSession is IBrowserSession sessionWithNotices)
-        {
-            sessionWithNotices.PermissionNoticeSink = message => _navigationService.SetStatusMessage(message);
-        }
-
         // workspace-mctt: the user navigated the lens themselves — offer to read it
         // here instead of yanking their page away. Shown on the next render tick.
         _dockSpotlight.LensDiverged += url =>

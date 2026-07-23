@@ -75,7 +75,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 }
             ";
 
-    private readonly BrowserConfiguration _browserConfig;
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
 
@@ -106,16 +105,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // that reappears (e.g. after a crash recovery) re-docks itself when the user wanted a dock.
     private bool _userWantsDock;
 
-    // workspace-ynn9: true while OUR code has the window hidden/iconified (park/hide), false once
-    // it is on-screen (docked) or brought forward for interaction. On non-macOS our hide reports
-    // windowState=minimized — the SAME state a USER-minimize produces — so windowState alone can
-    // no longer tell them apart. This intent flag lets the re-dock gate honor the workspace-wo4q
-    // contract ("never summon a window the user minimized/closed") while still re-docking our own
-    // parked window.
-    private bool _iconifiedByUs;
     private bool _disposed;
     private bool _browsersInstalled;
-    private long _lastRefocusTicks;
 
     // workspace-fihe follow-up: 1 when RestoreWindowAsync brought the browser forward for a user
     // interaction and no cleanup has handed keyboard focus back yet. Consumed by the next
@@ -123,77 +114,20 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // background hide) and cleared whenever a weJustActivatedBrowser refocus actually runs.
     private int _pendingInteractionHandback;
 
-    // workspace-75ng: the terminal's frontmost-app bundle id, captured ONCE at the first
-    // browser launch (while the terminal still owns focus) so RefocusTerminalAsync can
-    // re-activate THAT exact app — terminal-agnostic, fixing Ghostty. Null until captured
-    // or if capture failed; the refocus then falls back to the TERM_PROGRAM name map.
-    private string? _terminalBundleId;
-
-    // workspace-ynn9: the terminal emulator's X11 window id (non-macOS), captured ONCE at the
-    // first browser launch. On Linux the terminal is a separate X window, so after hiding/
-    // iconifying the browser (which lets the WM reassign focus) RefocusTerminalAsync re-activates
-    // THIS window via xdotool. Null until captured or when there is no X terminal window (bare
-    // Xvfb / non-X / $WINDOWID unset and xdotool absent) — the refocus then no-ops cleanly.
-    private string? _terminalX11WindowId;
-
-    // workspace-ynn9.7: our headed browser's X11 window id, captured the first time we raise it
-    // (BringToFront) while it is frontmost. The Linux focus hand-back uses it as the mirror of the
-    // macOS frontmost-guard: hand focus back to the terminal only when the ACTIVE window is our
-    // browser or the terminal — if a FOREIGN app has focus (the user switched away), respect it.
-    private string? _browserX11WindowId;
-
-    // workspace-75ng.4: the terminal window's pre-dock bounds, captured when the sidecar
-    // tiles the screen so dismiss can RESTORE the terminal to full size. Null when not tiled.
-    private TerminalTiling.WindowRect? _terminalTileBounds;
-
-    // workspace-9k27.6: the tile rect we last SET, so restore can detect whether
-    // the user has since rearranged the terminal (their layout then wins).
-    private TerminalTiling.WindowRect? _lastTerminalTileRect;
-
-    // workspace-9k27.7: one-shot latch for the user-visible macOS permission notice
-    // (0 = not shown). Browse-mode logs are file-only, so an osascript Automation/
-    // Accessibility failure logged at Warning is invisible in the TUI without this.
-    private int _permissionNoticeShown;
-
-    // workspace-v7g7: where the Corner park last placed the tile. While set, background parks
-    // leave the window wherever it currently is — respecting a user drag/resize of the tile.
-    // Every flow that intentionally moves the window on-screen (restore, dock) clears it so the
-    // NEXT park re-places the corner.
-    private TerminalTiling.WindowRect? _lastCornerRect;
-
-    // workspace-v7g7: true once a park has OBSERVED the tile where we left it. Only then does a
-    // later drift count as the user's drag/resize and get respected — a WM re-placing the window
-    // as it maps during launch must be corrected, not adopted as "the user's spot".
-    private bool _cornerRespectArmed;
-
-    // workspace-v7g7: the display's REAL work area, captured at launch BEFORE the fetch page's
-    // viewport emulation is applied — after it, JS screen metrics on the emulated pages report
-    // the 1280x720 viewport instead of the display. Null when the capture failed; corner
-    // placement then falls back to the (possibly lying) JS read.
-    private SidecarGeometry.DisplayInfo? _realDisplay;
-
-    // workspace-v7g7: 1 when RestoreWindowAsync found the window USER-minimized before summoning
-    // it for an interaction — the cleanup park then returns it to minimized instead of a visible
-    // park. Voided by docking (the user asked for the window on-screen).
-    private int _restoreFoundUserMinimized;
-
     public BrowserSession(
         IOptions<BrowserConfiguration> browserConfig,
         ILogger<BrowserSession> logger,
         ICookieManager cookieManager,
         IShellChannel? shellChannel = null)
     {
-        _browserConfig = browserConfig.Value;
         _logger = logger;
         _cookieManager = cookieManager;
         _shell = shellChannel ?? new NullShellChannel();
 
         // Sidecar mode starts in the configured state (workspace-exbz): when on, the
-        // first headed launch docks beside the terminal; the dock toggle drops to the
-        // immersive view by clearing this intent. Default OFF (workspace-75ng): the headed
-        // window launches PARKED off-screen (never pops up / steals focus at startup) and
-        // 'O' brings it on-screen to dock.
-        _userWantsDock = _browserConfig.Sidecar;
+        // shell reveals the pane on first attach; the dock toggle drops it by clearing
+        // this intent. Default OFF (workspace-75ng).
+        _userWantsDock = browserConfig.Value.Sidecar;
         _userDataDir = Path.Combine(
             Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
             "WireCopy",
@@ -230,9 +164,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
     /// <inheritdoc />
     public bool IsShellAttached => !_disposed && _shell.IsConnected;
-
-    /// <inheritdoc />
-    public Action<string>? PermissionNoticeSink { get; set; }
 
     /// <inheritdoc />
     public async Task<DateTimeOffset?> ReadLastUserInputAsync()
@@ -326,10 +257,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 return _lensPage;
             }
 
-            _lensPage = await _context.NewPageAsync().ConfigureAwait(false);
-            _lensPage.Close += OnLensPageClosed;
-            _logger.LogDebug("Lens tab created");
-            return _lensPage;
+            // Unattended host (NullShellChannel): there is no pane to show a lens in.
+            _logger.LogDebug("No shell attached — lens unavailable");
+            return null;
         }
         catch (Exception ex)
         {
@@ -398,16 +328,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
-    /// <inheritdoc />
-    /// <summary>
-    /// workspace-9k27.7: public startup entry — Program.cs calls this BEFORE any
-    /// browser/GUI work, while the terminal is guaranteed frontmost. The lazy
-    /// call at first browser launch remains as a permission-granted-later retry,
-    /// but can no longer be the FIRST capture (which recorded Slack/IDE if the
-    /// user had switched apps before the first page load).
-    /// </summary>
-    public Task CaptureTerminalIdentityAsync() => CaptureTerminalBundleIdAsync();
-
     public async Task WarmUpAsync()
     {
         _logger.LogDebug("Warming up browser session (headful — never headless)");
@@ -451,82 +371,24 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     /// <inheritdoc />
     public async Task RestoreWindowAsync()
     {
-        if (_disposed || _page == null)
+        // Unattended host (NullShellChannel): no user is present and the off-screen browser
+        // window is not managed — nothing to bring forward.
+        if (_disposed || _page == null || !_shell.IsConnected)
         {
             return;
         }
 
-        if (_shell.IsConnected)
-        {
-            // Single-window shell: "bring the browser forward for interaction" (captcha,
-            // manual login) = reveal the pane and hand it the keyboard (browser mode).
-            // Esc returns to the reader; the next MinimizeWindowAsync hand-back also
-            // switches the mode back. No OS window exists to un-minimize or raise.
-            Interlocked.Exchange(ref _pendingInteractionHandback, 1);
-            if (await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false))
-            {
-                _isDocked = true;
-            }
-
-            await _shell.SetModeAsync("browser").ConfigureAwait(false);
-            return;
-        }
-
-        // workspace-fihe follow-up: several restore-for-interaction flows (manual login,
-        // ':cred test', the podcast provider's bot-challenge) have NO dedicated cleanup call —
-        // the window is eventually hidden by the NEXT background MinimizeWindowAsync. Record
-        // that WE brought the browser forward so that next hide — whoever triggers it — hands
-        // keyboard focus back instead of stranding it on the invisible parked browser. Safe
-        // against the focus-war: the hand-back is still gated on OUR browser being frontmost.
+        // Single-window shell: "bring the browser forward for interaction" (captcha,
+        // manual login) = reveal the pane and hand it the keyboard (browser mode).
+        // Esc returns to the reader; the next MinimizeWindowAsync hand-back also
+        // switches the mode back. No OS window exists to un-minimize or raise.
         Interlocked.Exchange(ref _pendingInteractionHandback, 1);
-
-        // workspace-v7g7: if the USER had minimized the window (on macOS any minimize is theirs —
-        // we never iconify there; elsewhere our own iconify is flagged), remember it so the
-        // post-interaction cleanup park returns the window to THEIR minimized state instead of a
-        // visible park. Read BEFORE the un-minimize below destroys the evidence.
-        var priorState = await GetWindowStateAsync().ConfigureAwait(false);
-        if (priorState == "minimized" && !_iconifiedByUs)
+        if (await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false))
         {
-            Interlocked.Exchange(ref _restoreFoundUserMinimized, 1);
+            _isDocked = true;
         }
 
-        // workspace-ynn9: the window is now brought ON-SCREEN for the user to interact with, so it
-        // is no longer OUR-hidden. Clearing this means a subsequent USER-minimize of this on-screen
-        // window is correctly treated as "leave it alone" by the re-dock gate (wo4q).
-        _iconifiedByUs = false;
-
-        // workspace-v7g7: the window is intentionally moving on-screen — the corner memory is
-        // stale, so the next park re-places the tile instead of "respecting" this position.
-        _lastCornerRect = null;
-        _cornerRespectArmed = false;
-
-        try
-        {
-            // Un-minimize via CDP first (BringToFrontAsync alone doesn't restore
-            // a CDP-minimized window on macOS)
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var windowId = windowInfo.GetProperty("windowId").GetInt32();
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
-            }).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to un-minimize browser window via CDP (non-fatal)");
-        }
-
-        try
-        {
-            await _page.BringToFrontAsync().ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to bring browser window to front (non-fatal)");
-        }
+        await _shell.SetModeAsync("browser").ConfigureAwait(false);
     }
 
     /// <inheritdoc />
@@ -566,54 +428,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
-        // workspace-fihe follow-up: fold in any pending hand-back recorded by RestoreWindowAsync.
-        // Restore-for-interaction flows without a dedicated cleanup rely on the NEXT hide (often a
-        // background prefetch park) to return focus; consuming the latch here restores the pre-fihe
-        // self-heal without reintroducing the focus-war (the refocus stays frontmost-gated).
-        var handBack = weJustActivatedBrowser
-            || Interlocked.Exchange(ref _pendingInteractionHandback, 0) == 1;
-
-        // Sidecar mode (workspace-exbz): "get out of the way" never hides a dock the
-        // user wants and never SUMMONS a window they closed (workspace-wo4q). One
-        // exception (workspace-mctt): a window RESTORED for interaction (captcha /
-        // manual login brings the fetch tab forward) returns to the wanted dock —
-        // post-gate cleanup calls this exact method.
-        if (_userWantsDock)
-        {
-            // workspace-fihe: re-dock (which brings the browser ON-SCREEN) ONLY on the
-            // interaction-cleanup path that just had the browser forward. A BACKGROUND prefetch
-            // call must never re-dock a parked window — raising the browser over the app the user
-            // switched to is the focus-war via the re-dock path. Its parked window simply stays
-            // parked until the user's next 'O' / dock action re-summons it.
-            // workspace-ynn9: our truly-hidden park reports windowState=minimized on non-macOS (the
-            // iconify that hides it under a real WM) — the SAME state a USER-minimize produces. So
-            // windowState alone can't tell them apart; gate the "minimized is re-dockable" case on
-            // _iconifiedByUs (WE hid it). macOS stays strict "normal". This preserves the
-            // workspace-wo4q contract: a window the USER minimized/closed is left alone.
-            var windowState = await GetWindowStateAsync().ConfigureAwait(false);
-            var reDockable = OperatingSystem.IsMacOS()
-                ? windowState == "normal"
-                : windowState == "normal" || (windowState == "minimized" && _iconifiedByUs);
-            if (handBack && !_isDocked && reDockable)
-            {
-                await DockWindowAsync().ConfigureAwait(false); // force-refocuses on success
-            }
-            else if (handBack)
-            {
-                // Already docked (or in a non-normal state): the interaction happened in the
-                // docked window itself — e.g. the user clicked a captcha in the sidecar — so
-                // no re-dock runs and nothing else hands focus back. Do it here, gated on the
-                // browser actually being frontmost (workspace-fihe audit F2).
-                await RefocusTerminalAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
-            }
-
-            return;
-        }
-
-        // Non-sidecar park. Forward the intent: an interaction-cleanup park (handBack) returns
-        // keyboard focus to the terminal (else it would strand on the now-invisible browser the
-        // user was interacting with); a routine background park stays focus-neutral.
-        await ParkWindowOffScreenAsync(handBack).ConfigureAwait(false);
+        // Unattended host (NullShellChannel): the browser window lives off-screen for the whole
+        // run — nothing to park or hand focus back to. Consume the latch so it can't go stale.
+        Interlocked.Exchange(ref _pendingInteractionHandback, 0);
     }
 
     /// <inheritdoc />
@@ -639,26 +456,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return await DockWindowAsync().ConfigureAwait(false);
         }
 
-        if (_isDocked)
-        {
-            // The user explicitly un-docked: drop the sticky intent so a future headed
-            // relaunch does NOT auto-re-dock against their wishes, then re-PARK the window
-            // off-screen (workspace-75ng) — not OS-minimized — so it keeps rendering and
-            // re-docks instantly with current content. Still reported as Minimized.
-            //
-            // workspace-fihe: dismiss hands focus back to the terminal (weJustActivatedBrowser:
-            // true) because the user may have clicked into the docked live page, leaving focus on
-            // the browser we are about to hide. The refocus is gated on the browser still being
-            // frontmost, so it is a no-op when the terminal already has focus and never steals
-            // focus from a foreign app the user switched to. (Routed straight through Park rather
-            // than MinimizeWindowAsync, whose shared "get out of the way" callers must stay
-            // focus-neutral.)
-            _userWantsDock = false;
-            await ParkWindowOffScreenAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
-            return BrowserWindowState.Minimized;
-        }
-
-        return await DockWindowAsync().ConfigureAwait(false);
+        // Unattended host (NullShellChannel): there is no pane to dock.
+        return null;
     }
 
     /// <inheritdoc />
@@ -1059,11 +858,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             _disposed = true;
 
-            // workspace-9k27.6: give the terminal its full window back on ANY
-            // exit while docked+tiled — DisposeContextUnsafeAsync never did, so
-            // a clean quit left the user's terminal permanently shrunken.
-            await RestoreTerminalTileAsync().ConfigureAwait(false);
-
             await DisposeContextUnsafeAsync().ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -1088,431 +882,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
-    /// <summary>
-    /// Reads the headed window's CDP windowState ("normal" / "minimized" / …), or
-    /// null when unavailable. Used to distinguish a RESTORED window (re-dockable)
-    /// from a minimized/closed one (leave it alone).
-    /// </summary>
-    private async Task<string?> GetWindowStateAsync()
-    {
-        if (_disposed || _page == null)
-        {
-            return null;
-        }
-
-        try
-        {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
-            return windowInfo?.GetProperty("bounds").GetProperty("windowState").GetString();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to read window state (non-fatal)");
-            return null;
-        }
-    }
-
-    // workspace-75ng: capture the frontmost GUI app's bundle id ONCE — at the first browser
-    // launch, before the headed window can take focus — so refocus targets the real terminal
-    // (Ghostty, Warp, anything) by id rather than guessing from TERM_PROGRAM. Best-effort and
-    // idempotent: on failure the bundle id stays null and refocus falls back to the name map.
-    private async Task CaptureTerminalBundleIdAsync()
-    {
-        // Retry on every launch until we actually capture an id (workspace-75ng): if Automation
-        // permission was not granted at first launch, a later launch — once the user grants it —
-        // still captures. A successful capture short-circuits all later attempts.
-        if (!OperatingSystem.IsMacOS() || _terminalBundleId is not null)
-        {
-            return;
-        }
-
-        var result = await RunOsascriptAsync(TerminalRefocus.CaptureFrontmostBundleIdScript).ConfigureAwait(false);
-        if (result is null)
-        {
-            return;
-        }
-
-        if (result.Value.ExitCode != 0)
-        {
-            _logger.LogWarning(
-                "Could not capture the terminal app for focus return (osascript exit {ExitCode}): {Error}. "
-                + "Grant Automation permission: System Settings → Privacy & Security → Automation. "
-                + "Falling back to the TERM_PROGRAM name map.",
-                result.Value.ExitCode,
-                result.Value.StdErr.Trim());
-            NotifyPermissionIssueOnce();
-            return;
-        }
-
-        var bundleId = result.Value.StdOut.Trim();
-        if (TerminalRefocus.IsUsableBundleId(bundleId))
-        {
-            _terminalBundleId = bundleId;
-            _logger.LogInformation("Captured terminal app for focus return: {BundleId}", bundleId);
-        }
-        else
-        {
-            _logger.LogDebug(
-                "Frontmost-app capture returned an unusable value ('{Value}') — falling back to TERM_PROGRAM",
-                bundleId);
-        }
-    }
-
-    // workspace-fihe: reads the bundle id of the current frontmost GUI app so a refocus can tell
-    // whether OUR browser still holds focus (hand it back to the terminal) or the user has moved
-    // to a foreign app (leave them alone). Reuses the startup capture script; returns null on any
-    // failure so the caller falls back to its best-effort intent.
-    private async Task<string?> QueryFrontmostBundleIdAsync()
-    {
-        if (!OperatingSystem.IsMacOS())
-        {
-            return null;
-        }
-
-        var result = await RunOsascriptAsync(TerminalRefocus.CaptureFrontmostBundleIdScript).ConfigureAwait(false);
-        if (result is not { ExitCode: 0 } r)
-        {
-            return null;
-        }
-
-        var id = r.StdOut.Trim();
-        return TerminalRefocus.IsUsableBundleId(id) ? id : null;
-    }
-
-    // workspace-fihe: <paramref name="weJustActivatedBrowser"/> is true ONLY on paths where
-    // WireCopy itself just raised/activated the browser window (dock / dismiss / launch-flash /
-    // restore-for-interaction). Background prefetch parks the off-screen window without ever
-    // showing it, so they pass false and never refocus — that unconditional re-activation on a
-    // cadence was the reported focus-war that fought the user switching to another app.
-    // workspace-ynn9: <paramref name="linuxRaise"/> chooses the Linux hand-back primitive. On the
-    // HIDE path the browser is gone, so RAISE + focus the terminal (windowactivate). On the DOCK
-    // path the browser must stay visible beside the terminal, so focus WITHOUT raising
-    // (windowfocus) — raising the un-tiled full-size terminal would cover the just-docked browser.
-    private async Task RefocusTerminalAsync(bool weJustActivatedBrowser, bool force = false, bool linuxRaise = true)
-    {
-        // Any hand-back attempt satisfies a pending RestoreWindowAsync latch — clear it here (the
-        // single consumer chokepoint) so a stale latch can't fire a second, later hand-back.
-        if (weJustActivatedBrowser)
-        {
-            Interlocked.Exchange(ref _pendingInteractionHandback, 0);
-        }
-
-        // Fast path: a background park never brings the browser forward, so there is nothing to
-        // hand back on any platform — skip without touching the window manager.
-        if (!weJustActivatedBrowser)
-        {
-            return;
-        }
-
-        // workspace-ynn9: on Linux the terminal is a separate X window and hiding/iconifying the
-        // browser lets the WM reassign focus, so explicitly hand focus back to the captured
-        // terminal window. No-ops when no id was captured or xdotool/wmctrl is absent. The
-        // frontmost-app guard and debounce below are macOS-specific (they rely on osascript).
-        if (!OperatingSystem.IsMacOS())
-        {
-            await RefocusTerminalLinuxAsync(linuxRaise).ConfigureAwait(false);
-            return;
-        }
-
-        // Only return focus while the frontmost app is still OURS. If the user has moved to a
-        // foreign app (e.g. the Claude app) since we raised the browser, respect it — never yank
-        // focus back. DecideRefocus is the single, unit-tested source of truth for this call.
-        var frontmost = await QueryFrontmostBundleIdAsync().ConfigureAwait(false);
-        if (!TerminalRefocus.DecideRefocus(weJustActivatedBrowser: true, frontmost, _terminalBundleId))
-        {
-            _logger.LogDebug(
-                "Not returning focus to the terminal — frontmost app '{Frontmost}' is not WireCopy's "
-                + "browser or terminal; leaving the user where they are (workspace-fihe)",
-                frontmost);
-            return;
-        }
-
-        // Debounce: skip if another refocus happened within the last 500ms — UNLESS forced.
-        // The dock path forces a final refocus AFTER bringing the browser to front, so it must
-        // win even if a park/dock refocus fired moments earlier (workspace-75ng focus-steal).
-        // workspace-9k27.7: the timestamp is only stamped when a claim actually PROCEEDS —
-        // the old Exchange-before-check meant a burst of skipped calls kept extending the
-        // window and could starve non-forced refocus indefinitely. Claimed via
-        // CompareExchange so two racing callers can't both take the same slot.
-        if (!TerminalRefocus.TryClaimRefocusSlot(
-                ref _lastRefocusTicks,
-                DateTime.UtcNow.Ticks,
-                force,
-                TimeSpan.FromMilliseconds(500).Ticks))
-        {
-            return;
-        }
-
-        // Re-activate the EXACT terminal captured at startup (by bundle id), falling back to
-        // the TERM_PROGRAM name map. Null when neither is known — we deliberately do NOT guess
-        // Apple Terminal, which is what returned focus to the wrong app under Ghostty.
-        var termProgram = Environment.GetEnvironmentVariable("TERM_PROGRAM");
-        var script = TerminalRefocus.ResolveActivateScript(_terminalBundleId, termProgram);
-        if (script is null)
-        {
-            _logger.LogDebug(
-                "No terminal target to refocus (no captured bundle id; TERM_PROGRAM='{TermProgram}' unrecognised)",
-                termProgram);
-            return;
-        }
-
-        var result = await RunOsascriptAsync(script).ConfigureAwait(false);
-        if (result is null)
-        {
-            return;
-        }
-
-        if (result.Value.ExitCode != 0)
-        {
-            _logger.LogWarning(
-                "osascript failed (exit {ExitCode}): {Error}. Check System Settings → Privacy & Security → Automation permissions.",
-                result.Value.ExitCode,
-                result.Value.StdErr.Trim());
-            NotifyPermissionIssueOnce();
-            return;
-        }
-
-        _logger.LogDebug(
-            "Refocused terminal via {Target}",
-            _terminalBundleId is not null ? $"bundle id {_terminalBundleId}" : $"TERM_PROGRAM={termProgram}");
-    }
-
-    /// <summary>
-    /// workspace-9k27.7: surfaces ONE user-visible status line the first time an osascript
-    /// call fails for permission-ish reasons. Every failure path already logs a Warning, but
-    /// browse mode logs to file only, so without this the user just experiences "focus keeps
-    /// landing on the wrong app" / "my terminal never resizes" with no visible explanation.
-    /// The latch is only consumed when a sink is actually wired (the notice must not be
-    /// swallowed by an early failure that happens before the orchestrator attaches the sink).
-    /// </summary>
-    private void NotifyPermissionIssueOnce()
-    {
-        if (PermissionNoticeSink is not { } sink)
-        {
-            return;
-        }
-
-        if (Interlocked.Exchange(ref _permissionNoticeShown, 1) != 0)
-        {
-            return;
-        }
-
-        try
-        {
-            sink("macOS automation blocked — focus return/window tiling degraded. "
-                + "Grant access: System Settings → Privacy & Security → Automation + Accessibility");
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Permission notice sink threw (non-fatal)");
-        }
-    }
-
-    /// <summary>
-    /// Runs an osascript expression and returns its exit code / stdout / stderr, or null if
-    /// the process could not start or timed out. Args are passed via <see cref="System.Diagnostics.ProcessStartInfo.ArgumentList"/>
-    /// (no shell), so the AppleScript needs no shell-quoting. macOS-only callers; non-fatal.
-    /// </summary>
-    private async Task<(int ExitCode, string StdOut, string StdErr)?> RunOsascriptAsync(string script)
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "/usr/bin/osascript",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            psi.ArgumentList.Add("-e");
-            psi.ArgumentList.Add(script);
-
-            using var process = System.Diagnostics.Process.Start(psi);
-            if (process is null)
-            {
-                return null;
-            }
-
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            var stdout = await stdoutTask.ConfigureAwait(false);
-            var stderr = await stderrTask.ConfigureAwait(false);
-            return (process.ExitCode, stdout, stderr);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogWarning(
-                ex,
-                "osascript invocation failed — ensure /usr/bin/osascript exists and Automation permissions are granted (non-fatal)");
-            NotifyPermissionIssueOnce();
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// workspace-ynn9: runs a process (no shell) and returns exit code / stdout / stderr, or null
-    /// if it could not start or timed out. Used for the Linux xdotool/wmctrl focus hand-back. Args
-    /// go through <see cref="System.Diagnostics.ProcessStartInfo.ArgumentList"/> (no shell quoting).
-    /// Non-fatal by contract — every caller treats null/non-zero as "feature unavailable here".
-    /// </summary>
-    private async Task<(int ExitCode, string StdOut, string StdErr)?> RunProcessCaptureAsync(
-        string fileName, params string[] args)
-    {
-        try
-        {
-            var psi = new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = fileName,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            };
-            foreach (var a in args)
-            {
-                psi.ArgumentList.Add(a);
-            }
-
-            using var process = System.Diagnostics.Process.Start(psi);
-            if (process is null)
-            {
-                return null;
-            }
-
-            var stdoutTask = process.StandardOutput.ReadToEndAsync();
-            var stderrTask = process.StandardError.ReadToEndAsync();
-            await process.WaitForExitAsync().WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
-            return (process.ExitCode, await stdoutTask.ConfigureAwait(false), await stderrTask.ConfigureAwait(false));
-        }
-        catch (Exception ex)
-        {
-            // The tool is simply not installed (bare Xvfb, minimal container) — expected; debug only.
-            _logger.LogDebug(ex, "Process '{FileName}' could not be run (non-fatal; feature unavailable here)", fileName);
-            return null;
-        }
-    }
-
-    // workspace-ynn9: capture the terminal emulator's X11 window id ONCE on Linux, before Playwright
-    // spawns the browser while the terminal still owns focus. Prefer $WINDOWID (exported by xterm and
-    // most X terminal emulators); fall back to `xdotool getactivewindow`. Leaves the id null (refocus
-    // no-ops) when there is no X terminal window — bare Xvfb, a pty with no emulator, or no xdotool.
-    private async Task CaptureTerminalX11WindowIdAsync()
-    {
-        if (OperatingSystem.IsMacOS() || OperatingSystem.IsWindows() || _terminalX11WindowId is not null)
-        {
-            return;
-        }
-
-        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
-        {
-            return;
-        }
-
-        // Use $WINDOWID ONLY: it is exported by the terminal emulator itself, so it reliably names
-        // the TERMINAL's window. A prior version fell back to `xdotool getactivewindow`, but that
-        // returns whatever window currently holds focus — which, by the time this runs during
-        // browser launch, may already be the browser or a launcher splash — and would then make the
-        // focus hand-back raise the WRONG window (workspace-ynn9 review). No $WINDOWID → no capture
-        // → the Linux hand-back cleanly no-ops.
-        var fromEnv = Environment.GetEnvironmentVariable("WINDOWID");
-        if (!string.IsNullOrWhiteSpace(fromEnv) && long.TryParse(fromEnv.Trim(), out var envId) && envId > 0)
-        {
-            _terminalX11WindowId = fromEnv.Trim();
-            _logger.LogInformation("Captured terminal X11 window id {WindowId} for focus return (from $WINDOWID)", _terminalX11WindowId);
-        }
-        else
-        {
-            _logger.LogDebug("No $WINDOWID exported — Linux focus hand-back will no-op (bare Xvfb / terminal without $WINDOWID)");
-        }
-    }
-
-    // workspace-ynn9.7: capture our headed browser's X11 window id while it is frontmost (call
-    // right after BringToFront). Non-macOS + $WINDOWID-terminal known (else the hand-back no-ops
-    // anyway, so there's nothing to guard). Captured once; the headed window id is stable.
-    private async Task CaptureBrowserX11WindowIdAsync()
-    {
-        if (OperatingSystem.IsMacOS()
-            || _browserX11WindowId is not null
-            || _terminalX11WindowId is null
-            || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
-        {
-            return;
-        }
-
-        var result = await RunProcessCaptureAsync("xdotool", "getactivewindow").ConfigureAwait(false);
-        if (result is { ExitCode: 0 } r && long.TryParse(r.StdOut.Trim(), out var id) && id > 0
-            && r.StdOut.Trim() != _terminalX11WindowId)
-        {
-            _browserX11WindowId = r.StdOut.Trim();
-            _logger.LogDebug("Captured headed browser X11 window id {WindowId} for the focus-handback guard", _browserX11WindowId);
-        }
-    }
-
-    // workspace-ynn9: hand keyboard focus back to the captured terminal X window on Linux after the
-    // browser was hidden or docked. raise=true (HIDE path, browser gone) uses `xdotool
-    // windowactivate` to RAISE + focus the terminal; raise=false (DOCK path, browser must stay
-    // visible) uses `xdotool windowfocus` to set input focus WITHOUT restacking, so the un-tiled
-    // full-size terminal never covers the just-docked browser. No-ops when no id was captured or
-    // xdotool is absent. workspace-ynn9.7: skips entirely when a FOREIGN window (not our browser or
-    // terminal) holds focus, so the user switching apps in the hand-back window is respected.
-    private async Task RefocusTerminalLinuxAsync(bool raise)
-    {
-        if (_terminalX11WindowId is null
-            || string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")))
-        {
-            return;
-        }
-
-        // workspace-ynn9.7: mirror the macOS frontmost-guard — only hand focus back while the
-        // ACTIVE window is OURS (the browser we just raised, or the terminal). If a FOREIGN window
-        // holds focus, the user switched away in the hand-back window, so respect it and skip.
-        // Unknown/zero active (focus loose after an iconify) is treated as ours → proceed.
-        var active = await RunProcessCaptureAsync("xdotool", "getactivewindow").ConfigureAwait(false);
-        var activeId = active is { ExitCode: 0 } ? active.Value.StdOut.Trim() : null;
-        if (!string.IsNullOrEmpty(activeId)
-            && activeId != "0"
-            && activeId != _terminalX11WindowId
-            && activeId != _browserX11WindowId)
-        {
-            _logger.LogDebug(
-                "Skipping Linux focus hand-back — a foreign window ({Active}) holds focus, not our browser/terminal",
-                activeId);
-            return;
-        }
-
-        if (raise)
-        {
-            var activate = await RunProcessCaptureAsync("xdotool", "windowactivate", _terminalX11WindowId).ConfigureAwait(false);
-            if (activate is { ExitCode: 0 })
-            {
-                _logger.LogDebug("Refocused terminal via xdotool windowactivate {WindowId}", _terminalX11WindowId);
-                return;
-            }
-
-            var viaWmctrl = await RunProcessCaptureAsync("wmctrl", "-i", "-a", _terminalX11WindowId).ConfigureAwait(false);
-            if (viaWmctrl is { ExitCode: 0 })
-            {
-                _logger.LogDebug("Refocused terminal via wmctrl -i -a {WindowId}", _terminalX11WindowId);
-                return;
-            }
-        }
-        else
-        {
-            // Focus WITHOUT raising — the docked browser must remain visible on top.
-            var focus = await RunProcessCaptureAsync("xdotool", "windowfocus", _terminalX11WindowId).ConfigureAwait(false);
-            if (focus is { ExitCode: 0 })
-            {
-                _logger.LogDebug("Focused terminal (no raise) via xdotool windowfocus {WindowId}", _terminalX11WindowId);
-                return;
-            }
-        }
-
-        _logger.LogDebug("Linux terminal refocus no-op (xdotool/wmctrl unavailable or window gone)");
-    }
-
     // NEVER-HEADLESS POLICY (workspace-8ne3): no `headless` parameter — Chromium is ALWAYS launched headful.
     // Headless is bot-detected/blocked on this app's target sites (Cloudflare, NYT, macleans.ca), so it is
     // disabled unconditionally. On a display-less host the headful browser runs under a virtual display (the
@@ -1528,15 +897,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return;
         }
 
-        // workspace-75ng: capture the terminal's bundle id NOW — before Playwright spawns the
-        // headed browser — while the terminal is still the frontmost app, so the later
-        // RefocusTerminalAsync re-activates the right app (fixes Ghostty). Runs once ever.
-        await CaptureTerminalBundleIdAsync().ConfigureAwait(false);
-
-        // workspace-ynn9: the Linux equivalent — capture the terminal's X11 window id now, while
-        // it still owns focus, so the browser-hide focus hand-back can re-activate it.
-        await CaptureTerminalX11WindowIdAsync().ConfigureAwait(false);
-
+        // Direct launch — UNATTENDED verbs only (run-recipe / resolve-section / scheduled
+        // runs; the interactive app always attaches to the shell). Headful under a virtual
+        // display, parked off-screen for the whole run via the launch arg below — no OS
+        // window management, focus hand-back, or terminal tiling exists on this path.
         // Clean up any leftover state from a previous failed launch
         await DisposeContextUnsafeAsync().ConfigureAwait(false);
 
@@ -1629,23 +993,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 "--disable-renderer-backgrounding",
             };
 
-            // workspace-75ng: spawn the headed window away from Chromium's default on-screen
-            // position so the launch never flashes a big window over the user's work.
-            // Corner mode (workspace-v7g7, macOS default): huge POSITIVE coordinates — an OS
-            // that clamps (macOS pulls windows back on-screen; the old -32000 spawn clamped
-            // into the field-reported top-LEFT sliver) lands it near the BOTTOM-RIGHT, where
-            // the early/end-of-launch park then places the exact corner tile.
-            // Offscreen mode keeps the classic macOS-only off-screen spawn (workspace-ynn9); on
-            // a real non-macOS window manager either coordinate is clamped anyway and the early
-            // HideAsync (which also iconifies) is what hides the window there.
-            if (_browserConfig.EffectiveParkMode == ParkMode.Corner)
-            {
-                args.Add("--window-position=20000,20000");
-            }
-            else if (OperatingSystem.IsMacOS())
-            {
-                args.Add($"--window-position={_browserConfig.ParkCoordinate},{_browserConfig.ParkCoordinate}");
-            }
+            // Unattended run: spawn the headed window at a fixed off-screen position so it
+            // stays out of the way for the whole run (bare Xvfb honors the coordinate; a
+            // real WM clamping it on-screen is acceptable when nobody is watching).
+            args.Add("--window-position=20000,20000");
 
             if (OperatingSystem.IsLinux())
             {
@@ -1689,29 +1040,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             _page = _context.Pages.Count > 0 ? _context.Pages[0] : await _context.NewPageAsync().ConfigureAwait(false);
 
-            // workspace-v7g7: capture the REAL display work area from the still-unemulated first
-            // page — the moment the fetch viewport is applied below, every JS screen metric on
-            // this page reports the emulated 1280x720 instead of the display. Corner planning
-            // uses this pre-emulation truth.
-            _realDisplay = await CaptureRealDisplayAsync().ConfigureAwait(false);
-
             // workspace-v7g7: the context has NO Playwright-managed viewport (see the launch
             // options) — re-apply the exact viewport the app has always rendered and extracted
             // at (Playwright's old context default) to the fetch page itself.
             await ApplyFetchViewportAsync(_page).ConfigureAwait(false);
-
-            // workspace-ynn9: on non-macOS the window can't be spawned off-screen (the WM clamps
-            // --window-position back on-screen), so it maps at Chromium's default position for a
-            // beat. Hide it as EARLY as possible — before the slower cookie/init setup below —
-            // to shrink the on-screen flash to map→first-CDP. In Offscreen mode this is skipped
-            // on macOS (already off-screen via the launch arg); in Corner mode (workspace-v7g7)
-            // it runs everywhere — the launch arg only lands NEAR the corner (OS-clamped), so the
-            // early park snaps the exact tile sooner. The end-of-launch dock/park below still
-            // runs and owns the final state + focus hand-back.
-            if (!OperatingSystem.IsMacOS() || _browserConfig.EffectiveParkMode == ParkMode.Corner)
-            {
-                await HideHeadedWindowEarlyAsync().ConfigureAwait(false);
-            }
 
             // Inject stored cookies on every launch so mid-session updates
             // (e.g., Shift+I login) are picked up on browser restart.
@@ -1721,21 +1053,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // Reset the docked flag if THIS headed window is later closed/crashes so the persistent "docked"
             // affordance can't lie (workspace-v7mb).
             _page!.Close += OnHeadedPageClosed;
-
-            // When the headed browser launches/reappears, re-dock it if the user was in docked
-            // mode, otherwise PARK it off-screen (workspace-75ng) — the default. Parking (not
-            // minimizing) keeps it rendering for an instant re-dock and never pops up or steals
-            // focus. It is brought on-screen later only when the user presses 'O'.
-            if (_userWantsDock)
-            {
-                await DockWindowAsync().ConfigureAwait(false);
-            }
-            else
-            {
-                // Launch parks the just-raised headed window off-screen: hand the launch-flash
-                // focus back to the terminal (gated on the browser still being frontmost).
-                await ParkWindowOffScreenAsync(weJustActivatedBrowser: true).ConfigureAwait(false);
-            }
         }
         catch
         {
@@ -1918,33 +1235,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
     }
 
-    // workspace-ynn9: minimal early hide used during launch on non-macOS to close the map→setup
-    // flash window. Pure HideAsync — no tile-restore or focus hand-back (the end-of-launch
-    // park/dock owns those). Swallows CDP failures (non-fatal): a failed early hide just means the
-    // window stays visible a beat longer until the end-of-launch park hides it.
-    private async Task HideHeadedWindowEarlyAsync()
-    {
-        if (_disposed || _page == null)
-        {
-            return;
-        }
-
-        try
-        {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var windowId = windowInfo.GetProperty("windowId").GetInt32();
-            var geo = new CdpDockWindowGeometry(
-                _page, cdp, windowId, _browserConfig.DockSettleDelayMs, _browserConfig.ParkCoordinate);
-            await ApplyParkedStateAsync(geo).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Early headed-window hide failed (non-fatal)");
-        }
-    }
-
     /// <summary>
     /// Creates a tab in the shared context WITHOUT activating it (workspace-v7g7):
     /// <c>Target.createTarget background:true</c> over CDP, then adopts the Playwright page that
@@ -2018,98 +1308,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <summary>
-    /// The single "make the window not-in-the-way" actuator (workspace-v7g7), shared by the early
-    /// launch hide and every runtime park. Reads the CURRENT window state and lets the pure
-    /// <see cref="ParkPlanner"/> decide — the invariants live there: a USER-minimized window is
-    /// never touched (the old unconditional normalize deminiaturized it twice per prefetched
-    /// article — the field-reported "pops back up when I open a new site"), Corner mode places the
-    /// intentional bottom-right tile, Offscreen keeps the classic hide.
-    /// </summary>
-    private async Task ApplyParkedStateAsync(IDockWindowGeometry geo)
-    {
-        var state = await geo.ReadWindowStateAsync().ConfigureAwait(false);
-        var reMinimize = Interlocked.Exchange(ref _restoreFoundUserMinimized, 0) == 1;
-        var decision = ParkPlanner.Decide(
-            state, _iconifiedByUs, reMinimize, _browserConfig.EffectiveParkMode, OperatingSystem.IsMacOS());
-
-        if (decision.NormalizeFirst)
-        {
-            await geo.NormalizeAsync().ConfigureAwait(false);
-        }
-
-        switch (decision.Action)
-        {
-            case ParkPlanner.ParkAction.LeaveMinimized:
-                break;
-
-            case ParkPlanner.ParkAction.ReMinimize:
-                await geo.IconifyAsync().ConfigureAwait(false);
-                break;
-
-            case ParkPlanner.ParkAction.PlaceCorner:
-                var placement = await CornerParker.PlaceAsync(
-                    geo,
-                    _browserConfig.CornerParkWidth,
-                    _browserConfig.CornerParkHeight,
-                    _browserConfig.CornerParkMargin,
-                    _lastCornerRect,
-                    _cornerRespectArmed,
-                    _realDisplay,
-                    _logger).ConfigureAwait(false);
-                _lastCornerRect = placement?.Rect;
-                _cornerRespectArmed = placement?.Settled ?? false;
-                break;
-
-            case ParkPlanner.ParkAction.HideOffscreen:
-                await geo.HideAsync().ConfigureAwait(false);
-                break;
-        }
-
-        _iconifiedByUs = decision.IconifiedByUsAfter;
-    }
-
-    /// <summary>
-    /// Reads the display's REAL work area through the given page while it is still un-emulated
-    /// (workspace-v7g7). Anchors the window on-screen once if the first read is phantom (a
-    /// window spawned far off-screen can report no plausible display). Returns null on failure —
-    /// callers fall back to the JS read.
-    /// </summary>
-    private async Task<SidecarGeometry.DisplayInfo?> CaptureRealDisplayAsync()
-    {
-        if (_page == null)
-        {
-            return null;
-        }
-
-        try
-        {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var windowId = windowInfo.GetProperty("windowId").GetInt32();
-            var geo = new CdpDockWindowGeometry(
-                _page, cdp, windowId, _browserConfig.DockSettleDelayMs, _browserConfig.ParkCoordinate);
-
-            var display = await SidecarDocker.ReadStableDisplayAsync(geo).ConfigureAwait(false);
-            if (display is null)
-            {
-                await geo.MoveAsync(0, 0).ConfigureAwait(false);
-                display = await SidecarDocker.ReadStableDisplayAsync(geo).ConfigureAwait(false);
-            }
-
-            _logger.LogInformation(
-                "Real display work area (pre-emulation): {Display}",
-                display is { } d ? $"{d.AvailLeft},{d.AvailTop} {d.AvailWidth}x{d.AvailHeight}" : "unreadable");
-            return display;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Could not capture the real display work area (non-fatal)");
-            return null;
-        }
-    }
-
-    /// <summary>
     /// Applies the fetch/prefetch pages' fixed viewport (workspace-v7g7) — the exact 1280x720
     /// the app rendered and extracted at when the CONTEXT owned the viewport, now re-applied per
     /// page because the context runs viewport-less so the OS window stays ours to place.
@@ -2128,165 +1326,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <summary>
-    /// Parks the headed window out of the way (workspace-75ng/ynn9/v7g7), state-aware: a
-    /// USER-minimized window is left untouched; Corner mode (macOS default) keeps an intentional
-    /// bottom-right tile (windowState=normal, keeps painting, no focus grab); Offscreen mode does
-    /// the classic off-screen move plus a non-macOS iconify (a real window manager clamps the
-    /// off-screen coordinate back on-screen — the iconify is what actually removes it from view).
-    /// Clears the docked flag, restores the terminal tile, and hands focus back. Assumes a live
-    /// headed <see cref="_page"/>; swallows CDP failures (non-fatal).
-    /// </summary>
-    // workspace-fihe: <paramref name="weJustActivatedBrowser"/> is forwarded to the terminal
-    // refocus. It is true only when this park follows WireCopy raising the browser (the
-    // launch-flash park, or the dock-failure re-park), and false for the routine background /
-    // dismiss parks that never showed the window — those must not re-activate the terminal.
-    private async Task ParkWindowOffScreenAsync(bool weJustActivatedBrowser)
-    {
-        if (_disposed || _page == null)
-        {
-            return;
-        }
-
-        _isDocked = false;
-
-        try
-        {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var windowId = windowInfo.GetProperty("windowId").GetInt32();
-
-            // The single runtime hide chokepoint (workspace-ynn9/v7g7): state-aware, so a
-            // USER-minimized window is left alone, Corner mode (macOS default — it CLAMPS
-            // off-screen coordinates into a stray sliver) places the intentional bottom-right
-            // tile, and Offscreen keeps the classic off-screen move + non-macOS iconify.
-            var geo = new CdpDockWindowGeometry(
-                _page, cdp, windowId, _browserConfig.DockSettleDelayMs, _browserConfig.ParkCoordinate);
-            await ApplyParkedStateAsync(geo).ConfigureAwait(false);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to park browser window off-screen (non-fatal)");
-        }
-
-        // workspace-75ng.4: if the sidecar had tiled the screen, give the terminal its full
-        // window back so dismissing returns to the terminal-only view.
-        await RestoreTerminalTileAsync().ConfigureAwait(false);
-
-        // Hand keyboard focus back to the terminal — but only when this park followed WireCopy
-        // raising the browser (weJustActivatedBrowser); a routine background/dismiss park never
-        // showed the window, so it must not re-activate the terminal (workspace-fihe).
-        await RefocusTerminalAsync(weJustActivatedBrowser).ConfigureAwait(false);
-    }
-
-    // workspace-75ng.4: resize the terminal window to the given tile (the slice the docked
-    // browser leaves free). macOS only; no-op without tiling enabled, a captured terminal
-    // bundle id, or Accessibility permission — it degrades to the plain edge dock. Captures the
-    // terminal's pre-dock bounds ONCE so RestoreTerminalTileAsync can put it back on dismiss.
-    private async Task TileTerminalAsync(TerminalTiling.WindowRect terminalRect)
-    {
-        if (!_browserConfig.TileTerminalWithSidecar
-            || !OperatingSystem.IsMacOS()
-            || _terminalBundleId is null)
-        {
-            return;
-        }
-
-        // Capture the terminal's current bounds once (before the first resize of this dock
-        // session) so dismiss restores exactly what the user had.
-        if (_terminalTileBounds is null)
-        {
-            var getResult = await RunOsascriptAsync(
-                TerminalTiling.BuildGetBoundsScript(_terminalBundleId)).ConfigureAwait(false);
-            if (getResult is { ExitCode: 0 })
-            {
-                _terminalTileBounds = TerminalTiling.TryParseBounds(getResult.Value.StdOut);
-            }
-
-            if (_terminalTileBounds is null)
-            {
-                _logger.LogWarning(
-                    "Could not read the terminal window bounds for side-by-side tiling — skipping the resize. "
-                    + "Grant Accessibility permission: System Settings → Privacy & Security → Accessibility.");
-                NotifyPermissionIssueOnce();
-                return;
-            }
-        }
-
-        var setResult = await RunOsascriptAsync(
-            TerminalTiling.BuildSetBoundsScript(_terminalBundleId, terminalRect)).ConfigureAwait(false);
-        if (setResult is { ExitCode: not 0 })
-        {
-            _logger.LogWarning(
-                "Failed to tile the terminal window (osascript exit {ExitCode}): {Error}. "
-                + "Grant Accessibility permission: System Settings → Privacy & Security → Accessibility.",
-                setResult.Value.ExitCode,
-                setResult.Value.StdErr.Trim());
-            NotifyPermissionIssueOnce();
-        }
-        else
-        {
-            // workspace-9k27.6: persist the pre-dock bounds + the tile so a crash
-            // while docked can restore the user's terminal on next launch.
-            _lastTerminalTileRect = terminalRect;
-            TerminalTileRecovery.Record(_terminalBundleId, _terminalTileBounds.Value, terminalRect, _logger);
-        }
-    }
-
-    // workspace-75ng.4: restore the terminal to its pre-dock bounds captured by
-    // TileTerminalAsync, then forget them. No-op when tiling never ran.
-    private async Task RestoreTerminalTileAsync()
-    {
-        if (_terminalTileBounds is null || _terminalBundleId is null || !OperatingSystem.IsMacOS())
-        {
-            return;
-        }
-
-        var rect = _terminalTileBounds.Value;
-        _terminalTileBounds = null;
-        var tiled = _lastTerminalTileRect;
-        _lastTerminalTileRect = null;
-
-        // The tile set-bounds never succeeded — the terminal was never actually
-        // resized, so "restoring" now would clobber a window we never touched.
-        if (tiled is null)
-        {
-            TerminalTileRecovery.Clear(_logger);
-            return;
-        }
-
-        // workspace-9k27.6: the restore script finds the window still sitting ON
-        // the tile WE set and restores exactly that one — never `window 1`, which
-        // in a multi-window terminal may be a different window, and never a window
-        // the user has since moved/resized (their arrangement wins; no match = no-op).
-        var result = await RunOsascriptAsync(TerminalTiling.BuildRestoreMatchedWindowScript(
-            _terminalBundleId, tiled.Value, rect, TerminalTileRecovery.MatchTolerancePx)).ConfigureAwait(false);
-        if (result is { ExitCode: 0 } r)
-        {
-            if (r.StdOut.Trim() == TerminalTiling.RestoreResultNoMatch)
-            {
-                _logger.LogInformation(
-                    "Terminal was rearranged while docked — keeping the user's layout instead of restoring pre-dock bounds");
-            }
-        }
-        else if (result is { ExitCode: not 0 })
-        {
-            _logger.LogWarning(
-                "Failed to restore the terminal window after un-tiling (osascript exit {ExitCode}): {Error}",
-                result.Value.ExitCode,
-                result.Value.StdErr.Trim());
-            NotifyPermissionIssueOnce();
-        }
-
-        // Restored (or attempted) — the crash-recovery record is no longer needed.
-        TerminalTileRecovery.Clear(_logger);
-    }
-
-    /// <summary>
-    /// Positions the headed window on the configured side/fraction of the available
-    /// screen (default right half) and marks it docked. Shared by the toggle path and
-    /// the lens-on-demand summon path. Assumes a live headed <see cref="_page"/>;
-    /// returns null (and logs) if CDP positioning fails.
+    /// Reveals the shell's page pane and marks the session docked. Shared by the
+    /// toggle path and the lens-on-demand summon path. Returns null when no shell
+    /// is attached (unattended host) or the pane did not reveal.
     /// </summary>
     private async Task<BrowserWindowState?> DockWindowAsync()
     {
@@ -2310,185 +1352,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             return BrowserWindowState.Docked;
         }
 
-        // workspace-v7g7: docking is an explicit "window on-screen" request — void any pending
-        // return-to-user-minimized intent, and drop the corner memory so the park after an
-        // un-dock re-places the tile instead of "respecting" the dock position.
-        Interlocked.Exchange(ref _restoreFoundUserMinimized, 0);
-        _lastCornerRect = null;
-        _cornerRespectArmed = false;
-
-        try
-        {
-            var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
-            var windowInfo = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false)
-                ?? throw new InvalidOperationException("Browser.getWindowForTarget returned no payload");
-            var windowId = windowInfo.GetProperty("windowId").GetInt32();
-
-            // Activate the LENS tab in the docked window when it exists — the sidecar shows the
-            // lens, never the fetch tab (workspace-qigc). Fall back to the fetch page so the
-            // pre-lens dock paths keep working. NOTE: this OS-activates the browser window
-            // (steals focus); the forced refocus at the end takes it back.
-            var front = _lensPage ?? _page;
-            await front.BringToFrontAsync().ConfigureAwait(false);
-
-            // workspace-ynn9.7: the browser is frontmost right now — capture its X11 window id
-            // (once) so the Linux focus hand-back can tell "our browser has focus" from "a foreign
-            // app has focus". Non-macOS only; no-ops without xdotool / a captured terminal window.
-            await CaptureBrowserX11WindowIdAsync().ConfigureAwait(false);
-
-            // workspace-75ng: place the docked window via SidecarDocker — anchor on-screen,
-            // read a STABLE work area (defeats the phantom read that mis-placed it far-left /
-            // off-screen), place flush, then re-place at the Chromium-CLAMPED width capped to a
-            // phone-width fraction so it is never full-width or past the Dock. All the geometry
-            // decisions are unit-tested cross-platform via the IDockWindowGeometry seam.
-            var geo = new CdpDockWindowGeometry(_page, cdp, windowId, _browserConfig.DockSettleDelayMs);
-
-            // workspace-9k27.8: dock onto the display the TERMINAL occupies, not
-            // the primary. Probe the terminal window's position via osascript on
-            // macOS; elsewhere or on failure, fall back to the primary origin.
-            (int X, int Y)? anchor = null;
-            if (OperatingSystem.IsMacOS() && _terminalBundleId is not null)
-            {
-                var boundsResult = await RunOsascriptAsync(
-                    TerminalTiling.BuildGetBoundsScript(_terminalBundleId)).ConfigureAwait(false);
-                if (boundsResult is { ExitCode: 0 }
-                    && TerminalTiling.TryParseBounds(boundsResult.Value.StdOut) is { } termRect)
-                {
-                    anchor = (termRect.X, termRect.Y);
-                }
-            }
-
-            // workspace-ynn9: on non-macOS the hide ICONIFIES the window; deiconify is not
-            // guaranteed to have COMPOSITED the window by the time placement reads the work area
-            // and re-shows it. Restore + wait until the page reports itself VISIBLE before
-            // placement, so the window is mapped and its first on-screen frame is current (this
-            // replaces the removed post-placement fresh-frame gate — same "ensure a live frame"
-            // intent, but pre-placement, bounded, and non-fatal, with no CDP-session churn).
-            await EnsureWindowRestoredForDockAsync(front, cdp, windowId).ConfigureAwait(false);
-
-            var placement = await SidecarDocker.PlaceAsync(
-                geo,
-                _browserConfig.DockSide,
-                _browserConfig.DockWidthPx,
-                _browserConfig.DockFraction,
-                _logger,
-                anchor,
-                displayOverride: _realDisplay)
-                .ConfigureAwait(false);
-
-            if (placement is { } p)
-            {
-                // Phone-shaped lens (workspace-o5yf): pin the lens viewport to a mobile CSS width
-                // so responsive sites collapse to one column. Sticky emulation — independent of
-                // the window size — so it runs after placement using the placed height.
-                if (_lensPage != null && _browserConfig.LensViewportWidth > 0)
-                {
-                    try
-                    {
-                        await _lensPage.SetViewportSizeAsync(
-                            _browserConfig.LensViewportWidth,
-                            Math.Max(600, p.Browser.Height - 110)).ConfigureAwait(false);
-                    }
-                    catch (Exception ex)
-                    {
-                        _logger.LogDebug(ex, "Failed to set lens viewport (non-fatal)");
-                    }
-                }
-
-                // workspace-75ng.4: side-by-side tiling — resize the terminal to the slice the
-                // browser leaves free (computed from the placed browser width). Only on the dock
-                // transition, never per spotlight update (avoids flicker).
-                var terminalRect = SidecarGeometry.PlanTerminalTile(p.Display, _browserConfig.DockSide, p.Browser.Width);
-                if (terminalRect is { } tr)
-                {
-                    await TileTerminalAsync(tr).ConfigureAwait(false);
-                }
-            }
-            else
-            {
-                // workspace-9k27.9: placement failed/was skipped — the window was
-                // already normalized and moved on-screen by the anchor step, so it
-                // now sits at (0,0) over the terminal. Do NOT claim Docked (the
-                // state must reflect the outcome, not the attempt): re-park it
-                // off-screen and report failure so the caller/UI stays truthful.
-                _logger.LogWarning("Sidecar placement returned no geometry — re-parking off-screen instead of claiming docked");
-
-                // The park itself does not refocus (weJustActivatedBrowser: false); the forced
-                // refocus below owns the hand-back after we brought the browser forward to dock.
-                await ParkWindowOffScreenAsync(weJustActivatedBrowser: false).ConfigureAwait(false);
-                await RefocusTerminalAsync(weJustActivatedBrowser: true, force: true).ConfigureAwait(false);
-                return null;
-            }
-
-            _isDocked = true;
-            _userWantsDock = true;
-            _iconifiedByUs = false; // the window is on-screen and docked now — no longer our-hidden
-
-            // The sidecar is a companion view, not a focus target — hand keyboard focus back to
-            // the terminal. Delay + FORCE so it wins the race against the BringToFront above
-            // (which activated the browser window) — the workspace-75ng focus-steal fix.
-            // workspace-ynn9: linuxRaise:false — on Linux focus the terminal WITHOUT raising it,
-            // so the un-tiled full-size terminal window does not cover the just-docked browser.
-            await Task.Delay(_browserConfig.DockRefocusDelayMs).ConfigureAwait(false);
-            await RefocusTerminalAsync(weJustActivatedBrowser: true, force: true, linuxRaise: false).ConfigureAwait(false);
-            return BrowserWindowState.Docked;
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Failed to dock browser window (non-fatal)");
-            return null;
-        }
-    }
-
-    /// <summary>
-    /// workspace-ynn9: before placement re-shows the window, make sure it is fully restored and
-    /// COMPOSITED. The non-macOS hide iconifies the window, and a WM can deiconify lazily — so a
-    /// re-dock could otherwise place/show a not-yet-mapped window and flash a stale/blank first
-    /// frame. This normalizes and waits until the page reports itself visible (window mapped +
-    /// composited). Best-effort and bounded: it never throws and never blocks the dock — a slow WM
-    /// just means placement proceeds on the best state available, exactly as before this existed.
-    /// Reuses the caller's CDP session (no per-iteration session churn) and does a plain JS
-    /// visibility read (no CDP screenshot), so it adds no session leak or unbounded wait.
-    /// </summary>
-    private async Task EnsureWindowRestoredForDockAsync(IPage front, ICDPSession cdp, int windowId)
-    {
-        const int maxTries = 10;
-        try
-        {
-            for (var i = 0; i < maxTries; i++)
-            {
-                // Deiconify (idempotent) — CDP forbids combining windowState with bounds, so this
-                // is a standalone call; the window may already be normal.
-                await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-                {
-                    ["windowId"] = windowId,
-                    ["bounds"] = new Dictionary<string, object> { ["windowState"] = "normal" },
-                }).ConfigureAwait(false);
-
-                string? visibility = null;
-                try
-                {
-                    visibility = await front.EvaluateAsync<string>("() => document.visibilityState").ConfigureAwait(false);
-                }
-                catch (Exception ex)
-                {
-                    _logger.LogDebug(ex, "visibilityState read failed while restoring for dock (retrying)");
-                }
-
-                if (visibility == "visible")
-                {
-                    return;
-                }
-
-                await Task.Delay(_browserConfig.DockSettleDelayMs).ConfigureAwait(false);
-            }
-
-            _logger.LogDebug("Window did not report visible before dock placement after {Tries} tries — placing anyway", maxTries);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogDebug(ex, "Pre-dock window restore failed (non-fatal) — placement will proceed");
-        }
+        // Unattended host (NullShellChannel): there is no pane to reveal.
+        return null;
     }
 
     // workspace-v7mb: fired by Playwright when the headed window is closed or the tab
@@ -2585,128 +1450,5 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             _playwright = null;
         }
-    }
-
-    /// <summary>
-    /// CDP-backed <see cref="IDockWindowGeometry"/> (workspace-75ng): the real implementation
-    /// of the dock-placement seam. Reads <c>window.screen.avail*</c> off the fetch page and
-    /// moves/sizes the window via <c>Browser.setWindowBounds</c>. The placement ALGORITHM lives
-    /// in <see cref="SidecarDocker"/>/<see cref="SidecarGeometry"/> so it is testable without a
-    /// browser or a Mac; this class is just the thin I/O adapter.
-    /// </summary>
-    private sealed class CdpDockWindowGeometry(
-        IPage page, Microsoft.Playwright.ICDPSession cdp, int windowId, int settleDelayMs = 60, int parkCoordinate = -32000)
-        : IDockWindowGeometry
-    {
-        private readonly int _settleDelayMs = settleDelayMs;
-        private readonly int _parkCoordinate = parkCoordinate;
-
-        public async Task NormalizeAsync() =>
-            await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "normal" }).ConfigureAwait(false);
-
-        public async Task IconifyAsync() =>
-            await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "minimized" }).ConfigureAwait(false);
-
-        public async Task<string?> ReadWindowStateAsync()
-        {
-            try
-            {
-                var info = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
-                return info?.GetProperty("bounds").GetProperty("windowState").GetString();
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        public async Task HideAsync()
-        {
-            // workspace-v7g7: NO normalize here — the caller (ParkPlanner) never routes a
-            // minimized window into this hide (the old unconditional normalize deminiaturized
-            // the user's own Cmd+M on every background prefetch park). CDP forbids combining
-            // windowState with explicit bounds, hence the separate calls below.
-            await SetBoundsRawAsync(new Dictionary<string, object>
-            {
-                ["left"] = _parkCoordinate,
-                ["top"] = _parkCoordinate,
-            }).ConfigureAwait(false);
-
-            // On macOS the off-screen move alone hides it (huge virtual desktop) and keeps it
-            // painting with no genie animation or focus juggle — the proven workspace-75ng park.
-            // Everywhere else, a real window manager clamps the off-screen coordinate back
-            // on-screen, so ALSO iconify: minimize is honored by the WM and truly removes the
-            // window from view. Under bare Xvfb (no WM) the minimize no-ops harmlessly and the
-            // move above is what hides it — so prod and tests exercise the same one primitive.
-            if (!OperatingSystem.IsMacOS())
-            {
-                await SetBoundsRawAsync(new Dictionary<string, object> { ["windowState"] = "minimized" }).ConfigureAwait(false);
-            }
-        }
-
-        public async Task MoveAsync(int left, int top) =>
-            await SetBoundsRawAsync(new Dictionary<string, object> { ["left"] = left, ["top"] = top }).ConfigureAwait(false);
-
-        public Task SettleAsync() => Task.Delay(_settleDelayMs);
-
-        public async Task<SidecarGeometry.DisplayInfo?> ReadDisplayAsync()
-        {
-            try
-            {
-                var s = await page.EvaluateAsync<int[]>(
-                    "() => [window.screen.availWidth, window.screen.availHeight, " +
-                    "Math.round(window.screen.availLeft || 0), Math.round(window.screen.availTop || 0)]")
-                    .ConfigureAwait(false);
-                if (s is not { Length: >= 4 })
-                {
-                    return null;
-                }
-
-                return new SidecarGeometry.DisplayInfo(s[2], s[3], s[0], s[1]);
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        public async Task<TerminalTiling.WindowRect?> ReadWindowAsync()
-        {
-            try
-            {
-                var info = await cdp.SendAsync("Browser.getWindowForTarget").ConfigureAwait(false);
-                if (info is null)
-                {
-                    return null;
-                }
-
-                var b = info.Value.GetProperty("bounds");
-                return new TerminalTiling.WindowRect(
-                    b.GetProperty("left").GetInt32(),
-                    b.GetProperty("top").GetInt32(),
-                    b.GetProperty("width").GetInt32(),
-                    b.GetProperty("height").GetInt32());
-            }
-            catch
-            {
-                return null;
-            }
-        }
-
-        public async Task SetWindowAsync(TerminalTiling.WindowRect rect) =>
-            await SetBoundsRawAsync(new Dictionary<string, object>
-            {
-                ["left"] = rect.X,
-                ["top"] = rect.Y,
-                ["width"] = rect.Width,
-                ["height"] = rect.Height,
-            }).ConfigureAwait(false);
-
-        private async Task SetBoundsRawAsync(Dictionary<string, object> bounds) =>
-            await cdp.SendAsync("Browser.setWindowBounds", new Dictionary<string, object>
-            {
-                ["windowId"] = windowId,
-                ["bounds"] = bounds,
-            }).ConfigureAwait(false);
     }
 }
