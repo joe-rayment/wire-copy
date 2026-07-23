@@ -31,6 +31,24 @@ internal static class ResponsiveGrid
     }
 
     /// <summary>
+    /// Target number of tile rows on screen: with the grid as the only element,
+    /// 2 columns × 4 rows ≈ 8 large tiles fill it (workspace-21uy).
+    /// </summary>
+    internal const int TargetRows = 4;
+
+    /// <summary>
+    /// Cell height for the given content-area height: tiles grow to fill the
+    /// screen at <see cref="TargetRows"/> rows, never shrinking below
+    /// <paramref name="floorHeight"/> (the pre-21uy fixed card height) — short
+    /// windows keep readable cards and scroll instead. Shared by the launcher
+    /// and story-list grids so the two views keep one card proportion.
+    /// </summary>
+    internal static int CellHeightFor(int availableHeight, int floorHeight)
+    {
+        return System.Math.Max(floorHeight, availableHeight / TargetRows);
+    }
+
+    /// <summary>
     /// Width (in cells) of one card cell given the inner width and column count.
     /// Reserves one cell per inter-column divider. The LAST column takes the
     /// remainder (<see cref="LastCellWidthFor"/>) so rounding never leaves a

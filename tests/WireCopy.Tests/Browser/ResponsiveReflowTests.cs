@@ -150,11 +150,13 @@ public class ResponsiveReflowTests
     }
 
     [Fact]
-    public void ComputeLayout_TallTerminal_StandardCells()
+    public void ComputeLayout_TallTerminal_CellsGrowToFill()
     {
-        // availableHeight = max(4, 40-1-1) = 38 >= 15 → standard
+        // availableHeight = max(4, 40-3-2) = 35 → max(5, 35/4) = 8 (workspace-21uy):
+        // tall windows grow the tiles toward ~4 rows instead of stacking small cards.
         var layout = LinkTreeRenderer.ComputeLayout(80, 40);
-        layout.CellHeight.Should().Be(5);
+        layout.CellHeight.Should().Be(8);
+        layout.VisibleRows.Should().Be(4);
     }
 
     #endregion

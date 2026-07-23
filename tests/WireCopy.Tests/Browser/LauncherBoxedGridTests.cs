@@ -127,15 +127,18 @@ public class LauncherBoxedGridTests
     [Fact]
     public void Grid_LayoutCellHeight_MatchesLinkListCardStride()
     {
-        // workspace-stby: card cell stride is 5 lines — blank pad + title +
-        // subtitle + interior pad + separator rule — matching the link-list
-        // card height (LinkTreeRenderer standardCellHeight = 5) so the two
-        // views align row-for-row. (Was 4 under workspace-bs93, which read as
-        // crowded next to the taller link-list cards.) Adjacent cards stack
-        // directly; the separator provides the visual break. Scroll math
-        // relies on this stride to keep selected cells fully in the viewport.
+        // workspace-stby established the shared 5-line card stride;
+        // workspace-21uy made it the FLOOR of a screen-filling height (both
+        // views grow via the same ResponsiveGrid.CellHeightFor, ~4 rows on a
+        // tall window). At this test's 35-row terminal the launcher chrome
+        // leaves 19 content rows → 19/4 = 4 floors to the classic 5.
         var layout = LauncherRenderer.ComputeLayout(LargeTerminalWidth, TerminalHeight, "Grid");
         layout.CellHeight.Should().Be(5);
+
+        // On a tall window the cell grows: 60-row terminal → 44 content rows → 11.
+        var tall = LauncherRenderer.ComputeLayout(LargeTerminalWidth, 60, "Grid");
+        tall.CellHeight.Should().Be(11);
+        tall.VisibleRows.Should().Be(4, "~4 rows × 2 columns ≈ 8 tiles fill the launcher");
     }
 
     [Fact]

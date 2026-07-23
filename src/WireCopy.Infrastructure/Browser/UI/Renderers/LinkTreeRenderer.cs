@@ -162,12 +162,14 @@ internal class LinkTreeRenderer
         var width = Math.Max(1, terminalWidth - 2);
         var availableHeight = Math.Max(4, terminalHeight - headerLines - statusBarLines);
 
-        // Responsive column count (workspace-ehon): derive from a target tile
-        // width so the story list fills a wide desktop-shell window with more
-        // readable columns instead of stretching two. Shares ResponsiveGrid with
-        // the launcher so the two card grids keep one proportion.
+        // Fixed 2-column grid with screen-filling tiles (workspace-21uy):
+        // ResponsiveGrid owns both the column contract and the cell-height
+        // formula so the launcher and story list keep one card proportion.
+        // Short windows keep the compact 3-line card and scroll.
         var columns = ResponsiveGrid.ColumnsFor(width);
-        var cellHeight = availableHeight < 15 ? compactCellHeight : standardCellHeight;
+        var cellHeight = availableHeight < 15
+            ? compactCellHeight
+            : ResponsiveGrid.CellHeightFor(availableHeight, standardCellHeight);
 
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
         var cellWidth = ResponsiveGrid.CellWidthFor(width, columns);

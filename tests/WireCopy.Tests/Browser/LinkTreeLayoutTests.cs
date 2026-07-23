@@ -108,19 +108,19 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void CellHeight_IsStandardWhenTall()
+    public void CellHeight_GrowsToFillWhenTall()
     {
-        // availableHeight = max(4, 30 - 3 - 2) = 25 >= 15 → standard (5)
+        // availableHeight = max(4, 30 - 3 - 2) = 25 >= 15 → max(5, 25/4) = 6 (workspace-21uy)
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        layout.CellHeight.Should().Be(5);
+        layout.CellHeight.Should().Be(6);
     }
 
     [Fact]
     public void VisibleRows_CalculatedFromAvailableHeight()
     {
-        // availableHeight = max(4, 30 - 3 - 2) = 25, cellHeight = 5 → 25/5 = 5
+        // availableHeight = max(4, 30 - 3 - 2) = 25, cellHeight = 6 → 25/6 = 4
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        layout.VisibleRows.Should().Be(5);
+        layout.VisibleRows.Should().Be(4);
     }
 
     [Fact]

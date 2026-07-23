@@ -149,7 +149,12 @@ public class LinkTreeRendererBurstTests
         {
             tree.EnsureSelection();
             var visibleNodes = tree.GetVisibleNodes().Where(n => !n.IsGroupHeader).ToList();
-            var cycleCount = Math.Min(10, visibleNodes.Count);
+
+            // This render-only path has no scroll-follow (ScrollOffset pinned to 0),
+            // so cycle selection only across cards that fit in maxLines=35 at the
+            // computed cell height — workspace-21uy grew the cells, shrinking this.
+            var burstLayout = LinkTreeRenderer.ComputeLayout(120, 40);
+            var cycleCount = Math.Min(burstLayout.Columns * (35 / burstLayout.CellHeight), visibleNodes.Count);
 
             for (var frame = 0; frame < iterations; frame++)
             {
@@ -245,11 +250,12 @@ public class LinkTreeRendererBurstTests
             tree.EnsureSelection();
             var visibleNodes = tree.GetVisibleNodes().Where(n => !n.IsGroupHeader).ToList();
 
-            // Limit selection cycling to nodes that fit in the visible viewport.
-            // Cards layout with 35 maxLines and cellHeight=5 fits ~7 rows × 2 cols = 14 cards;
-            // 10 is a safe lower bound that exercises the burst pattern without sliding
-            // selection offscreen.
-            var visibleCount = Math.Min(10, visibleNodes.Count);
+            // Limit selection cycling to nodes that fit in the visible viewport —
+            // this render-only path has no scroll-follow (ScrollOffset pinned to 0).
+            // Derived from the layout so it tracks the screen-filling cell height
+            // (workspace-21uy): 35 maxLines / cellHeight rows × 2 columns.
+            var burstLayout = LinkTreeRenderer.ComputeLayout(120, 40);
+            var visibleCount = Math.Min(burstLayout.Columns * (35 / burstLayout.CellHeight), visibleNodes.Count);
 
             for (var frame = 0; frame < 20; frame++)
             {

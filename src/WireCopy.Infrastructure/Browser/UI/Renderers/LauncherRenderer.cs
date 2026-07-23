@@ -43,8 +43,10 @@ internal class LauncherRenderer
     //   line 4: separator rule   "────────────────"          ← dim secondary, always
     //                                                          rendered (matches link-list)
     // No box-drawing characters around the card; the separator rule provides
-    // the visual cap. cellHeight = 5 so adjacent cards stack directly and align
-    // row-for-row with the link-list view.
+    // the visual cap. Since workspace-21uy the cell height GROWS to fill the
+    // screen at ~4 rows (ResponsiveGrid.CellHeightFor) — extra lines are
+    // interior padding between the subtitle and the separator — and this
+    // constant is the FLOOR so short windows keep the classic 5-line card.
     private const int GridCardHeight = 5;
 
     // URL bar block height (workspace-0rde): blank + top border + content
@@ -217,14 +219,15 @@ internal class LauncherRenderer
                 // fullscreen — never a different column count.
                 columns = ResponsiveGrid.ColumnsFor(width);
 
-                // Card cell (workspace-bs93/stby): blank pad + title + subtitle +
-                // interior pad + separator rule = 5 lines, matching the link-list
-                // card height (LinkTreeRenderer standardCellHeight). Adjacent cards
-                // stack directly — the separator rule provides the visual break, so
-                // the two views feel like the same product. Scroll math treats the
-                // 5-line block as the logical row height so a row never partially
-                // scrolls in.
-                cellHeight = GridCardHeight;
+                // Card cell: blank pad + title + subtitle + padding + separator
+                // rule. Height grows to fill the screen at ~4 rows
+                // (ResponsiveGrid.CellHeightFor, workspace-21uy), flooring at the
+                // classic 5-line stride (workspace-bs93/stby) so short windows
+                // scroll instead of shrinking. Shares the formula with the
+                // link-list card so the two views feel like the same product.
+                // Scroll math treats the block as the logical row height so a
+                // row never partially scrolls in.
+                cellHeight = ResponsiveGrid.CellHeightFor(availableHeight, GridCardHeight);
                 break;
             }
         }
@@ -361,6 +364,7 @@ internal class LauncherRenderer
         int selectedIndex,
         int cellWidth,
         int lineIdx,
+        int cellHeight,
         ThemePalette p,
         int? readingListCount = null)
     {
@@ -421,14 +425,14 @@ internal class LauncherRenderer
         var contentWidth = Math.Max(1, cellWidth - 1);
 
         // The separator rule is always the cell's LAST line (workspace-stby moved
-        // it off a hardcoded `case 3` so it tracks GridCardHeight). It's the visual
+        // it off a hardcoded `case 3`; workspace-21uy made the height dynamic). It's the visual
         // border between cell rows and must not be eaten by the selection box —
         // no selBg fill here (workspace-63jj: fill read as a 1-row-too-tall
         // highlight punching through the `┼` cross), but the selected card's ▌
         // rail continues through it so the rail runs the full card height
         // (design cards-states, workspace-7t0a.2). Rule color is structural
         // chrome (--tr-border #005f00), not dimmed metadata green.
-        if (lineIdx == GridCardHeight - 1)
+        if (lineIdx == cellHeight - 1)
         {
             var rule = $"{borderFg}{new string('─', Math.Max(0, cellWidth - (isSelected ? 1 : 0)))}{Reset}";
             return isSelected ? $"{accentBarColor}▌{Reset}{rule}" : rule;
@@ -1026,12 +1030,12 @@ internal class LauncherRenderer
         // fills with more cards; the last column absorbs the width remainder so
         // the right edge stays flush and empty trailing cells continue the
         // separator rule.
-        if (line >= GridCardHeight)
+        if (line >= layout.CellHeight)
         {
             return new string(' ', layout.Width);
         }
 
-        var isSeparatorLine = line == GridCardHeight - 1;
+        var isSeparatorLine = line == layout.CellHeight - 1;
         var sb = new System.Text.StringBuilder();
 
         for (var col = 0; col < layout.Columns; col++)
@@ -1059,6 +1063,7 @@ internal class LauncherRenderer
                     selectedIndex,
                     cellW,
                     line,
+                    layout.CellHeight,
                     p,
                     readingListCount));
             }

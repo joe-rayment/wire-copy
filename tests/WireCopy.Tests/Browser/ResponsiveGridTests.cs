@@ -53,6 +53,17 @@ public class ResponsiveGridTests
         last.Should().BeGreaterThanOrEqualTo(1);
     }
 
+    [Theory]
+    [InlineData(45, 5, 11)]  // fullscreen: grows to fill at ~4 rows
+    [InlineData(100, 5, 25)] // very tall: still 4 rows of huge tiles
+    [InlineData(19, 5, 5)]   // short window: floors at the classic card height
+    [InlineData(16, 5, 5)]
+    [InlineData(24, 3, 6)]   // compact floor
+    public void CellHeightFor_TargetsFourRows_WithFloor(int availableHeight, int floor, int expected)
+    {
+        ResponsiveGrid.CellHeightFor(availableHeight, floor).Should().Be(expected);
+    }
+
     [Fact]
     public void SingleColumn_CellIsFullWidth()
     {
