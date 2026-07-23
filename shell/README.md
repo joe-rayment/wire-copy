@@ -8,10 +8,10 @@ epic `workspace-pdp8`.
 ## Run
 
 ```bash
-./run --desktop         # builds the TUI (Release), installs the shell on first run, launches
+./run                   # builds the TUI (Release), installs the shell on first run, launches
 ```
 
-Container/CI (no setuid sandbox): `WIRECOPY_SHELL_NO_SANDBOX=1 ./run --desktop` — packaged and
+Container/CI (no setuid sandbox): `WIRECOPY_SHELL_NO_SANDBOX=1 ./run` — packaged and
 normal desktop runs keep the Chromium sandbox ON.
 
 Env knobs: `WIRECOPY_SHELL_CDP_PORT` (default 9223, loopback CDP for the .NET driver and gates),
@@ -55,4 +55,4 @@ runtime deps, and runs electron-builder. The package:
 
 macOS artifacts (zip, arm64/x64, unsigned per the v1 install plan) build with the same
 script **on a mac host** — cross-building from linux can't produce the native node-pty
-or app bundle. `./run` terminal flow and `./run --desktop` dev flow are untouched.
+or app bundle. The `./run` dev flow is untouched.

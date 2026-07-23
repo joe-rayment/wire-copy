@@ -51,7 +51,7 @@ echo "build-desktop: installing app runtime deps (node-pty, xterm)..."
 echo "build-desktop: running electron-builder..."
 EB="$HERE/deps/$(node -p 'process.platform + "-" + process.arch')/node_modules/.bin/electron-builder"
 if [ ! -x "$EB" ]; then
-  echo "build-desktop: electron-builder missing — run ./run --desktop once (installs shell deps), or npm i in the deps dir" >&2
+  echo "build-desktop: electron-builder missing — run ./run once (installs shell deps), or npm i in the deps dir" >&2
   exit 1
 fi
 if [ "$DIR_ONLY" = "1" ]; then

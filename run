@@ -1,6 +1,8 @@
 #!/bin/bash
-# Wrapper script to run WireCopy with clean console output by default
-# Use --verbose flag to see all browser console output
+# WireCopy launcher. There is exactly ONE way to run the app interactively: the Electron
+# desktop shell (a real headful Chromium window hosting the TUI in an owned pane).
+# Unattended verbs (run-recipe, resolve-section) bypass the shell and run the .NET app
+# directly — still headful, under Xvfb when there is no display.
 
 # Resolve the repo root and use the vendored .NET SDK wrapper (./dotnet), which bootstraps the pinned
 # .NET 10 SDK on first use. This avoids "NETSDK1045: does not support targeting .NET 10.0" when the
@@ -8,15 +10,6 @@
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$ROOT"
 DOTNET="$ROOT/dotnet"
-
-# Check if --verbose is in the arguments
-verbose=false
-for arg in "$@"; do
-    if [ "$arg" = "--verbose" ]; then
-        verbose=true
-        break
-    fi
-done
 
 # NEVER-HEADLESS POLICY (workspace-8ne3): WireCopy runs a REAL HEADFUL browser — never headless (headless is
 # bot-detected/blocked on the sites it targets). On Linux without a display, provide a VIRTUAL display (Xvfb)
@@ -35,97 +28,77 @@ if [ "$(uname)" = "Linux" ] && [ -z "$DISPLAY" ] && [ -z "$WAYLAND_DISPLAY" ]; t
     fi
 fi
 
-# --desktop: launch the single-window desktop shell (Electron) instead of running the TUI in
-# this terminal. The shell IS a real headful Chromium window hosting the same TUI in an owned
-# pane — never headless; the Xvfb wrapper above applies identically when there is no display.
-for arg in "$@"; do
-    if [ "$arg" = "--desktop" ]; then
-        command -v node >/dev/null 2>&1 || { echo "wirecopy: --desktop needs Node.js (for Electron). Install node and re-run." >&2; exit 1; }
-        echo "wirecopy: building the app (Release)..." >&2
-        "$DOTNET" build src/WireCopy.API/WireCopy.API.csproj -c Release --nologo -v q || exit 1
-
-        # Shell deps are PER-PLATFORM: this repo directory is shared between machines
-        # (macOS + the Linux dev container), and Electron/node-pty binaries are
-        # platform-specific — a shared node_modules hands one OS the other's binaries
-        # (spawn ENOEXEC). Each platform installs and launches from its own dir.
-        PLAT="$(node -p 'process.platform + "-" + process.arch')"
-        DEPS_DIR="shell/deps/$PLAT"
-        if [ ! -x "$DEPS_DIR/node_modules/.bin/electron" ] || [ ! -f "$DEPS_DIR/node_modules/.wc-pty-rebuilt" ]; then
-            echo "wirecopy: first desktop run on $PLAT — installing the shell (one-time, downloads Electron)..." >&2
-            mkdir -p "$DEPS_DIR"
-            cp shell/package.json "$DEPS_DIR/" || exit 1
-            (cd "$DEPS_DIR" && npm install --no-fund --no-audit \
-                && npx electron-rebuild -f -w node-pty \
-                && touch node_modules/.wc-pty-rebuilt) || exit 1
-        fi
-        shell_flags=()
-        if [ "${WIRECOPY_SHELL_NO_SANDBOX:-}" = "1" ]; then
-            # Container/CI only (no setuid sandbox): must be argv — Linux sandbox init
-            # runs before the shell's main script. Desktop runs keep the sandbox ON.
-            shell_flags=(--no-sandbox --disable-dev-shm-usage)
-        fi
-
-        # Desktop console stays quiet (workspace-iflq): Electron/Chromium stderr is a
-        # firehose (DevTools banner, macOS task_policy_set spam, per-subresource SSL
-        # failures). Tee the UNFILTERED stream to a log so nothing is ever lost, and
-        # pass only unrecognized lines through — a blocklist, same shape as terminal
-        # mode above, so a genuinely novel error still reaches the console.
-        mkdir -p logs
-        shell_stderr_log="logs/shell-stderr-$(date +%Y%m%d-%H%M%S).log"
-        echo "wirecopy: desktop shell — full stderr → $shell_stderr_log" >&2
-        shell_noise=(
-            -e "DevTools listening on ws://"
-            -e "task_policy_set"
-            -e "ssl_client_socket_impl"
-            -e "handshake failed"
-            -e "cert_verify_proc"
-            -e "Fontconfig"
-            -e "libva error"
-            -e "MESA"
-            -e "GetVSyncParametersIfAvailable"
-            -e "dri3 extension not supported"
-            -e "floss"
-        )
-        if [ "${WIRECOPY_SHELL_DEBUG:-}" != "1" ]; then
-            # [shell] info lines (mode flips, channel chatter) are debug-only signal.
-            shell_noise+=( -e "^\[shell\] " )
-        fi
-        exec "${launch[@]}" "$DEPS_DIR/node_modules/.bin/electron" shell "${shell_flags[@]}" \
-            2> >(tee -a "$shell_stderr_log" | grep --line-buffered -v "${shell_noise[@]}" >&2)
-    fi
-done
-
-# Run with or without filtering.
-#
-# The TUI renders ANSI frames to STDOUT (TerminalPageRenderer → Console.Out) and reads keys from STDIN, so
-# stdout/stdin MUST stay attached to the real terminal — piping stdout through grep mangles the frames and
-# the TUI never takes over the screen. The app's own logs go to logs/ (file-only in browse mode), so the
-# only console noise is the browser subprocess on STDERR. Default mode therefore filters ONLY stderr,
-# leaving stdout on the TTY for the TUI; --verbose shows everything unfiltered.
-if [ "$verbose" = true ]; then
-    # Verbose mode: show everything
-    "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@"
-else
-    # Default mode: TUI on the real terminal (stdout), filter browser noise on stderr only.
-    # workspace-9k27.16: the filter is a blocklist, so a real failure that happens to match a
-    # noise token (a geckodriver crash, an extension content-script console.error) would vanish.
-    # Tee the UNFILTERED stderr to a log so nothing is ever lost, and print where it went.
+# Unattended verbs: no shell, no TUI — run the .NET app directly. Non-interactive, so
+# stderr goes to the console AND tees unfiltered to logs/ (no noise blocklist: a scheduled
+# run must never have a real failure filtered away).
+if [ "$1" = "run-recipe" ] || [ "$1" = "resolve-section" ]; then
     mkdir -p logs
     stderr_log="logs/stderr-$(date +%Y%m%d-%H%M%S).log"
-    echo "wirecopy: full unfiltered stderr → $stderr_log" >&2
-    "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@" \
-      2> >(tee -a "$stderr_log" | grep --line-buffered -v \
-        -e "console.error:" \
-        -e "NS_ERROR_CONTENT_BLOCKED" \
-        -e "geckodriver" \
-        -e "Read port:" \
-        -e "RenderCompositorSWGL" \
-        -e "AVCaptureDeviceTypeExternal" \
-        -e "FaviconLoader.sys.mjs" \
-        -e "getpocket.com" \
-        -e "OHTTP was configured" \
-        -e "ContextId.sys.mjs" \
-        -e "^\[GFX" \
-        -e "^[0-9]*[[:space:]]*firefox\[" \
-        -e "TypeError.*NetworkError.*Failed to fetch" >&2)
+    echo "wirecopy: unattended $1 — full stderr also → $stderr_log" >&2
+    exec "${launch[@]}" "$DOTNET" run --project src/WireCopy.API --configuration Release -- "$@" \
+        2> >(tee -a "$stderr_log" >&2)
 fi
+
+if [ $# -gt 0 ]; then
+    echo "wirecopy: unknown argument '$1'. Usage:" >&2
+    echo "  ./run                            launch the desktop app" >&2
+    echo "  ./run run-recipe <name>          unattended recipe run (no shell)" >&2
+    echo "  ./run resolve-section <args>     unattended section resolve (no shell)" >&2
+    exit 1
+fi
+
+# Default: build and launch the single-window desktop shell (Electron). The shell IS a real
+# headful Chromium window — never headless; the Xvfb wrapper above applies identically when
+# there is no display.
+command -v node >/dev/null 2>&1 || { echo "wirecopy: the desktop shell needs Node.js (for Electron). Install node and re-run." >&2; exit 1; }
+echo "wirecopy: building the app (Release)..." >&2
+"$DOTNET" build src/WireCopy.API/WireCopy.API.csproj -c Release --nologo -v q || exit 1
+
+# Shell deps are PER-PLATFORM: this repo directory is shared between machines
+# (macOS + the Linux dev container), and Electron/node-pty binaries are
+# platform-specific — a shared node_modules hands one OS the other's binaries
+# (spawn ENOEXEC). Each platform installs and launches from its own dir.
+PLAT="$(node -p 'process.platform + "-" + process.arch')"
+DEPS_DIR="shell/deps/$PLAT"
+if [ ! -x "$DEPS_DIR/node_modules/.bin/electron" ] || [ ! -f "$DEPS_DIR/node_modules/.wc-pty-rebuilt" ]; then
+    echo "wirecopy: first desktop run on $PLAT — installing the shell (one-time, downloads Electron)..." >&2
+    mkdir -p "$DEPS_DIR"
+    cp shell/package.json "$DEPS_DIR/" || exit 1
+    (cd "$DEPS_DIR" && npm install --no-fund --no-audit \
+        && npx electron-rebuild -f -w node-pty \
+        && touch node_modules/.wc-pty-rebuilt) || exit 1
+fi
+shell_flags=()
+if [ "${WIRECOPY_SHELL_NO_SANDBOX:-}" = "1" ]; then
+    # Container/CI only (no setuid sandbox): must be argv — Linux sandbox init
+    # runs before the shell's main script. Desktop runs keep the sandbox ON.
+    shell_flags=(--no-sandbox --disable-dev-shm-usage)
+fi
+
+# Desktop console stays quiet (workspace-iflq): Electron/Chromium stderr is a
+# firehose (DevTools banner, macOS task_policy_set spam, per-subresource SSL
+# failures). Tee the UNFILTERED stream to a log so nothing is ever lost, and
+# pass only unrecognized lines through — a blocklist, so a genuinely novel
+# error still reaches the console.
+mkdir -p logs
+shell_stderr_log="logs/shell-stderr-$(date +%Y%m%d-%H%M%S).log"
+echo "wirecopy: desktop shell — full stderr → $shell_stderr_log" >&2
+shell_noise=(
+    -e "DevTools listening on ws://"
+    -e "task_policy_set"
+    -e "ssl_client_socket_impl"
+    -e "handshake failed"
+    -e "cert_verify_proc"
+    -e "Fontconfig"
+    -e "libva error"
+    -e "MESA"
+    -e "GetVSyncParametersIfAvailable"
+    -e "dri3 extension not supported"
+    -e "floss"
+)
+if [ "${WIRECOPY_SHELL_DEBUG:-}" != "1" ]; then
+    # [shell] info lines (mode flips, channel chatter) are debug-only signal.
+    shell_noise+=( -e "^\[shell\] " )
+fi
+exec "${launch[@]}" "$DEPS_DIR/node_modules/.bin/electron" shell "${shell_flags[@]}" \
+    2> >(tee -a "$shell_stderr_log" | grep --line-buffered -v "${shell_noise[@]}" >&2)
