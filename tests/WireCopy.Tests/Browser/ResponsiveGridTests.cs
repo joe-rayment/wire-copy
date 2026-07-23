@@ -54,14 +54,16 @@ public class ResponsiveGridTests
     }
 
     [Theory]
-    [InlineData(45, 5, 11)]  // fullscreen: grows to fill at ~4 rows
-    [InlineData(100, 5, 25)] // very tall: still 4 rows of huge tiles
+    [InlineData(45, 5, 11)]  // fullscreen terminal: a tile is ~a quarter of the SCREEN
+    [InlineData(100, 5, 25)] // very tall: still tiles at screen/4
     [InlineData(19, 5, 5)]   // short window: floors at the classic card height
     [InlineData(16, 5, 5)]
     [InlineData(24, 3, 6)]   // compact floor
-    public void CellHeightFor_TargetsFourRows_WithFloor(int availableHeight, int floor, int expected)
+    public void CellHeightFor_QuarterOfTheScreen_WithFloor(int terminalHeight, int floor, int expected)
     {
-        ResponsiveGrid.CellHeightFor(availableHeight, floor).Should().Be(expected);
+        // workspace-1ogw: the divisor applies to the FULL terminal height —
+        // chrome reduces how many tiles are visible, never how big they are.
+        ResponsiveGrid.CellHeightFor(terminalHeight, floor).Should().Be(expected);
     }
 
     [Fact]

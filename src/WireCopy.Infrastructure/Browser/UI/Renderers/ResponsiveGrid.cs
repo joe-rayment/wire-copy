@@ -37,15 +37,19 @@ internal static class ResponsiveGrid
     }
 
     /// <summary>
-    /// Cell height for the given content-area height: tiles grow to fill the
-    /// screen at <see cref="TargetRows"/> rows, never shrinking below
-    /// <paramref name="floorHeight"/> (the pre-21uy fixed card height) — short
-    /// windows keep readable cards and scroll instead. Shared by the launcher
-    /// and story-list grids so the two views keep one card proportion.
+    /// Cell height for the given FULL terminal height: a tile is ~a quarter of
+    /// the screen tall, never shrinking below <paramref name="floorHeight"/>
+    /// (the pre-21uy fixed card height) — short windows keep readable cards
+    /// and scroll instead. The user's sizing rule (workspace-1ogw) is absolute:
+    /// were the grid the only element on screen, 2×4 = 8 tiles would fill it;
+    /// headers/footers reduce how many tiles are VISIBLE, never how big each
+    /// tile is. (The first cut divided the under-chrome area instead, which
+    /// made tiles ~1/7 of a real launcher window.) Shared by the launcher and
+    /// story-list grids so the two views keep one card proportion.
     /// </summary>
-    internal static int CellHeightFor(int availableHeight, int floorHeight)
+    internal static int CellHeightFor(int terminalHeight, int floorHeight)
     {
-        return System.Math.Max(floorHeight, availableHeight / TargetRows);
+        return System.Math.Max(floorHeight, terminalHeight / TargetRows);
     }
 
     /// <summary>

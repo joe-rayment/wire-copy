@@ -85,19 +85,19 @@ async function measureLauncher (env, term, label) {
     `rule ${ruleChars[0]}..${ruleChars[ruleChars.length - 1]} of ${vp.cols} cols`)
 
   // HEIGHT: the stride between consecutive rule rows is the card height. It must equal
-  // max(5, floor(available/4)) — the workspace-21uy screen-filling growth — where the
-  // content area is derived from the screen itself: cards start (stride-1) above the
-  // first rule and the footer is 2 lines.
+  // max(5, floor(terminalRows/4)) — a tile is a quarter of the FULL screen tall
+  // (workspace-1ogw: were the grid the only element, 2×4 = 8 tiles would fill it;
+  // the header/URL bar reduce the visible count, never the tile size).
   if (rules.length >= 2) {
     const strides = rules.slice(1).map((r, i) => r - rules[i])
     const stride = strides[0]
     check(`${label}: uniform card stride`, strides.every(s => s === stride), `strides=[${strides.join(',')}]`)
-    const contentTop = rules[0] - (stride - 1)
-    const available = Math.max(4, vp.rows - contentTop - 2)
-    const expected = Math.max(5, Math.floor(available / 4))
-    check(`${label}: tiles fill the screen — stride ${stride} == max(5, ${available}/4) = ${expected}`,
-      stride === expected, `stride=${stride} expected=${expected} rows=${vp.rows} contentTop=${contentTop}`)
+    const expected = Math.max(5, Math.floor(vp.rows / 4))
+    check(`${label}: tiles are a quarter of the screen — stride ${stride} == max(5, ${vp.rows}/4) = ${expected}`,
+      stride === expected, `stride=${stride} expected=${expected} rows=${vp.rows}`)
     check(`${label}: no more than 4 tile rows on screen`, rules.length <= 4, `rows=${rules.length}`)
+  } else {
+    check(`${label}: expected at least 2 rule rows to measure the stride`, false, `rules=${rules.length}`)
   }
 
   env.shot(`columns-${label}`)

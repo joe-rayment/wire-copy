@@ -128,17 +128,18 @@ public class LauncherBoxedGridTests
     public void Grid_LayoutCellHeight_MatchesLinkListCardStride()
     {
         // workspace-stby established the shared 5-line card stride;
-        // workspace-21uy made it the FLOOR of a screen-filling height (both
-        // views grow via the same ResponsiveGrid.CellHeightFor, ~4 rows on a
-        // tall window). At this test's 35-row terminal the launcher chrome
-        // leaves 19 content rows → 19/4 = 4 floors to the classic 5.
+        // workspace-21uy/1ogw made it the FLOOR of a screen-quartering height
+        // (both views grow via the same ResponsiveGrid.CellHeightFor: a tile
+        // is terminalHeight/4 — chrome cuts the visible count, not the tile).
+        // 35-row terminal → 35/4 = 8.
         var layout = LauncherRenderer.ComputeLayout(LargeTerminalWidth, TerminalHeight, "Grid");
-        layout.CellHeight.Should().Be(5);
+        layout.CellHeight.Should().Be(8);
 
-        // On a tall window the cell grows: 60-row terminal → 44 content rows → 11.
+        // Tall window: 60-row terminal → 15-line tiles; the launcher chrome
+        // leaves 44 content rows → 2 full tile rows visible (scroll for more).
         var tall = LauncherRenderer.ComputeLayout(LargeTerminalWidth, 60, "Grid");
-        tall.CellHeight.Should().Be(11);
-        tall.VisibleRows.Should().Be(4, "~4 rows × 2 columns ≈ 8 tiles fill the launcher");
+        tall.CellHeight.Should().Be(15);
+        tall.VisibleRows.Should().Be(2);
     }
 
     [Fact]

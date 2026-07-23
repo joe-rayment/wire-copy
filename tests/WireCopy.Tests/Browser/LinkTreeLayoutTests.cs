@@ -110,17 +110,18 @@ public class LinkTreeLayoutTests
     [Fact]
     public void CellHeight_GrowsToFillWhenTall()
     {
-        // availableHeight = max(4, 30 - 3 - 2) = 25 >= 15 → max(5, 25/4) = 6 (workspace-21uy)
+        // Tile height is a quarter of the FULL terminal (workspace-1ogw):
+        // max(5, 30/4) = 7 — not availableHeight/4.
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        layout.CellHeight.Should().Be(6);
+        layout.CellHeight.Should().Be(7);
     }
 
     [Fact]
     public void VisibleRows_CalculatedFromAvailableHeight()
     {
-        // availableHeight = max(4, 30 - 3 - 2) = 25, cellHeight = 6 → 25/6 = 4
+        // availableHeight = max(4, 30 - 3 - 2) = 25, cellHeight = 7 → 25/7 = 3
         var layout = LinkTreeRenderer.ComputeLayout(80, 30);
-        layout.VisibleRows.Should().Be(4);
+        layout.VisibleRows.Should().Be(3);
     }
 
     [Fact]

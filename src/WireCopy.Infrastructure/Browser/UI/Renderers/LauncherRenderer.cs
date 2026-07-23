@@ -220,14 +220,16 @@ internal class LauncherRenderer
                 columns = ResponsiveGrid.ColumnsFor(width);
 
                 // Card cell: blank pad + title + subtitle + padding + separator
-                // rule. Height grows to fill the screen at ~4 rows
-                // (ResponsiveGrid.CellHeightFor, workspace-21uy), flooring at the
-                // classic 5-line stride (workspace-bs93/stby) so short windows
-                // scroll instead of shrinking. Shares the formula with the
-                // link-list card so the two views feel like the same product.
-                // Scroll math treats the block as the logical row height so a
-                // row never partially scrolls in.
-                cellHeight = ResponsiveGrid.CellHeightFor(availableHeight, GridCardHeight);
+                // rule. A tile is ~a quarter of the FULL screen tall
+                // (ResponsiveGrid.CellHeightFor, workspace-21uy/1ogw — the
+                // header/URL bar reduce how many are visible, not how big they
+                // are), flooring at the classic 5-line stride
+                // (workspace-bs93/stby) so short windows scroll instead of
+                // shrinking. Shares the formula with the link-list card so the
+                // two views feel like the same product. Scroll math treats the
+                // block as the logical row height so a row never partially
+                // scrolls in.
+                cellHeight = ResponsiveGrid.CellHeightFor(terminalHeight, GridCardHeight);
                 break;
             }
         }

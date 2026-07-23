@@ -169,7 +169,7 @@ internal class LinkTreeRenderer
         var columns = ResponsiveGrid.ColumnsFor(width);
         var cellHeight = availableHeight < 15
             ? compactCellHeight
-            : ResponsiveGrid.CellHeightFor(availableHeight, standardCellHeight);
+            : ResponsiveGrid.CellHeightFor(terminalHeight, standardCellHeight);
 
         var visibleRows = Math.Max(1, availableHeight / cellHeight);
         var cellWidth = ResponsiveGrid.CellWidthFor(width, columns);
