@@ -57,7 +57,7 @@ public class StatusBarRendererPodcastBadgeTests
         var output = CaptureConsoleOutput(() =>
             statusBar.RenderStatusBar(context, ViewMode.Hierarchical, terminalWidth: 200));
 
-        output.Should().NotContain("\U0001F3A7",
+        output.Should().NotContain("\u266b",
             "the badge must not render the headphones glyph when no podcast job is active");
         output.Should().NotContain("Generating",
             "no 'Generating' copy should appear in the right-hand status content");
@@ -74,7 +74,7 @@ public class StatusBarRendererPodcastBadgeTests
         var output = CaptureConsoleOutput(() =>
             statusBar.RenderStatusBar(context, ViewMode.Hierarchical, terminalWidth: 200));
 
-        output.Should().NotContain("\U0001F3A7");
+        output.Should().NotContain("\u266b");
         output.Should().NotContain("Generating");
     }
 
@@ -96,7 +96,7 @@ public class StatusBarRendererPodcastBadgeTests
         var output = CaptureConsoleOutput(() =>
             statusBar.RenderStatusBar(context, ViewMode.Hierarchical, terminalWidth: 200));
 
-        output.Should().Contain("\U0001F3A7",
+        output.Should().Contain("\u266b",
             "the headphones glyph signals an in-flight podcast at a glance");
         output.Should().Contain("Generating 67%",
             "the percent surfaces from the manager's last snapshot");

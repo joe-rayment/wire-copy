@@ -46,8 +46,11 @@ internal class LinkTreeRenderer
         // ╭─ Title ──────────────────────────────────────╮
         // visible cells = " " + "╭─ " + title + " " + dashes + "╮" = boxWidth + 3
         var titlePad = Math.Max(0, boxWidth - titleWidth - 3);
+
+        // Page title wears the design's title pink (luminance ladder: titles and
+        // headlines are bright pink bold, workspace-7t0a.3).
         _helpers.WriteLine(
-            $" {borderColor}\u256d\u2500 {Reset}{p.PrimaryText.AnsiFg}{Bold}{title}{Reset}" +
+            $" {borderColor}\u256d\u2500 {Reset}{p.HeaderTitleFg.AnsiFg}{Bold}{title}{Reset}" +
             $" {borderColor}{new string('\u2500', titlePad)}\u256e{Reset}");
 
         // │ subtitle                                      │
@@ -473,7 +476,7 @@ internal class LinkTreeRenderer
         // get selBg so the green box still reaches the top edge.
         if (isSeparator)
         {
-            return $"{palette.SecondaryText.AnsiFg}{Dim}{new string('─', width)}{Reset}";
+            return $"{palette.HeaderBorderFg.AnsiFg}{new string('─', width)}{Reset}";
         }
 
         // workspace-mj9x: the selection rectangle covers the ENTIRE card —
@@ -616,7 +619,7 @@ internal class LinkTreeRenderer
 
         if (lineIndex == cardHeight - 1 && cardHeight > 1)
         {
-            return $"{palette.SecondaryText.AnsiFg}{Dim}{new string('\u2500', width)}{Reset}";
+            return $"{palette.HeaderBorderFg.AnsiFg}{new string('\u2500', width)}{Reset}";
         }
 
         return new string(' ', width);
@@ -894,8 +897,10 @@ internal class LinkTreeRenderer
             {
                 if (col > 0)
                 {
+                    // Structural chrome (--tr-border #005f00, workspace-7t0a.3) \u2014
+                    // matches the launcher grid so the skeleton recedes.
                     var divider = isSeparatorLine ? "\u253c" : "\u2502";
-                    sb.Append($"{p.SecondaryText.AnsiFg}{divider}{Reset}");
+                    sb.Append($"{p.HeaderBorderFg.AnsiFg}{divider}{Reset}");
                 }
 
                 var isLastCol = col == layout.Columns - 1;

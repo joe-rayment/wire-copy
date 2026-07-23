@@ -125,7 +125,7 @@ internal static class ArticleTunerHandler
         {
             // workspace-wef6.5: the long AnalyzeAsync runs in the animated
             // activity slot instead of a 2-minute status message.
-            ctx.NavigationService.SetActivity("ai", "✨ asking AI for layout candidates…", priority: 1);
+            ctx.NavigationService.SetActivity("ai", "✦ asking AI for layout candidates…", priority: 1);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             try
             {

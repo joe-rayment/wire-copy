@@ -873,7 +873,7 @@ internal static class StrategyChooserHandler
                     new UI.Components.SetupWizardOverlay.CardOption
                     {
                         Label = aiAvailable
-                            ? "✨ Let AI figure out this site's layout (recommended)"
+                            ? "✦ Let AI figure out this site's layout (recommended)"
                             : "AI setup — add an OpenAI key first (press c on the launcher)",
                     },
                     new UI.Components.SetupWizardOverlay.CardOption

@@ -64,8 +64,8 @@ public class StatusBarRendererCookieBadgeTests
             "the badge offers an in-app recovery shortcut to login/import cookies");
         output.Should().Contain(":login",
             "the keystroke description tells the user what Shift+I does");
-        output.Should().Contain("\U0001F36A",
-            "the cookie glyph (🍪) signals the cookie state at a glance");
+        output.Should().Contain("\u25c6\u2717",
+            "the cookie badge glyph (◆✗) signals the cookie state at a glance");
     }
 
     [Fact]
@@ -80,7 +80,7 @@ public class StatusBarRendererCookieBadgeTests
                 terminalWidth: 200,
                 missingCookieDomains: Array.Empty<string>()));
 
-        output.Should().NotContain("\U0001F36A",
+        output.Should().NotContain("\u25c6\u2717",
             "the badge must not appear when there are no missing-cookie domains");
         output.Should().NotContain("Shift+I",
             "the recovery shortcut should not be advertised when nothing is broken");
@@ -98,7 +98,7 @@ public class StatusBarRendererCookieBadgeTests
                 terminalWidth: 200,
                 missingCookieDomains: null));
 
-        output.Should().NotContain("\U0001F36A");
+        output.Should().NotContain("\u25c6\u2717");
     }
 
     [Fact]

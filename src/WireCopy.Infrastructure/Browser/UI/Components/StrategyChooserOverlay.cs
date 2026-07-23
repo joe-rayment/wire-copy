@@ -127,7 +127,7 @@ internal static class StrategyChooserOverlay
         var titlePadded = $" {title} ";
         var totalDashes = innerWidth + 2;
         var rightDashCount = Math.Max(0, totalDashes - titlePadded.Length - 1);
-        var topLine = $"{borderColor}┌─{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{new string('─', rightDashCount)}┐{Reset}";
+        var topLine = $"{borderColor}╭─{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{new string('─', rightDashCount)}╮{Reset}";
 
         Console.SetCursorPosition(startCol, startRow);
         Console.Write(topLine);
@@ -172,7 +172,7 @@ internal static class StrategyChooserOverlay
         if (row < terminalHeight - 1)
         {
             Console.SetCursorPosition(startCol, row);
-            Console.Write($"{borderColor}└{new string('─', innerWidth + 2)}┘{Reset}");
+            Console.Write($"{borderColor}╰{new string('─', innerWidth + 2)}╯{Reset}");
         }
     }
 

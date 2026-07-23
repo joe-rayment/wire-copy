@@ -277,7 +277,7 @@ internal static class KeybindingPopup
         var topBorderWidth = Math.Max(0, totalDashes - RenderHelpers.GetDisplayWidth(titlePadded) - 1);
         var topLeft = new string('\u2500', 1);
         var topRight = new string('\u2500', topBorderWidth);
-        var topLine = $"{borderColor}\u250c{topLeft}{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{topRight}\u2510{Reset}";
+        var topLine = $"{borderColor}\u256d{topLeft}{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{topRight}\u256e{Reset}";
 
         Console.SetCursorPosition(startCol, startRow);
         Console.Write(topLine);
@@ -303,7 +303,7 @@ internal static class KeybindingPopup
         var bottomRow = startRow + 1 + bindings.Length;
         if (bottomRow < terminalHeight - 1)
         {
-            var bottomLine = $"{borderColor}\u2514{new string('\u2500', innerWidth + 2)}\u2518{Reset}";
+            var bottomLine = $"{borderColor}\u2570{new string('\u2500', innerWidth + 2)}\u256f{Reset}";
             Console.SetCursorPosition(startCol, bottomRow);
             Console.Write(bottomLine);
         }

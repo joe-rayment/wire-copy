@@ -1292,7 +1292,7 @@ public class PageLoadPipeline
         {
             // workspace-wef6.5: surface the 30-60s analysis in the animated
             // activity slot — it was previously invisible.
-            _navigationService.SetActivity("ai", "✨ analyzing layout…", priority: 1);
+            _navigationService.SetActivity("ai", "✦ analyzing layout…", priority: 1);
             candidate = await aiExtractor.AnalyzeAsync(url, html, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException)

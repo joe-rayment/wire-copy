@@ -110,15 +110,16 @@ public class ReadableContent
     /// </summary>
     public string GetMetadataString()
     {
+        // Design byline spec (workspace-7t0a.6): 'Author \u00b7 Date' \u2014 no 'By ' prefix,
+        // no read-time (that lives in the end-of-article footer); the reader folds
+        // the domain onto this line.
         var parts = new List<string>();
 
         if (!string.IsNullOrEmpty(Author))
-            parts.Add($"By {Author}");
+            parts.Add(Author);
 
         if (PublishedDate.HasValue)
             parts.Add(PublishedDate.Value.ToString("MMM dd, yyyy"));
-
-        parts.Add($"{EstimatedReadingMinutes} min read");
 
         return string.Join(" \u00b7 ", parts);
     }

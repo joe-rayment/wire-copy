@@ -161,9 +161,10 @@ internal class ArticleRenderer
         var endPad = Math.Max(0, (width - endMarker.Length) / 2);
         _helpers.WriteLine($"{new string(' ', endPad)}{secondaryFg}{endMarker}{Reset}");
 
-        // Line 3: stats line centered
+        // Line 3: stats line centered \u2014 words first, approximate read-time
+        // (design footer spec, workspace-7t0a.6).
         var wordCountFormatted = wordCount.ToString("N0");
-        var statsText = $"{readTimeMinutes} min read \u00b7 {wordCountFormatted} words";
+        var statsText = $"{wordCountFormatted} words \u00b7 ~{readTimeMinutes} min read";
         var statsPad = Math.Max(0, (width - statsText.Length) / 2);
         _helpers.WriteLine($"{new string(' ', statsPad)}{mutedFg}{statsText}{Reset}");
 

@@ -49,7 +49,7 @@ public class PodcastNudgeTests
         context.StatusMessage.Should().Be("p: make a podcast from this list",
             "opening a non-empty collection for the first time must teach the podcast key");
         context.ActiveAnnouncement.Should().NotBeNull();
-        context.ActiveAnnouncement!.Glyph.Should().Be("🎧");
+        context.ActiveAnnouncement!.Glyph.Should().Be("♫");
     }
 
     [Fact]

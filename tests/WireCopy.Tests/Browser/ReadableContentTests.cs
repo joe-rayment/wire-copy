@@ -219,9 +219,9 @@ public class ReadableContentTests
         var metadata = content.GetMetadataString();
 
         // Assert
-        metadata.Should().Contain("By Jane Doe");
-        metadata.Should().Contain("Jan 22, 2024");
-        metadata.Should().Contain("min read");
+        // Design byline spec (workspace-7t0a.6): 'Author · Date' — no 'By '
+        // prefix, no read-time (that lives in the end-of-article footer).
+        metadata.Should().Be("Jane Doe · Jan 22, 2024");
     }
 
     [Fact]
@@ -239,8 +239,7 @@ public class ReadableContentTests
         var metadata = content.GetMetadataString();
 
         // Assert
-        metadata.Should().NotContain("By");
-        metadata.Should().Contain("Jan 22, 2024");
+        metadata.Should().Be("Jan 22, 2024");
     }
 
     [Fact]
@@ -258,14 +257,14 @@ public class ReadableContentTests
         var metadata = content.GetMetadataString();
 
         // Assert
-        metadata.Should().Contain("By Jane Doe");
-        metadata.Should().NotContain("2024");
+        metadata.Should().Be("Jane Doe");
     }
 
     [Fact]
-    public void GetMetadataString_MinimalContent_ShowsReadingTime()
+    public void GetMetadataString_MinimalContent_IsEmpty()
     {
-        // Arrange
+        // Arrange — no author, no date: the byline contributes nothing
+        // (read-time moved to the end-of-article footer, workspace-7t0a.6).
         var content = ReadableContent.Create(
             "Title",
             "Content",
@@ -275,7 +274,7 @@ public class ReadableContentTests
         var metadata = content.GetMetadataString();
 
         // Assert
-        metadata.Should().Contain("min read");
+        metadata.Should().BeEmpty();
     }
 
     [Fact]

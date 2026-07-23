@@ -62,7 +62,7 @@ internal static class ArticleLayoutCommandHandler
 
         // workspace-wef6.5: the 30-60s AnalyzeAsync runs in the activity slot
         // (animated spinner) instead of a long-TTL status message.
-        ctx.NavigationService.SetActivity("ai", "✨ regenerating article layout…", priority: 1);
+        ctx.NavigationService.SetActivity("ai", "✦ regenerating article layout…", priority: 1);
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
         ArticleSelectorConfig? candidate;

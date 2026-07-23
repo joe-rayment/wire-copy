@@ -197,8 +197,9 @@ internal class LineCacheManager
         var lines = new List<string>();
         lines.Add(string.Empty);
 
-        // Article headline — bold, uppercase, prominent
-        var titleLines = UI.Renderers.RenderHelpers.WrapText(content.Title.ToUpperInvariant(), maxWidth - 4);
+        // Article headline — bold pink, Title Case AS PUBLISHED (design casing
+        // table, workspace-7t0a.6 — no forced uppercase).
+        var titleLines = UI.Renderers.RenderHelpers.WrapText(content.Title, maxWidth - 4);
         foreach (var line in titleLines)
         {
             lines.Add($"  {bold}{titleColor}{line}{reset}");
@@ -208,17 +209,27 @@ internal class LineCacheManager
         var ruleWidth = Math.Min(maxWidth - 4, 40);
         lines.Add($"  {palette.HeaderBorderFg.AnsiFg}{new string('\u2500', ruleWidth)}{reset}");
 
-        // Byline and domain — secondary text below separator
+        // Byline: 'Author · Date · domain.com' on ONE secondary-text line
+        // (workspace-7t0a.6 — domain folds into the byline, no separate row).
+        var bylineParts = new List<string>(2);
         var metadata = content.GetMetadataString();
         if (!string.IsNullOrEmpty(metadata))
         {
-            lines.Add($"  {palette.SecondaryText.AnsiFg}{metadata}{reset}");
+            bylineParts.Add(metadata);
         }
 
         if (!string.IsNullOrEmpty(pageUrl))
         {
             var domain = UI.Renderers.LauncherRenderer.ExtractDomain(pageUrl);
-            lines.Add($"  {palette.SecondaryText.AnsiFg}{domain}{reset}");
+            if (!string.IsNullOrEmpty(domain))
+            {
+                bylineParts.Add(domain);
+            }
+        }
+
+        if (bylineParts.Count > 0)
+        {
+            lines.Add($"  {palette.SecondaryText.AnsiFg}{string.Join(" \u00b7 ", bylineParts)}{reset}");
         }
 
         lines.Add(string.Empty);
@@ -247,8 +258,9 @@ internal class LineCacheManager
 
         var readTimeMinutes = Math.Max(1, (int)Math.Ceiling(wordCount / 250.0));
 
+        // Design footer spec (workspace-7t0a.6): words first, approximate read-time.
         var endMarker = "— end —";
-        var statsText = $"{readTimeMinutes} min read · {wordCount:N0} words";
+        var statsText = $"{wordCount:N0} words · ~{readTimeMinutes} min read";
 
         return new List<string>(4)
         {

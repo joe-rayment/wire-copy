@@ -55,7 +55,7 @@ internal static class SetupWizardOverlay
         var titlePadded = $" {title} ";
         var rightDashes = Math.Max(0, innerWidth + 2 - titlePadded.Length - 1);
         Console.SetCursorPosition(startCol, startRow);
-        Console.Write($"{border}┌─{Reset}{titleColor}{titlePadded}{Reset}{border}{new string('─', rightDashes)}┐{Reset}");
+        Console.Write($"{border}╭─{Reset}{titleColor}{titlePadded}{Reset}{border}{new string('─', rightDashes)}╮{Reset}");
 
         var row = startRow + 1;
         foreach (var (plain, styled) in lines)
@@ -74,7 +74,7 @@ internal static class SetupWizardOverlay
         if (row < terminalHeight - 1)
         {
             Console.SetCursorPosition(startCol, row);
-            Console.Write($"{border}└{new string('─', innerWidth + 2)}┘{Reset}");
+            Console.Write($"{border}╰{new string('─', innerWidth + 2)}╯{Reset}");
         }
 
         // Local helpers capture the palette for styled segments.

@@ -872,10 +872,10 @@ public class NavigationService : INavigationService
         {
             _podcastNudgeShown = true;
             Announce(
-                "🎧",
+                "♫",
                 "p: make a podcast from this list",
                 ttl: TimeSpan.FromSeconds(8),
-                shortText: "🎧 p:podcast");
+                shortText: "♫ p:podcast");
         }
     }
 

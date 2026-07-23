@@ -412,7 +412,7 @@ internal class StatusBarRenderer
                 {
                     new[]
                     {
-                        new StatusSegment("\U0001F36A\u2717 ", StatusStyle.Prompt),
+                        new StatusSegment("\u25c6\u2717 ", StatusStyle.Prompt),
                         new StatusSegment(domainList, StatusStyle.Secondary),
                         new StatusSegment(" ", StatusStyle.Secondary),
                         new StatusSegment("Shift+I", StatusStyle.Accent),
@@ -420,7 +420,7 @@ internal class StatusBarRenderer
                     },
                     new[]
                     {
-                        new StatusSegment("\U0001F36A\u2717", StatusStyle.Prompt),
+                        new StatusSegment("\u25c6\u2717", StatusStyle.Prompt),
                         new StatusSegment("\u00b7", StatusStyle.Secondary),
                         new StatusSegment("Shift+I", StatusStyle.Accent),
                     },
@@ -885,7 +885,7 @@ internal class StatusBarRenderer
                 new[]
                 {
                     new StatusSegment($"{spinner} ", StatusStyle.Warning),
-                    new StatusSegment("\U0001F3A7 ", StatusStyle.Accent),
+                    new StatusSegment("\u266b ", StatusStyle.Accent),
                     new StatusSegment($"Generating {percent}%", StatusStyle.Primary),
                     new StatusSegment(" · ", StatusStyle.Secondary),
                     new StatusSegment("Shift+P", StatusStyle.Accent),
@@ -893,7 +893,7 @@ internal class StatusBarRenderer
                 },
                 new[]
                 {
-                    new StatusSegment("\U0001F3A7 ", StatusStyle.Accent),
+                    new StatusSegment("\u266b ", StatusStyle.Accent),
                     new StatusSegment($"{percent}%", StatusStyle.Primary),
                 },
             },
@@ -947,7 +947,10 @@ internal class StatusBarRenderer
             }
 
             segments.Add(new StatusSegment(hints[i].Key, StatusStyle.Accent));
-            segments.Add(new StatusSegment($":{hints[i].Action}", StatusStyle.Dim));
+
+            // Design statusbar spec (workspace-7t0a.4): ':action' reads in med
+            // green SecondaryText — Dim (#005f00) was near-invisible.
+            segments.Add(new StatusSegment($":{hints[i].Action}", StatusStyle.Secondary));
         }
 
         return segments.ToArray();
@@ -1089,8 +1092,9 @@ internal class StatusBarRenderer
 
     private static string FormatHints(ThemePalette p, (string Key, string Action)[] hints)
     {
+        // Design statusbar spec (workspace-7t0a.4): key cyan, ':action' med green.
         return string.Join(" ", hints.Select(h =>
-            $"{p.GetAccentFg().AnsiFg}{h.Key}{Reset}{p.GetDimFg().AnsiFg}:{h.Action}{Reset}"));
+            $"{p.GetAccentFg().AnsiFg}{h.Key}{Reset}{p.SecondaryText.AnsiFg}:{h.Action}{Reset}"));
     }
 
     private static string GetActionVerb(HumanActionVariant variant)
