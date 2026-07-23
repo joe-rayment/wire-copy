@@ -325,13 +325,26 @@ public partial class BrowserOrchestrator : IBrowserService
                     break;
 
                 case ViewMode.Readable:
+                    // workspace-7htl: attribute slow readable renders (cache rebuild vs
+                    // compose) — logged below only when the frame took ≥100ms.
+                    var readableSw = System.Diagnostics.Stopwatch.StartNew();
                     _lineCacheManager.EnsureLineCache(options);
+                    var ensureMs = readableSw.ElapsedMilliseconds;
                     if (_renderer is UI.TerminalPageRenderer tpr)
                     {
                         tpr.SetParagraphSpans(_lineCacheManager.ParagraphSpans);
                     }
 
                     _renderer.RenderReadable(page, context, options, _lineCacheManager.CachedLines?.ToList());
+                    if (readableSw.ElapsedMilliseconds >= 100)
+                    {
+                        _logger.LogInformation(
+                            "[render-timing] slow readable frame: ensureCache={EnsureMs}ms compose={ComposeMs}ms width={Width}",
+                            ensureMs,
+                            readableSw.ElapsedMilliseconds - ensureMs,
+                            options.MaxContentWidth);
+                    }
+
                     break;
 
                 case ViewMode.CollectionList:
@@ -444,8 +457,13 @@ public partial class BrowserOrchestrator : IBrowserService
             // When speed reading is active, a per-line delay races as a fourth task.
             Task<NavigationCommand>? pendingInput = null;
             Task? speedReadDelay = null;
+            var loopSw = Stopwatch.StartNew();
             while (!cancellationToken.IsCancellationRequested)
             {
+                // workspace-7htl diagnosis: any branch that holds the loop ≥50ms delays
+                // queued command dispatch (resize included) by that long.
+                loopSw.Restart();
+
                 // Re-read terminal dimensions on every iteration to handle resize
                 options = GetCurrentRenderOptions();
 
@@ -513,7 +531,15 @@ public partial class BrowserOrchestrator : IBrowserService
                     _speedReadActivationSw = null;
                 }
 
+                var preInputMs = loopSw.ElapsedMilliseconds;
+                if (preInputMs >= 50)
+                {
+                    _logger.LogInformation("[loop-timing] pre-input work took {Ms}ms", preInputMs);
+                }
+
                 var completed = await Task.WhenAny(raceTasks).ConfigureAwait(false);
+                var wasInputBranch = completed == pendingInput;
+                loopSw.Restart();
 
                 if (completed == _backgroundPageLoad)
                 {
@@ -646,6 +672,14 @@ public partial class BrowserOrchestrator : IBrowserService
                         _navigationService.ClearActivity("load");
                         await CheckAndRenderProgressAsync(cancellationToken).ConfigureAwait(false);
                     }
+                }
+
+                if (loopSw.ElapsedMilliseconds >= 50)
+                {
+                    _logger.LogInformation(
+                        "[loop-timing] branch held the loop {Ms}ms (input={WasInput})",
+                        loopSw.ElapsedMilliseconds,
+                        wasInputBranch);
                 }
             }
         }

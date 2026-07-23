@@ -116,14 +116,28 @@ internal static class ViewCommandHandler
 
     public static async Task HandleTerminalResized(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
+        // workspace-7htl: stage timings for the resize→wire latency. Correlate with the
+        // detector's "[resize-timing] detected" line to see queue/dispatch delay too.
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         var newOptions = ctx.GetCurrentRenderOptions();
+        var optionsMs = sw.ElapsedMilliseconds;
+
         if (ctx.LineCacheManager.CachedWidth > 0 && newOptions.MaxContentWidth != ctx.LineCacheManager.CachedWidth)
         {
             ctx.LineCacheManager.PreserveScrollPositionAfterRewrap(newOptions);
         }
 
+        var rewrapMs = sw.ElapsedMilliseconds - optionsMs;
         ctx.LineCacheManager.ClampScrollOffset();
         await ctx.RenderCurrentPageAsync(newOptions, ct).ConfigureAwait(false);
+        ctx.Logger.LogInformation(
+            "[resize-timing] handled {Width}x{Height}: options={OptionsMs}ms rewrap={RewrapMs}ms render={RenderMs}ms total={TotalMs}ms",
+            newOptions.TerminalWidth,
+            newOptions.TerminalHeight,
+            optionsMs,
+            rewrapMs,
+            sw.ElapsedMilliseconds - optionsMs - rewrapMs,
+            sw.ElapsedMilliseconds);
 
         // workspace-tj1z.3: the rewrap frame is on the wire — tell the shell so its
         // transition overlay can take the settle capture deterministically (pty byte

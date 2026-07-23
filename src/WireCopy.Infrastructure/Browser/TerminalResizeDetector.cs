@@ -67,6 +67,11 @@ public sealed class TerminalResizeDetector : IResizeDetector
                 lastWidth = width;
                 lastHeight = height;
                 _channel.Writer.TryWrite(true);
+
+                // workspace-7htl: wall-clock anchor for the resize→wire latency breakdown —
+                // correlate with the [resize-timing] line ViewCommandHandler logs when the
+                // rewrap frame has been written.
+                _logger.LogInformation("[resize-timing] detected {Width}x{Height}", width, height);
             }
         }
     }

@@ -150,11 +150,20 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
                 _writeLock.Release();
             }
 
+            var waitSw = System.Diagnostics.Stopwatch.StartNew();
             var done = await Task.WhenAny(tcs.Task, Task.Delay(RequestTimeout)).ConfigureAwait(false);
             if (done != tcs.Task)
             {
                 _logger.LogWarning("Shell channel request {Method} timed out", method);
                 return null;
+            }
+
+            // workspace-7htl: shell round-trips run on the render/command loop — a slow
+            // reply stalls resize dispatch, so make anything non-instant visible.
+            if (waitSw.ElapsedMilliseconds >= 50)
+            {
+                _logger.LogInformation(
+                    "[shell-timing] {Method} reply took {Ms}ms", method, waitSw.ElapsedMilliseconds);
             }
 
             return await tcs.Task.ConfigureAwait(false);

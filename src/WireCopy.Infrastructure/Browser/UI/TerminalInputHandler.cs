@@ -28,6 +28,7 @@ public class TerminalInputHandler : IInputHandler
     private Task<ConsoleKeyInfo>? _pendingKeyTask;
     private Task<bool>? _pendingResizeTask;
     private Task? _pendingAnimationTick;
+    private bool _resizeChannelCompleted;
 
     public TerminalInputHandler(IThemeProvider themeProvider, IResizeDetector resizeDetector, INavigationService navigationService, ILogger<TerminalInputHandler> logger)
     {
@@ -294,22 +295,38 @@ public class TerminalInputHandler : IInputHandler
             }
 
             Task<ConsoleKeyInfo>? pendingKey = null;
-            Task? pendingResize = null;
+            Task<bool>? pendingResize = null;
+            var resizeChannelCompleted = false;
             while (!cancellationToken.IsCancellationRequested)
             {
                 // Race the next keystroke against a terminal-resize signal so the
                 // prompt can reflow instead of ignoring resizes (it reads the key
                 // channel directly, outside the main loop's resize handling). The
                 // key read is persisted across iterations so a resize never drops a
-                // keystroke; the resize read is coalesced and safe to discard.
+                // keystroke. workspace-7htl: the resize race is a WAITER
+                // (WaitToReadAsync), never a consuming ReadAsync — a consuming read
+                // left pending when this prompt returns would stay registered on the
+                // channel and eat a later resize event the main loop needs.
                 pendingKey ??= _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
-                pendingResize ??= _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
-
-                var completed = await Task.WhenAny(pendingKey, pendingResize).ConfigureAwait(false);
-
-                if (completed == pendingResize)
+                if (!resizeChannelCompleted)
                 {
+                    pendingResize ??= _resizeDetector.Resizes.WaitToReadAsync(cancellationToken).AsTask();
+                }
+
+                var completed = pendingResize == null
+                    ? (Task)pendingKey
+                    : await Task.WhenAny(pendingKey, pendingResize).ConfigureAwait(false);
+
+                if (pendingResize != null && completed == pendingResize)
+                {
+                    var channelAlive = pendingResize.Result;
                     pendingResize = null;
+                    if (!channelAlive)
+                    {
+                        // Channel completed (shutdown) — stop racing it or this spins.
+                        resizeChannelCompleted = true;
+                        continue;
+                    }
 
                     while (_resizeDetector.Resizes.TryRead(out _))
                     {
@@ -556,10 +573,25 @@ public class TerminalInputHandler : IInputHandler
             }
 
             _pendingKeyTask ??= _keyChannel.Reader.ReadAsync(cancellationToken).AsTask();
-            _pendingResizeTask ??= _resizeDetector.Resizes.ReadAsync(cancellationToken).AsTask();
+
+            // workspace-7htl: race a WAITER (WaitToReadAsync), never a consuming reader
+            // (ReadAsync). A pending ReadAsync that DrainPendingTasks discarded stayed
+            // registered on the channel and silently ATE the next resize event — for a
+            // whole app session after any prompt, the first pty reflow (the one the
+            // shell's collapse-overlay settle is anchored on) never dispatched, and the
+            // shell fell back to its 600ms byte-quiet heuristic. An abandoned waiter
+            // completes without consuming; the event stays for the TryRead drain below.
+            if (!_resizeChannelCompleted)
+            {
+                _pendingResizeTask ??= _resizeDetector.Resizes.WaitToReadAsync(cancellationToken).AsTask();
+            }
 
             // Build the task list: always key + resize, optionally animation tick
-            var raceTasks = new List<Task>(3) { _pendingKeyTask, _pendingResizeTask };
+            var raceTasks = new List<Task>(3) { _pendingKeyTask };
+            if (_pendingResizeTask != null)
+            {
+                raceTasks.Add(_pendingResizeTask);
+            }
 
             if (_animationController.AnimationState.HasActiveAnimation)
             {
@@ -581,9 +613,17 @@ public class TerminalInputHandler : IInputHandler
                 return new NavigationCommand { Type = CommandType.AnimationTick };
             }
 
-            if (completed == _pendingResizeTask)
+            if (_pendingResizeTask != null && completed == _pendingResizeTask)
             {
+                var channelAlive = _pendingResizeTask.Result;
                 _pendingResizeTask = null;
+                if (!channelAlive)
+                {
+                    // Channel completed (detector disposed at shutdown) — WaitToReadAsync
+                    // would now complete false forever; stop racing it or this loop spins.
+                    _resizeChannelCompleted = true;
+                    continue;
+                }
 
                 while (_resizeDetector.Resizes.TryRead(out _))
                 {
@@ -1301,7 +1341,10 @@ public class TerminalInputHandler : IInputHandler
             _pendingKeyTask = null;
         }
 
-        // Resize events are coalesced; safe to discard any pending resize read
+        // The resize race is a WaitToReadAsync WAITER (workspace-7htl): abandoning it
+        // never consumes a resize event, so discarding here is genuinely safe. (When
+        // this was a consuming ReadAsync, the discarded-but-still-registered reader ate
+        // the next resize event — one lost pty reflow per prompt session.)
         _pendingResizeTask = null;
 
         // Animation ticks are fire-and-forget; safe to discard

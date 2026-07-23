@@ -80,16 +80,17 @@ function checkEpisode (label, s, { w, dockedX, pageW, finalX, cardDir }) {
     const last = cardXs[cardXs.length - 1]
     check(`${label}: card lands exactly at ${finalX}`, Math.abs(last - finalX) <= 1, `last=${last}`)
   }
-  // Overlay lifetime: from first shown sample to last shown sample. 1100ms, not the
-  // design's estimated 700ms: the settle is anchored on the TUI's deterministic
-  // resize-rendered ack, and the measured pipeline (renderer RO->IPC ~40ms + 100ms
-  // detector poll + a 300-500ms full-width rewrap render on this box + 140ms
-  // crossfade) puts the collapse drop at ~950ms worst case. Dropping earlier would
-  // expose the clipped stale-width frame — the artifact this epic exists to kill;
-  // the CARD motion (the perceived transition) still completes in 300-340ms.
+  // Overlay lifetime: from first shown sample to last shown sample. The settle is
+  // anchored on the TUI's deterministic resize-rendered ack; with the workspace-7htl
+  // fix (the input loop races the resize channel with a non-consuming waiter, so a
+  // prompt session can no longer eat the reflow event) the ack lands ~150ms after
+  // the snap (renderer RO->IPC ~40ms + ≤100ms detector poll + a ~0ms rewrap) and the
+  // drop tracks slide end: measured 323ms collapse / 346ms reveal on this box.
+  // 700ms = the design bound, ~2x the measured worst case for slower machines.
   const shownT = s.filter(p => p.overlay).map(p => p.t)
-  check(`${label}: overlay drops within 1100ms`,
-    shownT.length > 0 && (shownT[shownT.length - 1] - shownT[0]) <= 1100,
+  if (shownT.length) console.log(`  ${label}: overlay lifetime ${shownT[shownT.length - 1] - shownT[0]}ms`)
+  check(`${label}: overlay drops within 700ms`,
+    shownT.length > 0 && (shownT[shownT.length - 1] - shownT[0]) <= 700,
     shownT.length ? `up=${shownT[shownT.length - 1] - shownT[0]}ms` : 'overlay never sampled shown')
   // Exactly one pty reflow across the transition: never a third (intermediate) cols
   // value. (<=2, not ===2: the sampler can miss the pre-snap value when xdotool's

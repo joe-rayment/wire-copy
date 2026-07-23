@@ -627,4 +627,71 @@ public class TerminalInputHandlerTests
     }
 
     #endregion
+
+    #region Resize race must never eat events (workspace-7htl)
+
+    /// <summary>
+    /// workspace-7htl bug shape: opening any prompt calls DrainPendingTasks, which
+    /// discards the main input loop's pending resize race. When that race was a
+    /// consuming <c>ReadAsync</c>, the discarded task stayed registered as a blocked
+    /// reader on the resize channel and silently ATE the next resize event — after any
+    /// prompt session, the next pty reflow (the one the desktop shell's collapse
+    /// overlay settle is anchored on) never dispatched, and the shell fell back to its
+    /// 600ms byte-quiet heuristic (the "300-500ms rewrap" latency). The race is now a
+    /// non-consuming <c>WaitToReadAsync</c> waiter, so an abandoned race leaves the
+    /// event in the channel for the live loop.
+    /// </summary>
+    [Fact]
+    public async Task ResizeEvent_AfterDrainPendingTasks_StillDispatchesTerminalResized()
+    {
+        var themeProvider = Substitute.For<IThemeProvider>();
+        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
+        var resizeChannel = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
+        {
+            FullMode = BoundedChannelFullMode.DropOldest,
+            SingleWriter = true,
+        });
+        var resizeDetector = Substitute.For<IResizeDetector>();
+        resizeDetector.Resizes.Returns(resizeChannel.Reader);
+        var handler = new TerminalInputHandler(
+            themeProvider,
+            resizeDetector,
+            Substitute.For<INavigationService>(),
+            Substitute.For<ILogger<TerminalInputHandler>>());
+
+        // Keep the key channel open-but-silent: under the test runner stdin is
+        // redirected, and EnsureKeyReaderStarted would COMPLETE the key channel
+        // (killing the input loop) rather than leave it pending like a real TTY.
+        typeof(TerminalInputHandler)
+            .GetField("_keyReaderStarted", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .SetValue(handler, true);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        var waitTask = handler.WaitForInputAsync(cts.Token);
+
+        // Let the input loop register its resize race.
+        var raceField = typeof(TerminalInputHandler)
+            .GetField("_pendingResizeTask", BindingFlags.NonPublic | BindingFlags.Instance)!;
+        while (raceField.GetValue(handler) == null)
+        {
+            cts.Token.ThrowIfCancellationRequested();
+            await Task.Delay(10);
+        }
+
+        // A prompt opens: its entry point discards the pending races.
+        typeof(TerminalInputHandler)
+            .GetMethod("DrainPendingTasks", BindingFlags.NonPublic | BindingFlags.Instance)!
+            .Invoke(handler, null);
+
+        // The next resize event must still reach the main input loop.
+        resizeChannel.Writer.TryWrite(true).Should().BeTrue();
+
+        var winner = await Task.WhenAny(waitTask, Task.Delay(3000));
+        winner.Should().Be(
+            waitTask,
+            "an abandoned resize race must never consume the event — the live input loop has to see the reflow");
+        (await waitTask).Type.Should().Be(CommandType.TerminalResized);
+    }
+
+    #endregion
 }

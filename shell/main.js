@@ -346,11 +346,13 @@ function onOverlayArmed (t) {
 
 // (5) Settle heuristic, anchored on the REAL pty resize (measured empirically: the
 // snap's renderer ResizeObserver -> term:resize IPC -> the .NET detector's 100ms
-// TIOCGWINSZ poll -> a full rewrap render puts the reflow frame ~250-400ms after the
-// snap, as ONE atomic DEC-2026-framed burst). So: wait for the term:resize that the
-// snap provoked, then for the first burst AFTER it, then a short quiet, then a paint
-// grace. Absent a resize (cols unchanged) or a burst, settle on the early timeouts;
-// SETTLE_CAP_MS bounds the whole wait.
+// TIOCGWINSZ poll -> a full rewrap render puts the reflow frame ~150ms after the
+// snap, as ONE atomic DEC-2026-framed burst — workspace-7htl fixed the input loop
+// eating the resize event after a prompt, which used to push this to the 600ms
+// byte-quiet fallback). So: wait for the term:resize that the snap provoked, then
+// for the first burst AFTER it, then a short quiet, then a paint grace. Absent a
+// resize (cols unchanged) or a burst, settle on the early timeouts; SETTLE_CAP_MS
+// bounds the whole wait.
 function startSettle (t) {
   t.settleStart = Date.now()
   t.resizeSeen = false
