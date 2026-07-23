@@ -60,10 +60,11 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void ComputeLayout_Width40_ReturnsOneColumn()
+    public void ComputeLayout_Width40_StaysTwoColumns()
     {
+        // workspace-21uy: a sidecar-docked narrow terminal must NOT collapse to 1.
         var layout = LinkTreeRenderer.ComputeLayout(40, 24);
-        layout.Columns.Should().Be(1);
+        layout.Columns.Should().Be(2);
     }
 
     [Fact]
@@ -75,35 +76,27 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void CellWidth_IsFullWidthForOneColumn()
+    public void CellWidth_NarrowTerminal_IsHalfMinusDivider()
     {
         var layout = LinkTreeRenderer.ComputeLayout(40, 24);
-        layout.CellWidth.Should().Be(layout.Width);
+        layout.Columns.Should().Be(2);
+        layout.CellWidth.Should().Be((layout.Width - 1) / 2);
     }
 
-    // Responsive columns (workspace-ehon): a wide desktop-shell window yields more
-    // columns of readable tiles instead of two stretched ones.
+    // Fixed 2-column grid (workspace-21uy): wide windows get WIDER tiles, never more
+    // columns; narrow (sidecar-docked) windows get narrower tiles, never fewer.
     [Fact]
-    public void ComputeLayout_Width160_ReturnsThreeColumns()
+    public void ComputeLayout_Width160_StaysTwoColumns()
     {
         var layout = LinkTreeRenderer.ComputeLayout(160, 40);
-        layout.Columns.Should().Be(3);
+        layout.Columns.Should().Be(2);
     }
 
     [Fact]
-    public void ComputeLayout_UltraWide_ReturnsFourColumns()
+    public void ComputeLayout_UltraWide_StaysTwoColumns()
     {
         var layout = LinkTreeRenderer.ComputeLayout(212, 40);
-        layout.Columns.Should().Be(4);
-    }
-
-    [Fact]
-    public void CellWidth_ThreeColumns_IsInnerMinusDividersOverThree()
-    {
-        var layout = LinkTreeRenderer.ComputeLayout(160, 40);
-        layout.Columns.Should().Be(3);
-        // Base (non-remainder) cell width reserves one cell per inter-column divider.
-        layout.CellWidth.Should().Be((layout.Width - (layout.Columns - 1)) / layout.Columns);
+        layout.Columns.Should().Be(2);
     }
 
     [Fact]
@@ -751,13 +744,13 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void ComposedGridRow_TotalVisibleWidth_EqualsLayoutWidth_ThreeColumns()
+    public void ComposedGridRow_TotalVisibleWidth_EqualsLayoutWidth_RemainderWidth()
     {
-        // Width 170 gives a NONZERO remainder (inner 168 \u2192 base cell 55, last cell 56), so the
+        // Width 170 gives a NONZERO remainder (inner 168 \u2192 base cell 83, last cell 84), so the
         // test actually distinguishes LastCellWidthFor from CellWidth \u2014 at a zero-remainder
         // width the two coincide and a last-column bug would slip through (workspace-ehon review).
         var layout = LinkTreeRenderer.ComputeLayout(170, 40);
-        layout.Columns.Should().Be(3);
+        layout.Columns.Should().Be(2);
         var lastWidth = layout.Width - (layout.CellWidth * (layout.Columns - 1)) - (layout.Columns - 1);
         lastWidth.Should().BeGreaterThan(layout.CellWidth, "the last column must absorb the remainder");
 
@@ -765,7 +758,6 @@ public class LinkTreeLayoutTests
         {
             CreateLinkNode("Alpha", "https://example.com/a", LinkType.Content),
             CreateLinkNode("Beta", "https://example.com/b", LinkType.Content),
-            CreateLinkNode("Gamma", "https://example.com/c", LinkType.Content),
         };
 
         for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
@@ -797,10 +789,10 @@ public class LinkTreeLayoutTests
 
     // The dock/spotlight targets the selected story via TryGetSelectedRowScreenPosition.
     // This is the exact "spotlight highlights the WRONG element" bug class the Verification
-    // Doctrine calls out — at 3 columns the flash must land on the SELECTED cell's column,
-    // not a fixed left/right pair.
+    // Doctrine calls out — the flash must land on the SELECTED cell's column and row,
+    // not a fixed position.
     [Fact]
-    public void TryGetSelectedRowScreenPosition_ThreeColumns_XOffsetTracksSelectedColumn()
+    public void TryGetSelectedRowScreenPosition_XOffsetTracksSelectedColumn()
     {
         var nodes = new List<LinkNode>
         {
@@ -808,13 +800,11 @@ public class LinkTreeLayoutTests
             CreateLinkNode("B", "https://example.com/b", LinkType.Content),
             CreateLinkNode("C", "https://example.com/c", LinkType.Content),
             CreateLinkNode("D", "https://example.com/d", LinkType.Content),
-            CreateLinkNode("E", "https://example.com/e", LinkType.Content),
-            CreateLinkNode("F", "https://example.com/f", LinkType.Content),
         };
         var layout = LinkTreeRenderer.ComputeLayout(160, 40);
-        layout.Columns.Should().Be(3);
+        layout.Columns.Should().Be(2);
 
-        // Row 0 = nodes[0,1,2] in columns 0,1,2.
+        // Row 0 = nodes[0,1] in columns 0,1; row 1 starts at nodes[2].
         var p0 = LinkTreeRenderer.TryGetSelectedRowScreenPosition(nodes, 0, 0, layout, 100);
         var p1 = LinkTreeRenderer.TryGetSelectedRowScreenPosition(nodes, 1, 0, layout, 100);
         var p2 = LinkTreeRenderer.TryGetSelectedRowScreenPosition(nodes, 2, 0, layout, 100);
@@ -826,11 +816,11 @@ public class LinkTreeLayoutTests
         // Each column c starts at c*(CellWidth+1); the title text sits 2 cells in.
         p0!.Value.Col.Should().Be(2);
         p1!.Value.Col.Should().Be(layout.CellWidth + 1 + 2);
-        p2!.Value.Col.Should().Be((2 * (layout.CellWidth + 1)) + 2);
 
-        // All three sit on the same screen row (row 0's title line).
+        // nodes[0] and nodes[1] share row 0's title line; nodes[2] wraps to row 1, column 0.
         p0.Value.Row.Should().Be(p1.Value.Row);
-        p1.Value.Row.Should().Be(p2.Value.Row);
+        p2!.Value.Col.Should().Be(2);
+        p2.Value.Row.Should().Be(p0.Value.Row + layout.CellHeight);
     }
 
     #endregion

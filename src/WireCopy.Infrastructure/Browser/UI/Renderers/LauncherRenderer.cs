@@ -205,19 +205,16 @@ internal class LauncherRenderer
 
             case "Compact":
             {
-                var baseColumns = width >= 40 ? 2 : 1;
-                columns = width >= 60 ? 3 : baseColumns;
+                columns = ResponsiveGrid.ColumnsFor(width);
                 cellHeight = 3;
                 break;
             }
 
             default: // Grid
             {
-                // Responsive column count (workspace-ehon): derive the column
-                // count from a target tile width (ResponsiveGrid) so tiles keep
-                // the readable ~52-char proportion and the grid FILLS a wide
-                // desktop-shell window with more columns (3 at ~160 cols, 4
-                // ultra-wide) instead of stretching two into skinny-long ribbons.
+                // Fixed 2-column grid (workspace-21uy): cells split the width
+                // at every window size — narrower when the sidecar docks, wider
+                // fullscreen — never a different column count.
                 columns = ResponsiveGrid.ColumnsFor(width);
 
                 // Card cell (workspace-bs93/stby): blank pad + title + subtitle +

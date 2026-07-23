@@ -108,12 +108,15 @@ public class ResponsiveReflowTests
 
     #region ComputeLayout responsive behavior
 
+    // Fixed 2-column grid (workspace-21uy): every window width keeps exactly two
+    // columns — the sidecar-docked narrow terminal must not collapse to 1, and
+    // wide windows widen the tiles instead of adding columns.
     [Fact]
-    public void ComputeLayout_NarrowTerminal_SingleColumn()
+    public void ComputeLayout_NarrowTerminal_StaysTwoColumns()
     {
         var layout = LinkTreeRenderer.ComputeLayout(45, 30);
-        layout.Columns.Should().Be(1);
-        layout.CellWidth.Should().Be(layout.Width);
+        layout.Columns.Should().Be(2);
+        layout.CellWidth.Should().Be((layout.Width - 1) / 2);
     }
 
     [Fact]
@@ -124,20 +127,18 @@ public class ResponsiveReflowTests
         layout.CellWidth.Should().BeLessThan(layout.Width);
     }
 
-    // Responsive fill (workspace-ehon): the desktop-shell window is far wider than
-    // a terminal, so the grid grows past two columns instead of stretching them.
     [Fact]
-    public void ComputeLayout_DesktopWindow_ThreeColumns()
+    public void ComputeLayout_DesktopWindow_StaysTwoColumns()
     {
         var layout = LinkTreeRenderer.ComputeLayout(160, 40);
-        layout.Columns.Should().Be(3);
+        layout.Columns.Should().Be(2);
     }
 
     [Fact]
-    public void ComputeLayout_UltraWide_FourColumns()
+    public void ComputeLayout_UltraWide_StaysTwoColumns()
     {
         var layout = LinkTreeRenderer.ComputeLayout(212, 40);
-        layout.Columns.Should().Be(4);
+        layout.Columns.Should().Be(2);
     }
 
     [Fact]

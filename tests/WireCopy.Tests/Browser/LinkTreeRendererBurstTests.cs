@@ -33,19 +33,19 @@ public class LinkTreeRendererBurstTests
     private const string AccentBar = "▌"; // ▌
 
     /// <summary>
-    /// Render-level width guard for the responsive story-list grid (workspace-ehon). Invokes the
-    /// REAL RenderGridRow at a NONZERO-remainder 3-column width, so a regression where the last
+    /// Render-level width guard for the story-list grid (workspace-ehon). Invokes the
+    /// REAL RenderGridRow at a NONZERO-remainder width, so a regression where the last
     /// column used layout.CellWidth instead of ResponsiveGrid.LastCellWidthFor shows up as a short
     /// separator rule (a ragged / clipped right edge). The composed reconstruction tests can't catch
     /// this — they re-do the last-cell arithmetic themselves — and the earlier width test split
     /// evenly (remainder 0), so the renderer's width-selection was never exercised (review finding).
     /// </summary>
     [Fact]
-    public void RenderLinkTree_ThreeColumns_NonzeroRemainder_SeparatorRowsFillFullWidth()
+    public void RenderLinkTree_NonzeroRemainder_SeparatorRowsFillFullWidth()
     {
-        const int width = 170; // inner 168 → 3 cols, base cell 55, remainder-absorbing last cell 56
+        const int width = 170; // inner 168 → 2 cols, base cell 83, remainder-absorbing last cell 84
         var layout = LinkTreeRenderer.ComputeLayout(width, 40);
-        layout.Columns.Should().Be(3);
+        layout.Columns.Should().Be(2);
 
         var linkMap = new Dictionary<LinkType, List<LinkInfo>>
         {

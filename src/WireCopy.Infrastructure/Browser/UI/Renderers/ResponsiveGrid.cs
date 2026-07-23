@@ -3,50 +3,31 @@
 namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 
 /// <summary>
-/// Single source of truth for the launcher / story-list card grid proportion
-/// (workspace-ehon). Both grids previously hardcoded a maximum of 2 columns,
-/// tuned for an ~80–120-column terminal. In the desktop shell the window is much
-/// wider (~140–166 columns), so 2 columns stretched into long, thin "skinny and
-/// long" ribbons with acres of dead space.
-///
-/// The fix derives the column count from a target tile width so each tile keeps
-/// the readable ~<see cref="TargetTileWidth"/>-char proportion at every window
-/// size, and the grid grows to more columns to FILL the width instead of
-/// stretching two. On the default desktop window this yields 3 columns (the old
-/// proportion); ultra-wide → 4; a narrow terminal → 2 then 1.
+/// Single source of truth for the launcher / story-list card grid shape
+/// (workspace-ehon, workspace-21uy). The grid is ALWAYS exactly
+/// <see cref="FixedColumns"/> columns wide. workspace-ehon briefly made the
+/// column count responsive to window width (1–5 columns from a ~52-char target
+/// tile), but the user rejected both extremes it produced: 3–5 skinny columns
+/// on a wide desktop window, and a collapse to 1 column when the docked
+/// browser sidecar narrows the terminal. Tiles are made large and readable by
+/// growing each cell's height and text, never by changing the column count.
 /// </summary>
 internal static class ResponsiveGrid
 {
     /// <summary>
-    /// Target width (in terminal cells) of a single card. ~52 keeps the readable
-    /// proportion the user liked from the terminal build. This is a knob: the
-    /// Definition of Done is how the grid LOOKS at the default window, not the
-    /// exact number.
+    /// The column count of every tile grid, at every window width. Each column
+    /// takes half the inner width; on a narrow docked terminal the cells get
+    /// narrower, never fewer.
     /// </summary>
-    internal const int TargetTileWidth = 52;
-
-    /// <summary>
-    /// Hard ceiling on the column count. Only bites past ~<c>MaxColumns *
-    /// TargetTileWidth</c> cells (~260), preventing pathologically tiny tiles on
-    /// giant/ultra-wide displays while still letting the grid fill normal windows.
-    /// </summary>
-    internal const int MaxColumns = 5;
+    internal const int FixedColumns = 2;
 
     /// <summary>
     /// Number of columns for the given inner content width (terminal width minus
-    /// borders). Rounds to the nearest whole number of <see cref="TargetTileWidth"/>
-    /// tiles so a window sits at the column count whose tiles land closest to the
-    /// target — e.g. ~90 → 2, ~160 → 3, ~210 → 4 — clamped to [1, <see cref="MaxColumns"/>].
+    /// borders). Always <see cref="FixedColumns"/> — see the class remarks.
     /// </summary>
     internal static int ColumnsFor(int innerWidth)
     {
-        if (innerWidth <= 0)
-        {
-            return 1;
-        }
-
-        var raw = (int)System.Math.Round(innerWidth / (double)TargetTileWidth, System.MidpointRounding.AwayFromZero);
-        return System.Math.Clamp(raw, 1, MaxColumns);
+        return FixedColumns;
     }
 
     /// <summary>

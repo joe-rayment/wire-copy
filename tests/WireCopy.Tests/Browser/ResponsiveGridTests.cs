@@ -7,31 +7,33 @@ using Xunit;
 namespace WireCopy.Tests.Browser;
 
 /// <summary>
-/// The shared launcher / story-list column formula (workspace-ehon). The Definition
-/// of Done is how the grid LOOKS at the default window, so these lock the maths that
-/// the visual verification then confirms: column count tracks the target tile width,
-/// and the cells + dividers always fill the width exactly (the last cell absorbs the
-/// remainder — no ragged right edge, no dead-space ribbon).
+/// The shared launcher / story-list column contract (workspace-21uy): every tile
+/// grid is exactly 2 columns at every window width — no collapse to 1 when the
+/// docked sidecar narrows the terminal, no 3–5 skinny columns on a wide window.
+/// The width tests lock the cell maths: cells + dividers always fill the width
+/// exactly (the last cell absorbs the remainder — no ragged right edge).
 /// </summary>
 [Trait("Category", "Unit")]
 public class ResponsiveGridTests
 {
     [Theory]
-    [InlineData(38, 1)]   // very narrow → single column
-    [InlineData(88, 2)]   // ~90-col terminal
-    [InlineData(158, 3)]  // default desktop-shell window — the old proportion, now 3-up
-    [InlineData(208, 4)]  // ultra-wide
-    [InlineData(1000, 5)] // clamped to MaxColumns
-    public void ColumnsFor_TracksTargetTileWidth(int innerWidth, int expected)
+    [InlineData(38)]   // sidecar-docked narrow terminal — must NOT collapse to 1
+    [InlineData(88)]   // ~90-col terminal
+    [InlineData(158)]  // default desktop-shell window
+    [InlineData(208)]  // ultra-wide — must NOT fan out to 3+
+    [InlineData(1000)]
+    public void ColumnsFor_IsAlwaysTwo(int innerWidth)
     {
-        ResponsiveGrid.ColumnsFor(innerWidth).Should().Be(expected);
+        ResponsiveGrid.ColumnsFor(innerWidth).Should().Be(2);
     }
 
     [Fact]
-    public void ColumnsFor_NonPositiveWidth_IsOne()
+    public void ColumnsFor_NonPositiveWidth_StaysTwo_CellWidthClampsInstead()
     {
-        ResponsiveGrid.ColumnsFor(0).Should().Be(1);
-        ResponsiveGrid.ColumnsFor(-5).Should().Be(1);
+        // Degenerate widths clamp at CellWidthFor (>= 1 cell), not the column count.
+        ResponsiveGrid.ColumnsFor(0).Should().Be(2);
+        ResponsiveGrid.ColumnsFor(-5).Should().Be(2);
+        ResponsiveGrid.CellWidthFor(0, 2).Should().BeGreaterThanOrEqualTo(1);
     }
 
     [Theory]
