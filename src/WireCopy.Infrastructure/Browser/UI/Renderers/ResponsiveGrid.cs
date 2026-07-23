@@ -22,6 +22,12 @@ internal static class ResponsiveGrid
     internal const int FixedColumns = 2;
 
     /// <summary>
+    /// Target number of tile rows on screen: with the grid as the only element,
+    /// 2 columns × 4 rows ≈ 8 large tiles fill it (workspace-21uy).
+    /// </summary>
+    internal const int TargetRows = 4;
+
+    /// <summary>
     /// Number of columns for the given inner content width (terminal width minus
     /// borders). Always <see cref="FixedColumns"/> — see the class remarks.
     /// </summary>
@@ -29,12 +35,6 @@ internal static class ResponsiveGrid
     {
         return FixedColumns;
     }
-
-    /// <summary>
-    /// Target number of tile rows on screen: with the grid as the only element,
-    /// 2 columns × 4 rows ≈ 8 large tiles fill it (workspace-21uy).
-    /// </summary>
-    internal const int TargetRows = 4;
 
     /// <summary>
     /// Cell height for the given content-area height: tiles grow to fill the

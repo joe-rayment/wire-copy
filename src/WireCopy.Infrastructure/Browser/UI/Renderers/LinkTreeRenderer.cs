@@ -281,37 +281,51 @@ internal class LinkTreeRenderer
     internal static int GetTitleTextWidth(int cellWidth) => Math.Max(1, cellWidth - 2);
 
     /// <summary>
-    /// Gets a specific wrapped line of the title text (0-indexed).
-    /// Returns the requested line, or empty string if the title doesn't have that many lines.
-    /// If lineNumber == 1 and there are 3+ wrapped lines, the second line is truncated with ellipsis.
+    /// Number of lines the title may wrap across in a standard card
+    /// (workspace-21uy). The cell reserves the top padding line, the
+    /// author/date line and the separator, plus one interior padding line on
+    /// cells tall enough to have one — everything else belongs to the title so
+    /// long headlines fill the tile instead of truncating at two lines.
+    /// The classic 5-line card keeps its 2-line title.
     /// </summary>
-    internal static string GetWrappedTitleLine(string displayText, int textWidth, int lineNumber)
+    internal static int GetTitleLineBudget(int cardHeight)
+    {
+        return cardHeight >= 5 ? Math.Max(2, cardHeight - 4) : 1;
+    }
+
+    /// <summary>
+    /// Wraps the title into at most <paramref name="maxLines"/> display lines.
+    /// When the full text needs more lines than that, the final line carries
+    /// the ellipsized remainder.
+    /// </summary>
+    internal static IReadOnlyList<string> GetWrappedTitleLines(string displayText, int textWidth, int maxLines)
     {
         if (textWidth <= 0 || string.IsNullOrEmpty(displayText))
         {
-            return lineNumber == 0 ? RenderHelpers.TruncateText(displayText ?? string.Empty, Math.Max(1, textWidth)) : string.Empty;
+            return new[] { RenderHelpers.TruncateText(displayText ?? string.Empty, Math.Max(1, textWidth)) };
         }
 
         var wrapped = RenderHelpers.WrapText(displayText, textWidth);
-        if (wrapped.Count == 0)
+        if (wrapped.Count <= maxLines)
         {
-            return string.Empty;
+            return wrapped;
         }
 
-        if (lineNumber == 0)
-        {
-            return wrapped[0];
-        }
+        var clamped = wrapped.Take(Math.Max(0, maxLines - 1)).ToList();
+        clamped.Add(RenderHelpers.TruncateText(string.Join(" ", wrapped.Skip(Math.Max(0, maxLines - 1))), textWidth));
+        return clamped;
+    }
 
-        if (lineNumber == 1 && wrapped.Count > 1)
-        {
-            // If 3+ wrapped lines, truncate the second line with ellipsis
-            return wrapped.Count > 2
-                ? RenderHelpers.TruncateText(string.Join(" ", wrapped.Skip(1)), textWidth)
-                : wrapped[1];
-        }
-
-        return string.Empty;
+    /// <summary>
+    /// Gets a specific wrapped line of the title text (0-indexed) under the
+    /// classic 2-line clamp. Returns the requested line, or empty string if the
+    /// title doesn't have that many lines; with 3+ wrapped lines the second
+    /// line carries the ellipsized remainder.
+    /// </summary>
+    internal static string GetWrappedTitleLine(string displayText, int textWidth, int lineNumber)
+    {
+        var lines = GetWrappedTitleLines(displayText, textWidth, 2);
+        return lineNumber >= 0 && lineNumber < lines.Count ? lines[lineNumber] : string.Empty;
     }
 
     /// <summary>
@@ -465,10 +479,27 @@ internal class LinkTreeRenderer
         var contentWidth = width - 1;
 
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-        var titleLine2Idx = cardHeight >= 5 ? 2 : -1;
-        var authorDateLineIdx = cardHeight >= 5 ? 3 : -1;
-        var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
         var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1;
+
+        // Standard cards (workspace-21uy): the title wraps across up to
+        // GetTitleLineBudget lines starting at line 1, the author/date row sits
+        // directly beneath the last title line, and any slack pads before the
+        // separator. Compact cards keep the classic single-line vocabulary.
+        IReadOnlyList<string> titleLines;
+        int authorDateLineIdx;
+        int metadataLineIdx;
+        if (cardHeight >= 5)
+        {
+            titleLines = GetWrappedTitleLines(node.Link.DisplayText, GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
+            authorDateLineIdx = titleLineIdx + Math.Max(1, titleLines.Count);
+            metadataLineIdx = -1;
+        }
+        else
+        {
+            titleLines = Array.Empty<string>();
+            authorDateLineIdx = -1;
+            metadataLineIdx = GetMetadataLineIndex(cardHeight);
+        }
 
         // workspace-zlv0 (refines mj9x + 63jj): the selection rectangle fills
         // every row of the cell EXCEPT the separator. The separator is the
@@ -494,12 +525,9 @@ internal class LinkTreeRenderer
             sb.Append($"{selBg}{accentFg}\u258c");
         }
 
-        if (lineIndex == titleLineIdx)
+        if (cardHeight >= 5 && lineIndex >= titleLineIdx && lineIndex < titleLineIdx + titleLines.Count)
         {
-            var textWidth = GetTitleTextWidth(width);
-            var titleLine = cardHeight >= 5
-                ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
-                : RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
+            var titleLine = titleLines[lineIndex - titleLineIdx];
 
             // workspace-6z3a.5: highlight the search match; pad from the PLAIN
             // length so the injected ANSI codes don't shift the layout.
@@ -507,20 +535,12 @@ internal class LinkTreeRenderer
             sb.Append($"{selResume} {HighlightSegment(titleLine, searchQuery, palette, selResume)}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
         }
-        else if (lineIndex == titleLine2Idx)
+        else if (cardHeight < 5 && lineIndex == titleLineIdx)
         {
-            var textWidth = GetTitleTextWidth(width);
-            var titleLine2 = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
-            if (!string.IsNullOrEmpty(titleLine2))
-            {
-                var selResume = $"{selBg}{selFg}{Bold}";
-                sb.Append($"{selResume} {HighlightSegment(titleLine2, searchQuery, palette, selResume)}");
-                sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine2.Length))}{Reset}");
-            }
-            else
-            {
-                sb.Append($"{selBg}{new string(' ', contentWidth)}{Reset}");
-            }
+            var titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
+            var selResume = $"{selBg}{selFg}{Bold}";
+            sb.Append($"{selResume} {HighlightSegment(titleLine, searchQuery, palette, selResume)}");
+            sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
         }
         else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
         {
@@ -558,11 +578,31 @@ internal class LinkTreeRenderer
         string? searchQuery = null)
     {
         var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-        var titleLine2Idx = cardHeight >= 5 ? 2 : -1;
-        var authorDateLineIdx = cardHeight >= 5 ? 3 : -1;
-        var metadataLineIdx = cardHeight >= 5 ? -1 : GetMetadataLineIndex(cardHeight);
 
-        if (lineIndex == titleLineIdx)
+        // Standard cards (workspace-21uy): title wraps across up to
+        // GetTitleLineBudget lines from line 1, author/date directly beneath,
+        // slack pads before the separator. Compact cards keep the classic
+        // single truncated title line.
+        IReadOnlyList<string> titleLines;
+        int authorDateLineIdx;
+        int metadataLineIdx;
+        if (cardHeight >= 5)
+        {
+            titleLines = GetWrappedTitleLines(node.Link.DisplayText, GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
+            authorDateLineIdx = titleLineIdx + Math.Max(1, titleLines.Count);
+            metadataLineIdx = -1;
+        }
+        else
+        {
+            titleLines = Array.Empty<string>();
+            authorDateLineIdx = -1;
+            metadataLineIdx = GetMetadataLineIndex(cardHeight);
+        }
+
+        var isTitleLine = cardHeight >= 5
+            ? lineIndex >= titleLineIdx && lineIndex < titleLineIdx + titleLines.Count
+            : lineIndex == titleLineIdx;
+        if (isTitleLine)
         {
             var colorFg = node.Link.Type switch
             {
@@ -572,37 +612,15 @@ internal class LinkTreeRenderer
                 LinkType.Footer => palette.LinkFooter.AnsiFg,
                 _ => palette.PrimaryText.AnsiFg
             };
-            var textWidth = GetTitleTextWidth(width);
             var titleLine = cardHeight >= 5
-                ? GetWrappedTitleLine(node.Link.DisplayText, textWidth, 0)
+                ? titleLines[lineIndex - titleLineIdx]
                 : RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
 
-            var prefix = isToggled ? $"{palette.GetAccentFg().AnsiFg}\u2713{Reset}" : " ";
+            var prefix = isToggled && lineIndex == titleLineIdx ? $"{palette.GetAccentFg().AnsiFg}\u2713{Reset}" : " ";
             var pad = new string(' ', Math.Max(0, width - 1 - titleLine.Length));
 
             // workspace-6z3a.5: highlight the search match within the title.
             return $"{prefix}{colorFg}{HighlightSegment(titleLine, searchQuery, palette, colorFg)}{pad}{Reset}";
-        }
-
-        if (lineIndex == titleLine2Idx)
-        {
-            var textWidth = GetTitleTextWidth(width);
-            var titleLine2 = GetWrappedTitleLine(node.Link.DisplayText, textWidth, 1);
-            if (!string.IsNullOrEmpty(titleLine2))
-            {
-                var colorFg = node.Link.Type switch
-                {
-                    LinkType.Content => palette.HeaderTitleFg.AnsiFg,
-                    LinkType.Navigation => palette.LinkNavigation.AnsiFg,
-                    LinkType.External => palette.LinkExternal.AnsiFg,
-                    LinkType.Footer => palette.LinkFooter.AnsiFg,
-                    _ => palette.PrimaryText.AnsiFg
-                };
-                var pad = new string(' ', Math.Max(0, width - 1 - titleLine2.Length));
-                return $" {colorFg}{HighlightSegment(titleLine2, searchQuery, palette, colorFg)}{pad}{Reset}";
-            }
-
-            return new string(' ', width);
         }
 
         if (lineIndex == authorDateLineIdx)
@@ -653,13 +671,10 @@ internal class LinkTreeRenderer
         return RenderHelpers.TruncateText(subtitle, maxWidth);
     }
 
+    // Compact cards only — standard (>= 5) cards place the author/date row
+    // directly beneath the wrapped title (workspace-21uy).
     private static int GetMetadataLineIndex(int cardHeight)
     {
-        if (cardHeight >= 5)
-        {
-            return 3;
-        }
-
         return cardHeight >= 3 ? 1 : -1;
     }
 

@@ -243,8 +243,8 @@ public class LinkTreeLayoutTests
         line3.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
         line3.Should().Contain("Jane Doe");
 
-        // cardHeight=5 (standard): metadata line is at index 3
-        var line5 = LinkTreeRenderer.BuildCardLine(node, true, 5, 3, 80, TestPalette);
+        // cardHeight=5 (standard): metadata sits directly under the 1-line title → index 2
+        var line5 = LinkTreeRenderer.BuildCardLine(node, true, 5, 2, 80, TestPalette);
         line5.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
         line5.Should().Contain("Jane Doe");
     }
@@ -281,12 +281,13 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_Standard5Line_AuthorDateOnLine3()
+    public void BuildCardLine_Standard5Line_AuthorDateDirectlyUnderTitle()
     {
         var node = CreateLinkNodeWithMetadata("My Article", "https://example.com/article", LinkType.Content, "Jane Doe", DateTime.Now);
 
-        // cardHeight=5: author+date line is at index 3 (after title line 1 + title line 2)
-        var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 80, TestPalette);
+        // workspace-21uy: the author+date row sits directly beneath the last
+        // title line \u2014 a 1-line title at width 80 puts it at index 2.
+        var line = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette);
 
         line.Should().Contain("Jane Doe").And.Contain("Today");
     }
@@ -296,10 +297,11 @@ public class LinkTreeLayoutTests
     {
         var node = CreateLinkNode("My Article", "https://example.com/article", LinkType.Content);
 
-        // Line 0 is blank padding; line 2 is title overflow (blank for short title);
-        // line 3 is author/date (blank for no metadata); line 4 is separator
+        // Line 0 is blank padding; line 2 is author/date (visibly blank \u2014 no
+        // metadata); line 3 is interior padding; line 4 is separator.
         LinkTreeRenderer.BuildCardLine(node, false, 5, 0, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
-        LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
+        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 80, TestPalette)).Trim().Should().BeEmpty();
+        LinkTreeRenderer.BuildCardLine(node, false, 5, 3, 80, TestPalette).Should().HaveLength(80).And.Match(s => s.Trim().Length == 0);
         LinkTreeRenderer.BuildCardLine(node, false, 5, 4, 80, TestPalette).Should().Contain("\u2500");
     }
 
@@ -647,6 +649,83 @@ public class LinkTreeLayoutTests
 
         line.Should().Contain(TestPalette.SelectedItemBg.AnsiBg);
         line.Should().Contain("\u258c");
+    }
+
+    #endregion
+
+    #region Tall cells fill with text (workspace-21uy)
+
+    [Theory]
+    [InlineData(3, 1)]
+    [InlineData(5, 2)]  // classic card keeps its 2-line title
+    [InlineData(6, 2)]
+    [InlineData(8, 4)]
+    [InlineData(11, 7)]
+    public void GetTitleLineBudget_GrowsWithCellHeight(int cardHeight, int expected)
+    {
+        LinkTreeRenderer.GetTitleLineBudget(cardHeight).Should().Be(expected);
+    }
+
+    [Fact]
+    public void BuildCardLine_TallCell_LongTitleFillsBudget_MetadataBeneath()
+    {
+        const int cardHeight = 8; // title budget 4
+        const int cellWidth = 24;
+        var textWidth = LinkTreeRenderer.GetTitleTextWidth(cellWidth);
+        var longTitle = string.Join(" ", Enumerable.Repeat("word", textWidth)); // needs far more than 4 lines
+        var node = CreateLinkNodeWithMetadata(longTitle, "https://example.com", LinkType.Content, "Jane Doe", null);
+
+        // Lines 1-4 all carry title text; line 4 (the last budget line) is ellipsized.
+        for (var i = 1; i <= 4; i++)
+        {
+            StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, i, cellWidth, TestPalette))
+                .Trim().Should().NotBeEmpty($"title budget line {i} must carry wrapped text");
+        }
+
+        LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 4, cellWidth, TestPalette).Should().Contain("…");
+
+        // Author/date sits directly beneath the last title line; then padding; separator last.
+        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 5, cellWidth, TestPalette)).Should().Contain("Jane Doe");
+        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 6, cellWidth, TestPalette)).Trim().Should().BeEmpty();
+        LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 7, cellWidth, TestPalette).Should().Contain("─");
+    }
+
+    [Fact]
+    public void BuildCardLine_TallCell_ShortTitle_MetadataStillUnderTitle()
+    {
+        const int cardHeight = 8;
+        var node = CreateLinkNodeWithMetadata("Short", "https://example.com", LinkType.Content, "Jane Doe", null);
+
+        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 1, 40, TestPalette)).Should().Contain("Short");
+        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 2, 40, TestPalette)).Should().Contain("Jane Doe");
+
+        // The slack pads between the metadata and the separator.
+        for (var i = 3; i <= 6; i++)
+        {
+            StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, i, 40, TestPalette)).Trim().Should().BeEmpty();
+        }
+
+        LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 7, 40, TestPalette).Should().Contain("─");
+    }
+
+    [Fact]
+    public void BuildCardLine_TallCell_Selected_TitleAndPaddingKeepHighlight()
+    {
+        const int cardHeight = 8;
+        const int cellWidth = 24;
+        var textWidth = LinkTreeRenderer.GetTitleTextWidth(cellWidth);
+        var longTitle = string.Join(" ", Enumerable.Repeat("word", textWidth));
+        var node = CreateLinkNode(longTitle, "https://example.com", LinkType.Content);
+
+        // Every non-separator row of the selected cell carries the highlight bg.
+        for (var i = 0; i < cardHeight - 1; i++)
+        {
+            LinkTreeRenderer.BuildCardLine(node, true, cardHeight, i, cellWidth, TestPalette)
+                .Should().Contain(TestPalette.SelectedItemBg.AnsiBg, $"line {i} of a selected tall card");
+        }
+
+        LinkTreeRenderer.BuildCardLine(node, true, cardHeight, cardHeight - 1, cellWidth, TestPalette)
+            .Should().NotContain(TestPalette.SelectedItemBg.AnsiBg).And.Contain("─");
     }
 
     #endregion
