@@ -27,6 +27,7 @@
     ],
     "files": [
       "main.js",
+      "menu.js",
       "preload.js",
       "popup-preload.js",
       "channel.js",
