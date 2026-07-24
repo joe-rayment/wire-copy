@@ -166,6 +166,39 @@ public class LauncherViewStateTests
         json.Should().Contain("\"star\":true");
     }
 
+    // ── Responsive pane geometry ("Launcher Responsive.dc.html") ──────────────
+
+    [Theory]
+    [InlineData(60, 1)]    // ~620px window — single column
+    [InlineData(100, 2)]   // ~1000px — two columns (the legacy 2×3 shape)
+    [InlineData(130, 3)]   // ~1280px — three columns
+    [InlineData(171, 4)]   // ~1680px — four columns
+    [InlineData(400, 5)]   // absurd width clamps at five
+    public void ShellPaneColumns_FlowsWithTerminalWidth(int width, int expectedColumns)
+    {
+        LauncherRenderer.ShellPaneColumns(width).Should().Be(expectedColumns);
+    }
+
+    [Fact]
+    public void BuildViewState_WideWindow_ExportsColumnsAndPagesByColumnsTimesThreeRows()
+    {
+        // 130 cells → 3 columns → 9-tile pages. 11 bookmarks + Reading List = 12
+        // total: page 0 carries 9 tiles, and selecting virtual 10 lands on page 1
+        // with the remaining 3 tiles (padded to a full 3-column row exactly).
+        var options = Options() with { TerminalWidth = 130 };
+
+        var page0 = LauncherRenderer.BuildViewState(CreateBookmarks(11), selectedIndex: 0, options);
+        page0.Columns.Should().Be(3);
+        page0.Slots.Should().HaveCount(9);
+        page0.Paging.Should().Be(new LauncherPaging { Offset = 0, Visible = 9, Total = 12 });
+
+        var page1 = LauncherRenderer.BuildViewState(CreateBookmarks(11), selectedIndex: 10, options);
+        page1.Columns.Should().Be(3);
+        page1.Paging.Should().Be(new LauncherPaging { Offset = 9, Visible = 3, Total = 12 });
+        page1.Slots.Should().HaveCount(3, "3 remaining tiles already fill one 3-column row — no pads");
+        page1.SelectedIndex.Should().Be(1, "virtual 10 maps into the page-1 window at 10 − 9");
+    }
+
     private static RenderOptions Options(int? readingListCount = null) => new()
     {
         TerminalWidth = 100,

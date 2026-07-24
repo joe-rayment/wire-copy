@@ -19,12 +19,15 @@
     <div id="column">
       <div id="masthead">
         <div id="masthead-inner">
-          <div id="eyebrow"><span class="tick">▌</span> Launcher</div>
-          <div id="title-row">
-            <span id="apptitle">Wire Copy</span>
-            <span id="cursor-block"></span>
+          <div id="masthead-left">
+            <div id="eyebrow"><span class="tick">▌</span> Launcher</div>
+            <div id="title-row">
+              <span id="apptitle">Wire Copy</span>
+              <span id="cursor-block"></span>
+            </div>
+            <div id="tagline"></div>
           </div>
-          <div id="tagline"></div>
+          <div id="header-right"></div>
         </div>
         <div id="scanlines"></div>
       </div>
@@ -32,10 +35,13 @@
       <div id="setuphint" style="display:none"></div>
       <div id="paging-top" class="paging hidden"></div>
       <div id="grid"></div>
-      <div id="paging-bottom" class="paging hidden"></div>
       <div id="footer">
-        <div id="footer-hints"></div>
-        <div id="footer-right"></div>
+        <div id="paging-bottom" class="paging hidden"></div>
+        <div id="footer-rule"></div>
+        <div id="footer-row">
+          <div id="footer-hints"></div>
+          <div id="footer-right"></div>
+        </div>
       </div>
     </div>
   </div>
@@ -53,13 +59,27 @@ const esc = s => String(s == null ? '' : s)
 
 let lastMsg = null
 
-// One-time static chrome: the footer hints never change; the masthead title
-// block ("▌ Launcher" / Wire Copy / cursor / scanlines) is static markup above.
+// One-time static chrome: the footer never changes; the masthead title block
+// ("▌ Launcher" / Wire Copy / cursor / scanlines) is static markup above.
 function paintChrome () {
-  $('footer-hints').innerHTML = HINTS
-    .map(([k, label]) =>
-      `<span class="kbd"><span class="brk">[</span><span class="key">${esc(k)}</span><span class="brk">]</span>:${esc(label)}</span>`)
-    .join('')
+  $('footer-rule').textContent = '─'.repeat(500)
+  $('footer-hints').innerHTML =
+    `<span id="footer-app">Launcher</span>` + HINTS
+      .map(([k, label]) =>
+        `<span class="kbd"><span class="brk">[</span><span class="key">${esc(k)}</span><span class="brk">]</span>:${esc(label)}</span>`)
+      .join('')
+}
+
+// Header status readout, right of the CRT title (Launcher Responsive.dc.html):
+// the bookmark count, plus the scheduled-run badge / transient status when the
+// TUI reports them. Only real state — no invented lines.
+function paintHeaderRight (state) {
+  const count = state.bookmarkCount === 1 ? '1 bookmark' : `${state.bookmarkCount ?? 0} bookmarks`
+  const f = state.footer || {}
+  let html = `<div class="hr-count">${esc(count)}</div>`
+  if (f.badge) html += `<div class="hr-badge">${esc(f.badge)}</div>`
+  if (f.status) html += `<div class="hr-status">${esc(f.status)}</div>`
+  $('header-right').innerHTML = html
 }
 
 function paintTagline (state) {
@@ -96,34 +116,46 @@ function paintUrlBar (state) {
 }
 
 function cardHtml (slot, selected) {
+  // Trailing kind:"empty" pads keep the wire window rectangular; in the flowing
+  // responsive grid they render as blank cells (no chrome) so the columns keep
+  // their track without drawing anything.
   if (!slot || slot.kind === 'empty') {
     return `<div class="card empty"></div>`
   }
   const isReadingList = slot.kind === 'readingList'
-  const star = (slot.star || isReadingList) ? `<span class="rl-star">★</span>` : ''
+  const star = (slot.star || isReadingList) ? `<span class="rl-star"> ★</span>` : ''
   // Jump digit comes straight from slot.badge ("1".."9", or null past slot 9 and
   // for kind:"empty" pads) — NOT derived from slot.index (the global 0-based
   // virtual index). Nothing renders when badge is null.
   const idx = (slot.badge != null && slot.badge !== '')
-    ? `<div class="card-index">[${esc(slot.badge)}]</div>` : ''
+    ? `<span class="card-index">[${esc(slot.badge)}]</span>` : ''
   // Second line is the TUI display hint. Only the Reading List's EMPTY-state
   // prompt is quiet muted (LauncherRenderer keys muted on readingListCount 0/null);
   // a populated "N saved articles" wears metadata green exactly like the bookmark
   // domains. slot.url carries the full URL and is deliberately NOT shown.
   const quietHint = isReadingList && /^nothing saved yet/.test(slot.hint || '')
   const second = `<div class="card-url${quietHint ? ' hint' : ''}">${esc(slot.hint || '')}</div>`
+  // Selected card: sel-bg fill + a glowing 4px green rail on the left edge
+  // (Launcher Responsive.dc.html) — recolors only, the footprint never changes.
+  const rail = selected ? `<div class="card-rail"></div>` : ''
   return (
     `<div class="card${selected ? ' selected' : ''}">` +
+      rail +
       `<div class="card-title-row">` +
-        `<div class="card-title">${esc(slot.title || '')}${star}</div>` +
+        `<span class="card-title">${esc(slot.title || '')}${star}</span>` +
         idx +
       `</div>` +
       second +
+      `<div class="card-sep"><span>${'─'.repeat(220)}</span></div>` +
     `</div>`
   )
 }
 
 function paintGrid (state) {
+  // The pane lays the slots out in EXACTLY state.columns tracks — the same
+  // count the TUI uses for arrow-key movement (LauncherViewState.Columns), so
+  // keys always match the screen.
+  $('grid').style.setProperty('--cols', String(state.columns || 2))
   const slots = state.slots || []
   $('grid').innerHTML = slots
     .map((slot, i) => cardHtml(slot, i === state.selectedIndex))
@@ -148,13 +180,10 @@ function paintPaging (state) {
 }
 
 function paintFooter (state) {
-  const f = state.footer || {}
+  // Badge/status live in the header readout now (paintHeaderRight); the footer
+  // right keeps only the muted count, per Launcher Responsive.dc.html.
   const count = state.bookmarkCount === 1 ? '1 bookmark' : `${state.bookmarkCount ?? 0} bookmarks`
-  const parts = []
-  if (f.badge) parts.push(`<span class="badge">${esc(f.badge)}</span>`)
-  if (f.status) parts.push(`<span class="status">${esc(f.status)}</span>`)
-  parts.push(`<span class="count">${esc(count)}</span>`)
-  $('footer-right').innerHTML = parts.join('')
+  $('footer-right').innerHTML = `<span class="count">${esc(count)}</span>`
 }
 
 function paintSetupHint (state) {
@@ -173,6 +202,7 @@ window.__renderLauncher = function (msg) {
   lastMsg = msg
   const state = (msg && msg.state) || {}
   paintTagline(state)
+  paintHeaderRight(state)
   paintUrlBar(state)
   paintSetupHint(state)
   paintGrid(state)
@@ -214,6 +244,15 @@ function demoSlots () {
   ]
 }
 
+// Demo-only column count: the pixel-space version of the C#
+// LauncherRenderer.ShellPaneColumns formula (min 340px tile + 40px gap inside
+// the clamp() side padding), so ?demo pages flow like the live pane.
+function demoCols () {
+  const w = window.innerWidth
+  const pad = Math.min(60, Math.max(18, 0.04 * w))
+  return Math.max(1, Math.min(5, Math.floor((w - 2 * pad + 40) / 380)))
+}
+
 function demoMsg (kind) {
   const all = demoSlots()
   const base = {
@@ -221,6 +260,7 @@ function demoMsg (kind) {
     state: {
       slots: all.slice(0, 6),
       selectedIndex: 0,
+      columns: demoCols(),
       urlTyping: null,
       setupHint: null,
       paging: { offset: 0, visible: 6, total: all.length },

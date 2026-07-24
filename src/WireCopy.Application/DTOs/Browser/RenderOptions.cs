@@ -179,4 +179,12 @@ public record RenderOptions
     /// (workspace-c8v3); this flag is the renderer-facing surface.
     /// </summary>
     public bool ShowPreloadDetail { get; init; }
+
+    /// <summary>
+    /// True when a live desktop-shell channel is connected, i.e. the user is
+    /// looking at the HTML launcher pane rather than the terminal grid. Launcher
+    /// arrow-key navigation then follows the pane's responsive column count
+    /// instead of the fixed 2-column terminal grid.
+    /// </summary>
+    public bool ShellPane { get; init; }
 }

@@ -1,13 +1,16 @@
 /* =============================================================================
    Wire Copy launcher pane — display-only projection of the TUI launcher state.
-   Import of "Wire Copy Launcher.dc.html" (claude.ai design project 153674f7):
-   ONE column LEFT-ALIGNED at the screen edge; masthead / URL bar / grid / footer
-   all share the column's left axis. The masthead is the design's CRT-glow title
-   ("▌ Launcher" eyebrow, 64px phosphor "Wire Copy" + blinking block cursor,
-   tagline, scanline overlay). Card/grid styling predates that import and is
-   deliberately kept. This page carries NO logic — the TUI owns all keys; every
-   value here is painted from a pushed state message. Colours and the type ramp
-   come from tokens.css.
+   Import of "Wire Copy Launcher.dc.html" + "Launcher Responsive.dc.html"
+   (claude.ai design project 153674f7): a full-bleed column with clamp() padding;
+   the masthead is the design's CRT-glow title ("▌ Launcher" eyebrow, clamped
+   phosphor "Wire Copy" + blinking block cursor, tagline, scanline overlay) with
+   a status readout on the right; full-width URL bar; a responsive card grid
+   whose column count comes from the PUSHED STATE (LauncherViewState.Columns —
+   the same count the TUI uses for arrow-key movement, so keys always match the
+   screen); footer pinned to the bottom with the pager above its rule. Selecting
+   a card only recolors it (sel-bg fill + glowing rail) — the footprint never
+   changes. This page carries NO logic — the TUI owns all keys; every value here
+   is painted from a pushed state message. Colours come from tokens.css.
    ============================================================================= */
 
 * { box-sizing: border-box; }
@@ -15,7 +18,7 @@
 html, body {
   margin: 0;
   height: 100%;
-  background: var(--tr-bg);          /* #0a0a0a page under the column */
+  background: var(--tr-bg-pure);
   color: var(--tr-green);
   font-family: var(--tr-font-mono);
   /* Display-only pane: no selection, no text cursor, no focus rings. The TUI
@@ -25,35 +28,35 @@ html, body {
   overflow: hidden;
 }
 
-/* The column: the mock's fixed 900px artboard drawn on pure black, LEFT-aligned
-   at the screen edge (Wire Copy Launcher.dc.html); wider windows get a single
-   #0a0a0a gutter on the right. */
 #stage {
   height: 100%;
   display: flex;
-  justify-content: flex-start;
   /* flex-start (NOT the default stretch): stretch pins the column to the stage
-     height, so when many bookmarks make the content taller than the window the
-     flex children get CRUSHED — the masthead squeezed and its overflow:hidden
-     clipped the tagline behind the URL bar (user regression 2026-07-24). With
-     flex-start the column takes its content height and the stage scrolls. */
+     height, so when the content is taller than the window the flex children
+     get CRUSHED — the masthead squeezed and its overflow:hidden clipped the
+     tagline behind the URL bar (user regression 2026-07-24). With flex-start
+     the column takes its content height and the stage scrolls. */
   align-items: flex-start;
   overflow: auto;
 }
+
+/* Full-bleed column (Launcher Responsive.dc.html): the pane always fills the
+   window; breathing room comes from the clamp() padding, which scales with the
+   viewport. */
 #column {
-  width: min(900px, 100%);
+  width: 100%;
   min-height: 100%;
-  background: var(--tr-bg-pure);     /* #000 inside the column */
-  padding: 40px 0 24px;
+  background: var(--tr-bg-pure);
+  padding: clamp(30px, 4vw, 64px) clamp(18px, 4vw, 60px) clamp(24px, 3vw, 40px);
   display: flex;
   flex-direction: column;
 }
 
 /* ── Masthead ─────────────────────────────────────────────────────────────
-   The Wire Copy Launcher.dc.html "CRT glow" title block, left-aligned on the
-   column axis: eyebrow label, 64px phosphor-green "Wire Copy" with glow +
-   shimmer, a blinking block cursor, tagline, and a scanline/flicker overlay
-   clipped to the masthead. */
+   The CRT-glow title block, with the status readout on the right: eyebrow
+   label, clamped phosphor-green "Wire Copy" with glow + shimmer, a blinking
+   block cursor, tagline, and a scanline/flicker overlay clipped to the
+   masthead. */
 @keyframes wc-blink   { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
 @keyframes wc-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.86; } }
 @keyframes wc-flicker { 0% { opacity: 0.5; } 22% { opacity: 0.4; } 46% { opacity: 0.56; }
@@ -63,11 +66,19 @@ html, body {
   position: relative;
   overflow: hidden;
   flex-shrink: 0;                    /* chrome rows must never be crushed */
-  margin: 0 12px;
-  padding-bottom: 8px;
+  margin: 0 0 34px;
   text-align: left;
 }
-#masthead-inner { position: relative; z-index: 2; }
+#masthead-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 48px;
+  flex-wrap: wrap;
+}
+#masthead-left { min-width: 0; }
 #scanlines {
   position: absolute;
   inset: 0;
@@ -91,7 +102,7 @@ html, body {
 }
 #apptitle {
   color: var(--tr-green);
-  font-size: 64px;
+  font-size: clamp(40px, 8vw, 64px);
   font-weight: 700;
   letter-spacing: -0.015em;
   line-height: 1;
@@ -103,8 +114,8 @@ html, body {
 #cursor-block {
   display: inline-block;
   flex: none;
-  width: 28px;
-  height: 56px;
+  width: clamp(18px, 3.6vw, 28px);
+  height: clamp(36px, 7.2vw, 56px);
   margin-left: 14px;
   background: var(--tr-green);
   box-shadow: 0 0 16px rgba(0, 215, 0, 0.65);
@@ -120,18 +131,28 @@ html, body {
 #tagline .sep { color: var(--tr-dim); margin: 0 .5em; }
 #tagline .ver { color: var(--tr-muted); }
 
+/* Right-side status readout: bookmark count (phosphor, bold), then the
+   scheduled-run badge / transient status when the TUI reports them. */
+#header-right {
+  text-align: right;
+  flex: none;
+  padding-top: 6px;
+}
+#header-right .hr-count  { color: var(--tr-green); font-size: 15px; font-weight: 700; }
+#header-right .hr-badge  { color: var(--tr-amber); font-size: 13px; margin-top: 8px; }
+#header-right .hr-status { color: var(--tr-green); font-size: 13px; margin-top: 4px; }
+
 /* ── URL bar ──────────────────────────────────────────────────────────────
-   560px, left-aligned on the same column axis as the masthead and grid; 1px
-   dim border; when the bar is focused (selectedIndex −1 or URL typing) the
-   border brightens to the focus-bar muted green. */
+   Full width of the content column (Launcher Responsive.dc.html); 1px dim
+   border; when the bar is focused (selectedIndex −1 or URL typing) the border
+   brightens to the focus-bar muted green. */
 #urlbar-wrap {
   display: flex;
-  justify-content: flex-start;
   flex-shrink: 0;
-  margin: 30px 12px 0;
+  margin: 0 0 30px;
 }
 #urlbar {
-  width: min(560px, 100%);
+  width: 100%;
   border: 1px solid var(--tr-dim);
   padding: 14px 18px;
   font-size: 18px;
@@ -151,66 +172,65 @@ html, body {
 /* Centred setup-hint row between the URL bar and the grid. */
 #setuphint {
   flex-shrink: 0;
-  margin: 18px 0 0;
+  margin: -12px 0 18px;
   text-align: center;
   font-size: 16px;
   color: var(--tr-muted);
 }
 
-/* Quiet paging markers around the grid window. */
+/* Quiet paging markers: above the grid (more above) and inside the footer
+   block just over its rule (more below). */
 .paging {
   flex-shrink: 0;
   text-align: center;
-  font-size: 15px;
+  font-size: 14px;
   color: var(--tr-muted);
-  padding: 6px 0;
 }
 .paging.hidden { display: none; }
+#paging-top { margin-bottom: 14px; }
+#paging-bottom { margin-bottom: 14px; }
 
 /* ── Bookmark grid ────────────────────────────────────────────────────────
-   2 columns × 3 rows; hairline separators BETWEEN cells only (dim). */
+   Responsive tracks driven by the pushed state: exactly var(--cols) columns
+   (LauncherViewState.Columns, 1..5 — mirrors the design's auto-fill
+   minmax(min(340px,100%),1fr) and the TUI's arrow-key geometry). Cards are
+   compact rows with their own box-char separator; no cell borders. */
 #grid {
-  margin: 22px 12px 0;
   display: grid;
-  grid-template-columns: 1fr 1fr;
-  flex: 1 0 auto;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  column-gap: 40px;
+  row-gap: 0;
 }
 .card {
-  min-height: 150px;
-  /* Horizontal padding trimmed from the mock's 30px to 16px: at the 900px
-     column each cell is ~438px (the grid keeps a 12px inset to line up with the
-     masthead/footer), and a 17-char title (the mock's "THE DAILY GAZETTE"
-     sample, the screenshot's "NYT TODAY'S PAPER") at 34px JetBrains Mono is
-     ~358px. 16px leaves the full title + right-aligned [n] index a few px of
-     slack so it never trips the ellipsis. */
-  padding: 22px 16px;
-  display: flex;
-  flex-direction: column;
-  justify-content: center;           /* title+url block centred in the cell */
+  min-width: 0;
+  position: relative;
+  padding: 16px 12px 18px;
   overflow: hidden;
 }
-/* Internal hairlines: left edge on the right column, top edge on rows 2 & 3. */
-.card:nth-child(2n)   { border-left: 1px solid var(--tr-dim); }
-.card:nth-child(n+3)  { border-top: 1px solid var(--tr-dim); }
-
-/* Selected card: selection-green fill + a 3px muted inset left rail (drawn with
-   an inset shadow so it never shifts the padding), white title, 80%-white url. */
-.card.selected {
-  background: var(--tr-sel-bg);
-  box-shadow: inset 3px 0 0 0 var(--tr-muted);
+/* Selected card: sel-bg fill + a glowing 4px phosphor rail on the left edge.
+   Recolors only — identical footprint to an unselected card. */
+.card.selected { background: var(--tr-sel-bg); }
+.card-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--tr-green);
+  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
 }
 
 .card-title-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
-  gap: 8px;
+  gap: 14px;
 }
 .card-title {
-  font-size: 34px;
+  font-size: clamp(21px, 2.1vw, 28px);
   font-weight: 700;
-  letter-spacing: .02em;
-  line-height: 1.08;
+  letter-spacing: .05em;
+  line-height: 1.05;
   color: var(--tr-green);
   white-space: nowrap;
   overflow: hidden;
@@ -218,53 +238,81 @@ html, body {
   min-width: 0;
 }
 .card.selected .card-title { color: var(--tr-white); }
-/* Reading-list marker: a quiet metadata-green star trailing the title. */
-.rl-star {
-  font-size: 26px;
-  color: var(--tr-med);
-  margin-left: .35em;
-}
-.card.selected .rl-star { color: var(--tr-white); }
+/* Reading-list marker: the ★ rides the title at its size and colour. */
+.rl-star { color: inherit; }
 
-/* [n] quick-jump index: interactive cyan, right-aligned, stays cyan when selected. */
+/* [n] quick-jump index: interactive cyan, right-aligned; white when selected. */
 .card-index {
+  flex: none;
   font-size: 18px;
   color: var(--tr-cyan);
-  flex: 0 0 auto;
 }
+.card.selected .card-index { color: var(--tr-white); }
 
 .card-url {
   margin-top: 8px;
-  font-size: 18px;
+  font-size: 15px;
   color: var(--tr-med);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.card.selected .card-url { color: rgba(228, 228, 228, .8); }
+.card.selected .card-url { color: var(--tr-white); }
 /* Reading-list empty-state prompt: quiet muted copy. */
 .card-url.hint { color: var(--tr-muted); }
-.card.selected .card-url.hint { color: rgba(228, 228, 228, .8); }
+.card.selected .card-url.hint { color: var(--tr-white); }
 
-.card.empty { min-height: 150px; }   /* blank cell, but the grid lines remain */
+/* Terminal-rule separator under each card's content. */
+.card-sep {
+  display: flex;
+  color: var(--tr-dim);
+  font-size: 14px;
+  line-height: 1;
+  margin-top: 16px;
+}
+.card-sep span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* Trailing wire pads: keep the grid track, draw nothing. */
+.card.empty { padding: 0; }
 
 /* ── Footer ───────────────────────────────────────────────────────────────
-   Key hints left (keys cyan, bracket + label muted); count right (dim). An
-   optional scheduled-run badge (amber) and transient status (green) sit left
-   of the count. */
+   Pinned to the bottom of the column (margin-top:auto): pager, then a
+   full-width dim rule, then the status row — "Launcher" label + key hints
+   (keys cyan) left, muted count right. */
 #footer {
-  margin: 22px 12px 0;
+  margin-top: auto;
   flex-shrink: 0;
-  padding-top: 10px;
+  padding-top: 26px;
+}
+#footer-rule {
+  color: var(--tr-dim);
+  font-size: 15px;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-bottom: 12px;
+}
+#footer-row {
   display: flex;
   align-items: baseline;
   justify-content: space-between;
   font-size: 15px;
   gap: 16px;
 }
-#footer-hints { display: flex; gap: 20px; flex-wrap: wrap; }
+#footer-hints {
+  display: flex;
+  align-items: baseline;
+  gap: 22px;
+  flex-wrap: wrap;
+}
+#footer-app { color: var(--tr-green); font-weight: 700; }
 .kbd { color: var(--tr-muted); white-space: nowrap; }
-.kbd .brk { color: var(--tr-muted); }
+.kbd .brk { color: var(--tr-med); }
 .kbd .key { color: var(--tr-cyan); }
 #footer-right {
   display: flex;
@@ -273,6 +321,4 @@ html, body {
   flex: 0 0 auto;
   white-space: nowrap;
 }
-#footer-right .badge  { color: var(--tr-amber); }
-#footer-right .status { color: var(--tr-green); }
-#footer-right .count  { color: var(--tr-dim); }
+#footer-right .count { color: var(--tr-muted); }

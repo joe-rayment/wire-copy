@@ -90,6 +90,7 @@ public partial class BrowserOrchestrator
             ShowPreloadDetail = _commandContext.IsPreloadDetailVisible,
             BrowserDocked = browserDocked,
             ContentLeftOffset = contentLeftOffset,
+            ShellPane = _shellChannel is not null && _shellChannel.IsConnected,
         };
     }
 

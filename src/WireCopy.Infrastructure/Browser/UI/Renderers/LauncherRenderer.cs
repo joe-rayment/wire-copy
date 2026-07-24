@@ -64,13 +64,17 @@ internal class LauncherRenderer
     // sat jammed against the bar's bottom border.
     private const int UrlBarLines = 5;
 
-    // Launcher.dc.html artboard: a 2-column × 3-row grid, so the HTML pane
-    // pages the tiles in windows of six. The TUI itself line-scrolls a single
-    // virtual stream; this fixed page size is the HTML-pane projection only —
-    // the per-slot FACTS (kind/title/url/hint/star) are shared with the grid
-    // render via ComposeSlot so the two can never disagree about a tile.
-    private const int GridColumns = 2;
-    private const int LauncherPageSize = 6;
+    // "Launcher Responsive.dc.html": the HTML pane's grid flows 1..5 columns
+    // with the window (CSS spec: minmax(min(340px,100%),1fr) + 40px gap at the
+    // 18px design scale). ShellPaneColumns is the C#-side mirror of that
+    // auto-fill count in terminal-cell units, and it is the SINGLE source of
+    // truth for the pane: BuildViewState exports it (LauncherViewState.Columns)
+    // AND arrow-key navigation uses it in shell mode (LauncherCommandHandler.
+    // GetLayoutColumns), so keyboard geometry always matches the visible grid.
+    // The TERMINAL grid stays fixed at 2 columns (workspace-ehon) — this count
+    // exists only for the HTML projection. The pane pages in windows of
+    // Columns × PaneRowsPerPage tiles.
+    private const int PaneRowsPerPage = 3;
 
     // The setup-hint copy, shared between the masthead render (SetupHintBoxLine)
     // and the exported view-model (workspace-0jxo) so both read the same string.
@@ -447,14 +451,27 @@ internal class LauncherRenderer
     }
 
     /// <summary>
+    /// The HTML pane's responsive column count for a given terminal width —
+    /// the cell-unit mirror of the design's
+    /// <c>repeat(auto-fill, minmax(min(340px,100%),1fr))</c> with a 40px gap:
+    /// at the 18px design scale a tile floor is ~32 cells and the gap ~4, so
+    /// a column fits per full 36 cells of inner width (floor semantics, like
+    /// auto-fill), clamped to 1..5. ~620px → 1, ~900px → 2, ~1280px → 3,
+    /// ~1680px → 4. Terminal-mode rendering never calls this.
+    /// </summary>
+    internal static int ShellPaneColumns(int terminalWidth)
+        => Math.Clamp((terminalWidth - 4) / 36, 1, 5);
+
+    /// <summary>
     /// Projects the launcher's current bookmarks/selection/options into the
     /// shell-channel view-model (workspace-0jxo). Reuses <see cref="ComposeSlot"/>
     /// for tile facts, so the exported slots are exactly what the Grid render
-    /// draws. The tiles are paged into a fixed 6-cell window (<see cref="LauncherPageSize"/>)
-    /// centred on the selected tile's page; trailing cells of the last page are
-    /// <c>empty</c> so the HTML grid stays rectangular. Any non-tile focus
-    /// (URL bar, setup hint) reports <c>selectedIndex = -1</c>; the setup hint is
-    /// carried separately in <see cref="LauncherViewState.SetupHint"/>.
+    /// draws. The tiles are paged into a window of <see cref="ShellPaneColumns"/>
+    /// × <see cref="PaneRowsPerPage"/> cells on the selected tile's page;
+    /// trailing cells of the last page are <c>empty</c> so the HTML grid stays
+    /// rectangular. Any non-tile focus (URL bar, setup hint) reports
+    /// <c>selectedIndex = -1</c>; the setup hint is carried separately in
+    /// <see cref="LauncherViewState.SetupHint"/>.
     /// </summary>
     internal static LauncherViewState BuildViewState(
         IReadOnlyList<Bookmark> bookmarks,
@@ -473,6 +490,8 @@ internal class LauncherRenderer
         var tagline = TaglineText;
         var version = $"v{ResolveLauncherVersion()}";
 
+        var columns = ShellPaneColumns(options.TerminalWidth);
+
         // Empty bookmarks → the empty-state screen (no tiles). Report an empty
         // window; the URL bar / setup hint is still reachable.
         if (bookmarks.Count == 0)
@@ -481,6 +500,7 @@ internal class LauncherRenderer
             {
                 Slots = [],
                 SelectedIndex = -1,
+                Columns = columns,
                 UrlTyping = urlTyping,
                 SetupHint = setupHint,
                 Paging = new LauncherPaging { Offset = 0, Visible = 0, Total = 0 },
@@ -491,18 +511,19 @@ internal class LauncherRenderer
             };
         }
 
+        var pageSize = columns * PaneRowsPerPage;
         var total = bookmarks.Count + 1; // bookmarks + the Reading List virtual slot
         var offset = selectedIndex >= 0
-            ? (selectedIndex / LauncherPageSize) * LauncherPageSize
+            ? (selectedIndex / pageSize) * pageSize
             : 0;
-        var visible = Math.Min(LauncherPageSize, total - offset);
+        var visible = Math.Min(pageSize, total - offset);
 
-        // Pad the window up to a whole number of grid ROWS (2 columns) so the
-        // HTML grid's last row is never half-empty, capped at the page size —
-        // matching how the TUI grid continues its trailing cells.
+        // Pad the window up to a whole number of grid ROWS so the HTML grid's
+        // last row is never half-empty, capped at the page size — matching how
+        // the TUI grid continues its trailing cells.
         var windowLength = Math.Min(
-            LauncherPageSize,
-            ((visible + GridColumns - 1) / GridColumns) * GridColumns);
+            pageSize,
+            ((visible + columns - 1) / columns) * columns);
 
         var slots = new List<LauncherSlot>(windowLength);
         for (var i = 0; i < windowLength; i++)
@@ -531,6 +552,7 @@ internal class LauncherRenderer
         {
             Slots = slots,
             SelectedIndex = selectedIndex >= 0 ? selectedIndex - offset : -1,
+            Columns = columns,
             UrlTyping = urlTyping,
             SetupHint = setupHint,
             Paging = new LauncherPaging { Offset = offset, Visible = visible, Total = total },

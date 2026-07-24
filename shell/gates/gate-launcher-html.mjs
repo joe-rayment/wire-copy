@@ -26,7 +26,9 @@ await new Promise(r => fixture.listen(FIX_PORT, '127.0.0.1', r))
 
 buildTui('Release')
 
-const env = new Env({ display: ':81', cdpPort: 9291 })
+// Wide virtual screen: the responsive section drives the REAL window up to
+// ~1680px (4 grid columns), past the default 1600px Xvfb.
+const env = new Env({ display: ':81', cdpPort: 9291, screen: '2000x1200x24' })
 
 // ── Pre-seed bookmarks.json BEFORE launch so card 1 = our fixture. The reconciler treats
 //    an existing user config as the source of truth (array order = card order); index 0 is
@@ -53,9 +55,30 @@ const shell = env.launchShell()
 // Read helpers evaluated INSIDE the real launcher pane DOM.
 const CARDS_JS = `(function(){
   const cards=[...document.querySelectorAll('#grid .card')];
-  return cards.map(c=>({selected:c.classList.contains('selected'),
-    bg:getComputedStyle(c).backgroundColor, shadow:getComputedStyle(c).boxShadow,
-    title:(c.querySelector('.card-title')||{}).textContent||''}));
+  return cards.map(c=>{
+    const rail=c.querySelector('.card-rail');
+    const rc=rail&&getComputedStyle(rail);
+    const r=c.getBoundingClientRect();
+    return {selected:c.classList.contains('selected'),
+      bg:getComputedStyle(c).backgroundColor,
+      rail:rail?{w:rc.width,bg:rc.backgroundColor,glow:rc.boxShadow!=='none'}:null,
+      x:Math.round(r.left), y:Math.round(r.top), w:Math.round(r.width), h:Math.round(r.height),
+      empty:c.classList.contains('empty'),
+      title:(c.querySelector('.card-title')||{}).textContent||''};
+  });
+})()`
+// Rendered grid geometry: the computed track count must equal the pushed
+// state.columns (the count the TUI also uses for arrow keys).
+const COLS_JS = `(function(){
+  const g=document.getElementById('grid');
+  return {cols:getComputedStyle(g).gridTemplateColumns.split(' ').length,
+    stateCols:(window.__launcherState()||{}).state?.columns,
+    winW:window.innerWidth};
+})()`
+const HDR_JS = `(function(){
+  const e=document.querySelector('#header-right .hr-count'); if(!e) return null;
+  const cs=getComputedStyle(e);
+  return {text:e.textContent, color:cs.color, weight:cs.fontWeight};
 })()`
 const TITLE_JS = `(function(){
   const t=document.querySelector('#grid .card:not(.empty) .card-title');
@@ -132,13 +155,18 @@ try {
     `selectedIndex=${state0.selectedIndex}`)
 
   const title = await la.eval(TITLE_JS)
-  check('A5 card title is 34px weight 700 JetBrains Mono (computed)',
-    title && title.fontSize === '34px' && title.fontWeight === '700' && /JetBrains Mono/.test(title.fontFamily),
-    JSON.stringify(title))
+  // Design: font-size clamp(21px, 2.1vw, 28px) weight 700.
+  const expTitle = Math.min(28, Math.max(21, 0.021 * (await la.eval('window.innerWidth'))))
+  check('A5 card title wears the responsive clamp (21–28px) weight 700 JetBrains Mono (computed)',
+    title && Math.abs(parseFloat(title.fontSize) - expTitle) <= 1 && title.fontWeight === '700' &&
+    /JetBrains Mono/.test(title.fontFamily),
+    `want ~${expTitle}px got ${title && title.fontSize}`)
   const bar0 = await la.eval(URLBAR_JS)
-  check('A6 URL bar is ~560px wide and LEFT-aligned at the screen edge (not centred)',
-    Math.abs(bar0.width - 560) <= 12 && bar0.left <= 20 && (bar0.left + bar0.width) < bar0.winW / 2 + 280,
-    `width=${bar0.width} left=${bar0.left} winW=${bar0.winW}`)
+  // Design: URL bar spans the full content width inside the clamp() padding.
+  const expPad = Math.min(60, Math.max(18, 0.04 * bar0.winW))
+  check('A6 URL bar spans the FULL content width on the column axis',
+    Math.abs(bar0.left - expPad) <= 3 && Math.abs(bar0.width - (bar0.winW - 2 * expPad)) <= 6,
+    `width=${bar0.width} left=${bar0.left} winW=${bar0.winW} pad~${Math.round(expPad)}`)
   const mast = await la.eval(MASTHEAD_JS)
   check('A6b masthead is the Launcher.dc.html CRT title: "Wire Copy" 64px/700 phosphor green with glow',
     mast && mast.text === 'Wire Copy' && mast.fontSize === '64px' && mast.fontWeight === '700' &&
@@ -148,10 +176,14 @@ try {
     mast && mast.cursor && mast.cursor.w === 28 && mast.cursor.h === 56 &&
     mast.cursor.bg === 'rgb(0, 215, 0)' && /blink/.test(mast.cursor.anim),
     JSON.stringify(mast && mast.cursor))
-  check('A6d title block LEFT-aligned at the screen edge, on the grid\'s axis, eyebrow reads "Launcher"',
-    mast && mast.left <= 20 && Math.abs(mast.left - mast.gridLeft) <= 4 &&
+  check('A6d title block sits on the clamp-padding left axis shared with the grid, eyebrow reads "Launcher"',
+    mast && Math.abs(mast.left - expPad) <= 3 && Math.abs(mast.left - mast.gridLeft) <= 4 &&
     /Launcher/i.test(mast.eyebrow || ''),
-    mast && `left=${mast.left} gridLeft=${mast.gridLeft} eyebrow="${mast.eyebrow}"`)
+    mast && `left=${mast.left} pad~${Math.round(expPad)} gridLeft=${mast.gridLeft} eyebrow="${mast.eyebrow}"`)
+  const hdr = await la.eval(HDR_JS)
+  check('A6f header status readout shows the real bookmark count (phosphor, bold)',
+    hdr && hdr.text === `${SEEDED_BOOKMARKS} bookmarks` && hdr.color === 'rgb(0, 215, 0)' && hdr.weight === '700',
+    JSON.stringify(hdr))
   const clip0 = await la.eval(CLIP_JS)
   check('A6e tagline fully visible above the URL bar at launch size (masthead not clipped)',
     clip0.mScroll <= clip0.mClient + 1 && clip0.tagH >= 15 && clip0.tagBottom <= clip0.barTop &&
@@ -161,9 +193,9 @@ try {
   const sel0 = cards0[0]
   check('A7 selected card has sel-bg fill rgb(0,95,0)', sel0.selected && sel0.bg === 'rgb(0, 95, 0)',
     `selected=${sel0.selected} bg=${sel0.bg}`)
-  check('A8 selected card has 3px muted inset left rail (box-shadow)',
-    /inset/.test(sel0.shadow) && /3px/.test(sel0.shadow) && /rgb\(95, 135, 95\)/.test(sel0.shadow),
-    sel0.shadow)
+  check('A8 selected card carries the glowing 4px phosphor rail on its left edge',
+    sel0.rail && sel0.rail.w === '4px' && sel0.rail.bg === 'rgb(0, 215, 0)' && sel0.rail.glow,
+    JSON.stringify(sel0.rail))
   check('A9 non-selected card has no sel-bg fill',
     cards0[1] && !cards0[1].selected && cards0[1].bg !== 'rgb(0, 95, 0)', `card1 bg=${cards0[1] && cards0[1].bg}`)
   env.shot('lhtml-a-home')
@@ -184,10 +216,14 @@ try {
   check('B1 old card 0 dropped its sel-bg fill in the DOM',
     cardsB[0] && !cardsB[0].selected && cardsB[0].bg !== 'rgb(0, 95, 0)',
     `card0 selected=${cardsB[0] && cardsB[0].selected} bg=${cardsB[0] && cardsB[0].bg}`)
-  check('B2 newly-selected card gained sel-bg fill + rail in the DOM',
+  check('B2 newly-selected card gained sel-bg fill + glowing rail in the DOM',
     cardsB[movedTo] && cardsB[movedTo].selected && cardsB[movedTo].bg === 'rgb(0, 95, 0)' &&
-    /inset/.test(cardsB[movedTo].shadow) && /3px/.test(cardsB[movedTo].shadow),
+    cardsB[movedTo].rail && cardsB[movedTo].rail.w === '4px',
     `card${movedTo}: selected=${cardsB[movedTo] && cardsB[movedTo].selected} bg=${cardsB[movedTo] && cardsB[movedTo].bg}`)
+  check('B3 selection recolors WITHOUT resizing (footprints of selected and old card equal)',
+    cardsB[movedTo] && cardsB[0] && Math.abs(cardsB[movedTo].h - cardsB[0].h) <= 1 &&
+    Math.abs(cardsB[movedTo].w - cardsB[0].w) <= 1,
+    `sel ${cardsB[movedTo] && cardsB[movedTo].w}x${cardsB[movedTo] && cardsB[movedTo].h} vs ${cardsB[0] && cardsB[0].w}x${cardsB[0] && cardsB[0].h}`)
   env.shot('lhtml-b-moved')
 
   // ── (c) URL typing echo: 'o' then type flows into the pane's URL bar; Escape clears ──
@@ -267,6 +303,63 @@ try {
   env.key('ctrl+0'); await sleep(700)
   const zoomReset = await la.eval(ZOOM_JS)
   check('F3 Ctrl+0 reset the pane zoom to 1', Math.abs(parseFloat(zoomReset) - 1) < 0.002, `zoom=${zoomReset}`)
+
+  // ── (h) Responsive columns (Launcher Responsive.dc.html): drive the REAL window
+  //    through the design's four widths; the RENDERED grid must flow 1→2→3→4 columns,
+  //    match the pushed state.columns at every width, and keep a fixed card footprint.
+  //    At 4 columns, arrows must land on the VISUALLY adjacent card — the geometry the
+  //    user's fingers feel. ────────────────────────────────────────────────────────────
+  const widH = env.activate()
+  // Wait until the WINDOW itself reaches the target width (a stale state can
+  // coincidentally carry the expected column count), then until the rendered
+  // tracks AND the pushed state agree on it.
+  const waitCols = async (expectW, expect, timeout = 12000) => {
+    const t0 = Date.now()
+    let last = null
+    while (Date.now() - t0 < timeout) {
+      last = await la.eval(COLS_JS)
+      if (Math.abs(last.winW - expectW) <= 20 && last.cols === expect && last.stateCols === expect) return last
+      await sleep(300)
+    }
+    return last
+  }
+  for (const [w, h, expCols] of [[620, 900, 1], [900, 900, 2], [1280, 900, 3], [1680, 1000, 4]]) {
+    env.x('windowsize', widH, String(w), String(h))
+    const got = await waitCols(w, expCols)
+    check(`H${expCols}a at ~${w}px the grid renders ${expCols} column(s), matching pushed state.columns`,
+      got && got.cols === expCols && got.stateCols === expCols,
+      `rendered=${got && got.cols} state=${got && got.stateCols} winW=${got && got.winW}`)
+    const cardsH = (await la.eval(CARDS_JS)).filter(c => !c.empty)
+    const rowY = [...new Set(cardsH.map(c => c.y))]
+    const perRow = rowY.map(y => cardsH.filter(c => c.y === y).length)
+    check(`H${expCols}b cards actually flow ${expCols} per visual row (fixed equal footprints)`,
+      perRow.length > 0 && perRow[0] === Math.min(expCols, cardsH.length) &&
+      Math.max(...cardsH.map(c => c.h)) - Math.min(...cardsH.map(c => c.h)) <= 1,
+      `perRow=[${perRow}] heights=${[...new Set(cardsH.map(c => c.h))]}`)
+    env.shot(`lhtml-h-${expCols}col`)
+  }
+  // Keyboard geometry at 4 columns: from card 1, Right must select the card
+  // physically beside it (same row, next track); Down the card physically
+  // below it (same track, next row).
+  await sleep(800) // let the 1680px layout fully settle before measuring geometry
+  let stH = JSON.parse(await la.eval('JSON.stringify(window.__launcherState())')).state
+  if (stH.selectedIndex !== 0) { env.key('1'); await sleep(700) }
+  const before = (await la.eval(CARDS_JS)).filter(c => !c.empty)
+  const selB = before.findIndex(c => c.selected)
+  env.key('Right'); await sleep(700)
+  const afterR = (await la.eval(CARDS_JS)).filter(c => !c.empty)
+  const selR = afterR.findIndex(c => c.selected)
+  check('H4c Right selected the VISUALLY adjacent card (same row, next column)',
+    selB === 0 && selR >= 0 && afterR[selR].y === before[selB].y && afterR[selR].x > before[selB].x &&
+    selR === selB + 1,
+    `sel ${selB}(${before[selB] && before[selB].x},${before[selB] && before[selB].y}) → ${selR}(${afterR[selR] && afterR[selR].x},${afterR[selR] && afterR[selR].y})`)
+  env.key('Down'); await sleep(700)
+  const afterD = (await la.eval(CARDS_JS)).filter(c => !c.empty)
+  const selD = afterD.findIndex(c => c.selected)
+  check('H4d Down selected the card DIRECTLY BELOW (same column, next row)',
+    selD >= 0 && afterD[selD].x === afterR[selR].x && afterD[selD].y > afterR[selR].y,
+    `sel ${selR}(${afterR[selR] && afterR[selR].x},${afterR[selR] && afterR[selR].y}) → ${selD}(${afterD[selD] && afterD[selD].x},${afterD[selD] && afterD[selD].y})`)
+  env.shot('lhtml-h-arrows')
 
   // ── (g) Short window (the user's regression, 2026-07-24): shrink the REAL window so
   //    the column cannot fit; the tagline must stay fully visible above the URL bar and

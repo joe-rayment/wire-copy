@@ -357,6 +357,16 @@ internal static class LauncherCommandHandler
                 await UndoCommandHandler.HandleUndo(ctx, options, ct).ConfigureAwait(false);
                 break;
 
+            case CommandType.TerminalResized:
+                // Without this case the switch consumed the resize without
+                // re-rendering, leaving the launcher grid — and the HTML pane's
+                // exported Columns — at the PRE-resize width until the next
+                // keypress. The shared handler re-reads fresh dimensions,
+                // re-renders the current (launcher) view, and sends the shell
+                // its resize-rendered ack.
+                await ViewCommandHandler.HandleTerminalResized(ctx, options, ct).ConfigureAwait(false);
+                break;
+
             case CommandType.JumpToIndex:
             {
                 // Digit 1-9 jump. Count carries the digit (1-based). With the
@@ -731,6 +741,11 @@ internal static class LauncherCommandHandler
 
     private static int GetLayoutColumns(RenderOptions options)
     {
-        return ComputeVariantLayout(options).Columns;
+        // Shell mode: the user sees the HTML pane's responsive grid, so arrows
+        // must move in ITS column geometry (the exported LauncherViewState.
+        // Columns), not the fixed 2-column terminal grid hidden beneath.
+        return options.ShellPane
+            ? LauncherRenderer.ShellPaneColumns(options.TerminalWidth)
+            : ComputeVariantLayout(options).Columns;
     }
 }

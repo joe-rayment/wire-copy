@@ -7,8 +7,9 @@ namespace WireCopy.Application.DTOs.Browser;
 /// channel (method <c>launcherState</c>) so the desktop shell can render the
 /// launcher as an HTML pane (workspace-0jxo / epic workspace-9hh1). This is the
 /// SAME slot composition the TUI grid renders — <see cref="LauncherSlot"/> facts
-/// come from the one renderer-side builder — projected into a fixed 6-tile
-/// paging window (2×3, matching Launcher.dc.html's artboard).
+/// come from the one renderer-side builder — projected into a paging window of
+/// <see cref="Columns"/> × 3 tiles ("Launcher Responsive.dc.html": the grid
+/// flows 1..5 columns with the window width).
 /// Field names are camelCase on the wire (the channel serialises with
 /// <see cref="System.Text.Json.JsonSerializerDefaults.Web"/>).
 /// </summary>
@@ -19,6 +20,14 @@ public sealed record LauncherViewState
 
     /// <summary>Index into <see cref="Slots"/> of the selected tile; -1 = URL bar focused.</summary>
     public int SelectedIndex { get; init; }
+
+    /// <summary>
+    /// Column count of the pane's responsive grid (1..5, "Launcher Responsive
+    /// .dc.html"). Computed renderer-side from the terminal width and ALSO used
+    /// for arrow-key movement in shell mode, so the pane must lay the slots out
+    /// in exactly this many columns for keys to match the screen.
+    /// </summary>
+    public int Columns { get; init; } = 2;
 
     /// <summary>The URL bar's typed buffer + cursor while go-to-URL input is active; null otherwise.</summary>
     public LauncherUrlTyping? UrlTyping { get; init; }
