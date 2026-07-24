@@ -4,7 +4,9 @@
      pushed over IPC. The TUI keeps ALL logic and keyboard handling; this page is
      STRICTLY display-only — no key handlers, no links, no focusable elements. It paints
      whatever `window.__renderLauncher(msg)` is handed and nothing more. Design imported
-     from Launcher.dc.html (claude.ai "Wire Copy Design System"). -->
+     from "Wire Copy Launcher.dc.html" (claude.ai design project 153674f7): CRT-glow
+     "Wire Copy" title with blinking block cursor, LEFT-aligned column at the screen
+     edge. Card styling predates that import and is deliberately kept. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -16,8 +18,15 @@
   <div id="stage">
     <div id="column">
       <div id="masthead">
-        <pre id="wordmark"></pre>
-        <div id="tagline"></div>
+        <div id="masthead-inner">
+          <div id="eyebrow"><span class="tick">▌</span> Launcher</div>
+          <div id="title-row">
+            <span id="apptitle">Wire Copy</span>
+            <span id="cursor-block"></span>
+          </div>
+          <div id="tagline"></div>
+        </div>
+        <div id="scanlines"></div>
       </div>
       <div id="urlbar-wrap"><div id="urlbar"></div></div>
       <div id="setuphint" style="display:none"></div>
@@ -33,20 +42,6 @@
 <script>
 'use strict'
 
-// ── The exact "WIRE COPY" ANSI-shadow art (67 cols) from
-//    LauncherRenderer.cs Wordmark[]. Outer rows light pink, the two middle
-//    rows the brighter pink — WordmarkUsesDark = [f,f,t,t,f,f]. Must render
-//    whitespace-pre and never wrap. ────────────────────────────────────────
-const WORDMARK = [
-  '██╗    ██╗██╗██████╗ ███████╗     ██████╗ ██████╗ ██████╗ ██╗   ██╗',
-  '██║    ██║██║██╔══██╗██╔════╝    ██╔════╝██╔═══██╗██╔══██╗╚██╗ ██╔╝',
-  '██║ █╗ ██║██║██████╔╝█████╗      ██║     ██║   ██║██████╔╝ ╚████╔╝ ',
-  '██║███╗██║██║██╔══██╗██╔══╝      ██║     ██║   ██║██╔═══╝   ╚██╔╝  ',
-  '╚███╔███╔╝██║██║  ██║███████╗    ╚██████╗╚██████╔╝██║        ██║   ',
-  ' ╚══╝╚══╝ ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚═════╝ ╚═╝        ╚═╝   '
-]
-const WORDMARK_DARK = [false, false, true, true, false, false]
-
 // Footer key hints — the launcher's signature bindings, matching the TUI footer.
 const HINTS = [
   ['Enter', 'open'], ['1-9', 'jump'], ['o', 'go to url'], ['a', 'add'], ['?', 'all keys']
@@ -58,11 +53,9 @@ const esc = s => String(s == null ? '' : s)
 
 let lastMsg = null
 
-// One-time static chrome: the wordmark and footer hints never change.
+// One-time static chrome: the footer hints never change; the masthead title
+// block ("▌ Launcher" / Wire Copy / cursor / scanlines) is static markup above.
 function paintChrome () {
-  $('wordmark').innerHTML = WORDMARK
-    .map((row, i) => `<span class="${WORDMARK_DARK[i] ? 'row-dark' : 'row'}">${esc(row)}</span>`)
-    .join('\n')
   $('footer-hints').innerHTML = HINTS
     .map(([k, label]) =>
       `<span class="kbd"><span class="brk">[</span><span class="key">${esc(k)}</span><span class="brk">]</span>:${esc(label)}</span>`)

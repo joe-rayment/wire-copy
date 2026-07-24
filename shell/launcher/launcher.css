@@ -1,10 +1,13 @@
 /* =============================================================================
    Wire Copy launcher pane — display-only projection of the TUI launcher state.
-   Import of Launcher.dc.html (claude.ai "Wire Copy Design System" project): ONE
-   centred column on the page background; masthead / URL bar / grid / footer all
-   share the column's horizontal axis. This page carries NO logic — the TUI owns
-   all keys; every value here is painted from a pushed state message. Colours and
-   the four-step type ramp come from tokens.css.
+   Import of "Wire Copy Launcher.dc.html" (claude.ai design project 153674f7):
+   ONE column LEFT-ALIGNED at the screen edge; masthead / URL bar / grid / footer
+   all share the column's left axis. The masthead is the design's CRT-glow title
+   ("▌ Launcher" eyebrow, 64px phosphor "Wire Copy" + blinking block cursor,
+   tagline, scanline overlay). Card/grid styling predates that import and is
+   deliberately kept. This page carries NO logic — the TUI owns all keys; every
+   value here is painted from a pushed state message. Colours and the type ramp
+   come from tokens.css.
    ============================================================================= */
 
 * { box-sizing: border-box; }
@@ -22,12 +25,13 @@ html, body {
   overflow: hidden;
 }
 
-/* The centred column: the mock's fixed 900px artboard drawn on pure black over
-   the page. Wider windows get symmetric #0a0a0a gutters, exactly like the mock. */
+/* The column: the mock's fixed 900px artboard drawn on pure black, LEFT-aligned
+   at the screen edge (Wire Copy Launcher.dc.html); wider windows get a single
+   #0a0a0a gutter on the right. */
 #stage {
   height: 100%;
   display: flex;
-  justify-content: center;
+  justify-content: flex-start;
   overflow: auto;
 }
 #column {
@@ -40,44 +44,86 @@ html, body {
 }
 
 /* ── Masthead ─────────────────────────────────────────────────────────────
-   1px dim border card; the wordmark and tagline centre inside it. */
+   The Wire Copy Launcher.dc.html "CRT glow" title block, left-aligned on the
+   column axis: eyebrow label, 64px phosphor-green "Wire Copy" with glow +
+   shimmer, a blinking block cursor, tagline, and a scanline/flicker overlay
+   clipped to the masthead. */
+@keyframes wc-blink   { 0%, 50% { opacity: 1; } 50.01%, 100% { opacity: 0; } }
+@keyframes wc-shimmer { 0%, 100% { opacity: 1; } 50% { opacity: 0.86; } }
+@keyframes wc-flicker { 0% { opacity: 0.5; } 22% { opacity: 0.4; } 46% { opacity: 0.56; }
+                        70% { opacity: 0.44; } 100% { opacity: 0.5; } }
+
 #masthead {
-  border: 1px solid var(--tr-dim);
-  padding: 30px 32px 26px;
+  position: relative;
+  overflow: hidden;
   margin: 0 12px;
-  text-align: center;
-}
-#wordmark {
-  margin: 0;
-  font-size: 18px;
-  line-height: 1.0;                  /* box-drawing rows must stay contiguous */
-  white-space: pre;                  /* the art must never wrap or collapse spaces */
-  display: inline-block;
+  padding-bottom: 8px;
   text-align: left;
 }
-/* Two-tone pink: outer rows light (#ff87d7), the two middle rows a brighter
-   pink (#ff5fd7) — the exact stripe from LauncherRenderer's Wordmark art. */
-#wordmark .row      { color: var(--tr-bright); }
-#wordmark .row-dark { color: var(--tr-pink); }
+#masthead-inner { position: relative; z-index: 2; }
+#scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background: repeating-linear-gradient(
+    to bottom, transparent 0 2px, rgba(0, 0, 0, 0.42) 2px 3px);
+  animation: wc-flicker 5s linear infinite;
+}
+#eyebrow {
+  color: var(--tr-bright);
+  font-size: 13px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+  margin-bottom: 18px;
+}
+#title-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+}
+#apptitle {
+  color: var(--tr-green);
+  font-size: 64px;
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1;
+  white-space: nowrap;
+  text-shadow: 0 0 10px rgba(0, 215, 0, 0.55), 0 0 28px rgba(0, 215, 0, 0.3),
+               0 0 56px rgba(0, 215, 0, 0.14);
+  animation: wc-shimmer 3.6s ease-in-out infinite;
+}
+#cursor-block {
+  display: inline-block;
+  flex: none;
+  width: 28px;
+  height: 56px;
+  margin-left: 14px;
+  background: var(--tr-green);
+  box-shadow: 0 0 16px rgba(0, 215, 0, 0.65);
+  border-radius: 2px;
+  animation: wc-blink 1.05s infinite;
+}
 
 #tagline {
-  margin-top: 18px;                  /* mock's gap between art and tagline */
-  font-size: 16px;
-  color: var(--tr-muted);
+  margin-top: 20px;                  /* mock's gap between title and tagline */
+  font-size: 17px;
+  color: var(--tr-bright);
 }
 #tagline .sep { color: var(--tr-dim); margin: 0 .5em; }
 #tagline .ver { color: var(--tr-muted); }
 
 /* ── URL bar ──────────────────────────────────────────────────────────────
-   560px, centred; 1px dim border; when the bar is focused (selectedIndex −1 or
-   URL typing) the border brightens to the focus-bar muted green. */
+   560px, left-aligned on the same column axis as the masthead and grid; 1px
+   dim border; when the bar is focused (selectedIndex −1 or URL typing) the
+   border brightens to the focus-bar muted green. */
 #urlbar-wrap {
   display: flex;
-  justify-content: center;
-  margin: 30px 0 0;
+  justify-content: flex-start;
+  margin: 30px 12px 0;
 }
 #urlbar {
-  width: min(560px, calc(100% - 24px));
+  width: min(560px, 100%);
   border: 1px solid var(--tr-dim);
   padding: 14px 18px;
   font-size: 18px;

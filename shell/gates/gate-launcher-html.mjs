@@ -62,9 +62,25 @@ const TITLE_JS = `(function(){
 })()`
 const URLBAR_JS = `(function(){
   const b=document.getElementById('urlbar'); const r=b.getBoundingClientRect();
-  return {width:Math.round(r.width), centerX:Math.round(r.left+r.width/2),
+  return {width:Math.round(r.width), left:Math.round(r.left),
     winW:window.innerWidth, text:b.textContent, hasCursor:!!b.querySelector('.cursor'),
     focused:b.classList.contains('focused')};
+})()`
+// The Wire Copy Launcher.dc.html masthead: CRT-glow "Wire Copy" title + blinking
+// cursor block, left-aligned at the screen edge on the same axis as the grid.
+const MASTHEAD_JS = `(function(){
+  const t=document.getElementById('apptitle'); if(!t) return null;
+  const cs=getComputedStyle(t); const r=t.getBoundingClientRect();
+  const cur=document.getElementById('cursor-block');
+  const curCs=cur&&getComputedStyle(cur); const curR=cur&&cur.getBoundingClientRect();
+  const eye=document.getElementById('eyebrow');
+  const grid=document.getElementById('grid').getBoundingClientRect();
+  return {text:t.textContent, fontSize:cs.fontSize, fontWeight:cs.fontWeight,
+    color:cs.color, shadow:cs.textShadow, left:Math.round(r.left),
+    gridLeft:Math.round(grid.left), winW:window.innerWidth,
+    cursor:cur?{w:Math.round(curR.width),h:Math.round(curR.height),
+      bg:curCs.backgroundColor,anim:curCs.animationName}:null,
+    eyebrow:eye?eye.textContent.trim():null};
 })()`
 const ZOOM_JS = `document.documentElement.style.zoom`
 
@@ -102,9 +118,22 @@ try {
     title && title.fontSize === '34px' && title.fontWeight === '700' && /JetBrains Mono/.test(title.fontFamily),
     JSON.stringify(title))
   const bar0 = await la.eval(URLBAR_JS)
-  check('A6 URL bar is ~560px wide and centred',
-    Math.abs(bar0.width - 560) <= 12 && Math.abs(bar0.centerX - bar0.winW / 2) <= 40,
-    `width=${bar0.width} centerX=${bar0.centerX} winW=${bar0.winW}`)
+  check('A6 URL bar is ~560px wide and LEFT-aligned at the screen edge (not centred)',
+    Math.abs(bar0.width - 560) <= 12 && bar0.left <= 20 && (bar0.left + bar0.width) < bar0.winW / 2 + 280,
+    `width=${bar0.width} left=${bar0.left} winW=${bar0.winW}`)
+  const mast = await la.eval(MASTHEAD_JS)
+  check('A6b masthead is the Launcher.dc.html CRT title: "Wire Copy" 64px/700 phosphor green with glow',
+    mast && mast.text === 'Wire Copy' && mast.fontSize === '64px' && mast.fontWeight === '700' &&
+    mast.color === 'rgb(0, 215, 0)' && mast.shadow !== 'none',
+    JSON.stringify(mast && { text: mast.text, fontSize: mast.fontSize, fontWeight: mast.fontWeight, color: mast.color }))
+  check('A6c blinking block cursor sits beside the title (28×56 green, blink animation)',
+    mast && mast.cursor && mast.cursor.w === 28 && mast.cursor.h === 56 &&
+    mast.cursor.bg === 'rgb(0, 215, 0)' && /blink/.test(mast.cursor.anim),
+    JSON.stringify(mast && mast.cursor))
+  check('A6d title block LEFT-aligned at the screen edge, on the grid\'s axis, eyebrow reads "Launcher"',
+    mast && mast.left <= 20 && Math.abs(mast.left - mast.gridLeft) <= 4 &&
+    /Launcher/i.test(mast.eyebrow || ''),
+    mast && `left=${mast.left} gridLeft=${mast.gridLeft} eyebrow="${mast.eyebrow}"`)
   const cards0 = await la.eval(CARDS_JS)
   const sel0 = cards0[0]
   check('A7 selected card has sel-bg fill rgb(0,95,0)', sel0.selected && sel0.bg === 'rgb(0, 95, 0)',
