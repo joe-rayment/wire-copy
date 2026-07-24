@@ -186,7 +186,14 @@ function demoMsg () {
       linkCount: 318,
       sectionCount: 18,
       cached: true,
-      columns: Math.max(1, Math.min(6, Math.floor((window.innerWidth - 2 * Math.min(36, Math.max(16, 0.024 * window.innerWidth)) + 30) / 330))),
+      // Same formula as LinkTreeRenderer.ShellPaneColumns (the design's auto-fill
+      // over a fluid clamp(300px,26vw,430px) track) so ?demo=1 shows real geometry.
+      columns: (w => {
+        const pad = Math.min(36, Math.max(16, 0.024 * w))
+        const gap = Math.min(40, Math.max(20, 0.026 * w))
+        const track = Math.min(430, Math.max(300, 0.26 * w))
+        return Math.max(1, Math.min(6, Math.floor((w - 2 * pad + gap) / (track + gap))))
+      })(window.innerWidth),
       items: [
         { kind: 'section', title: 'Highlights', count: 4, collapsed: false },
         story('Trump Demands Saudi Arabia Normalize Relations With Israel as Part of Nuclear Deal', 'Karoun Demirjian · 4 May'),

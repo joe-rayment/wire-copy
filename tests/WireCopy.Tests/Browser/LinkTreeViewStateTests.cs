@@ -26,7 +26,9 @@ public class LinkTreeViewStateTests
     [InlineData(69, 2)]    // ~780px — the docked-sidecar split at 1360px
     [InlineData(80, 2)]    // ~900px window
     [InlineData(121, 3)]   // ~1360px window
-    [InlineData(149, 4)]   // ~1680px wide monitor
+    [InlineData(135, 3)]   // ~1512px — the 15-inch MacBook, 3 columns at ~450px
+    [InlineData(149, 3)]   // ~1680px — the FLUID track holds 3, it does not fan to 4
+    [InlineData(176, 4)]   // ~1970px external display
     [InlineData(300, 6)]   // absurd width clamps at six
     public void ShellPaneColumns_MatchesTheDesignBreakpoints(int terminalWidth, int expected)
     {

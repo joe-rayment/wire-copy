@@ -4,7 +4,9 @@
 // to REAL keystrokes. Every check asserts a USER-VISIBLE OUTCOME on the pane's DOM /
 // computed styles (per the project Verification Doctrine): the pane shows over the
 // DOCKED terminal split with 2 columns, undocking reflows to 3 at 1360px, the width
-// sweep hits the 1/2/4-column breakpoints with a fixed 140px card footprint, Right
+// sweep hits the design's 1/2/3/4-column breakpoints over a FLUID minimum track
+// (1680px stays at 3 — it must NOT fan out — and only ~1900px+ buys a 4th) with a
+// fixed 162px card footprint and headline type at its 23px ceiling when wide, Right
 // recolors the visually adjacent card, Enter NAVIGATES the live page pane to the
 // selected story's URL and the pane hides, Tab brings it back, Ctrl+= zooms it.
 // Headful under Xvfb ONLY (never headless). Run from shell/: node gates/gate-linktree-html.mjs
@@ -63,6 +65,8 @@ const GEO_JS = `(function(){
       sel:c.classList.contains('selected'), rail:!!c.querySelector('.card-rail'),
       bg:getComputedStyle(c).backgroundColor,
       title:(c.querySelector('.card-title')||{}).textContent||'',
+      ts:c.querySelector('.card-title')?parseFloat(getComputedStyle(c.querySelector('.card-title')).fontSize):0,
+      ms:c.querySelector('.card-meta')?parseFloat(getComputedStyle(c.querySelector('.card-meta')).fontSize):0,
       meta:(c.querySelector('.card-meta')||{}).textContent||''};});
   const sections=[...g.querySelectorAll('.section')].map(s=>({text:s.textContent.replace(/─+/g,'').trim().slice(0,48),
     w:Math.round(s.getBoundingClientRect().width)}));
@@ -134,8 +138,8 @@ try {
     gD2 = await lt.eval(GEO_JS)
   }
   const selD = gD2.cards.findIndex(c => c.sel)
-  check('A7 cards hold the fixed 140px footprint; selection is a recolor (sel-bg + glowing rail)',
-    gD2.cards.length > 0 && gD2.cards.every(c => Math.abs(c.h - 140) <= 1) && selD >= 0 &&
+  check('A7 cards hold the fixed 162px footprint; selection is a recolor (sel-bg + glowing rail)',
+    gD2.cards.length > 0 && gD2.cards.every(c => Math.abs(c.h - 162) <= 1) && selD >= 0 &&
     gD2.cards[selD].rail && gD2.cards[selD].bg === 'rgb(0, 95, 0)',
     `heights=${[...new Set(gD2.cards.map(c => c.h))]} sel=${selD}`)
   check('A8 story meta line renders the real author', gD2.cards.length > 0 && gD2.cards[0].meta.includes(AUTHOR),
@@ -152,7 +156,7 @@ try {
   check('B0 Right selected the VISUALLY adjacent card (same row, next column)', okB0,
     `sel ${selB}(${gB.cards[selB] && gB.cards[selB].x},${gB.cards[selB] && gB.cards[selB].y}) → ${selR}(${gB.cards[selR] && gB.cards[selR].x},${gB.cards[selR] && gB.cards[selR].y})`)
   check('B1 selection did NOT resize the card (fixed footprint)',
-    okB0 && Math.abs(gB.cards[selR].h - 140) <= 1 && gB.cards[selR].w === gB.cards[selB].w,
+    okB0 && Math.abs(gB.cards[selR].h - 162) <= 1 && gB.cards[selR].w === gB.cards[selB].w,
     okB0 ? `${gB.cards[selR].w}x${gB.cards[selR].h} vs ${gB.cards[selB].w}x${gB.cards[selB].h}` : 'no selected card')
   env.shot('ltree-b-moved')
 
@@ -180,7 +184,10 @@ try {
 
   // ── (d) Width sweep (undocked): the design's breakpoints on the REAL window ──────
   const wid = env.activate()
-  for (const [w, h, exp] of [[620, 900, 1], [900, 900, 2], [1680, 1000, 4]]) {
+  // The design's own table: ≤650 → 1, 650–975 → 2, 975+ → 3, 1900+ → 4. 1680 is the
+  // regression case — a fixed 300px minimum track fanned it out to 4 narrow columns;
+  // the design's fluid clamp(300px,26vw,430px) holds it at 3 wide ones.
+  for (const [w, h, exp] of [[620, 900, 1], [900, 900, 2], [1680, 1000, 3], [1980, 1100, 4]]) {
     env.x('windowsize', wid, String(w), String(h))
     let got = null
     const t1 = Date.now()
@@ -194,9 +201,21 @@ try {
     check(`D${exp} at ~${w}px: ${exp} column(s), rendered == pushed state`,
       got && got.cols === exp && got.stateCols === exp,
       `rendered=${got && got.cols} state=${got && got.stateCols} winW=${got && got.winW}`)
-    check(`D${exp}b at ~${w}px: card footprint still fixed at 140px`,
-      got && got.cards.length > 0 && got.cards.every(c => Math.abs(c.h - 140) <= 1),
+    check(`D${exp}b at ~${w}px: card footprint still fixed at 162px`,
+      got && got.cards.length > 0 && got.cards.every(c => Math.abs(c.h - 162) <= 1),
       got && `heights=${[...new Set(got.cards.map(c => c.h))]}`)
+    // The point of the fluid track: wide panes buy WIDER cards and BIGGER headline
+    // type, not more columns. Headline clamps 17→23px, byline 12.5→15.5px.
+    const vw = (got && got.winW) || w
+    const expTs = Math.min(23, Math.max(17, 0.0152 * vw))
+    const expMs = Math.min(15.5, Math.max(12.5, 0.0102 * vw))
+    check(`D${exp}c at ~${w}px: headline type sits at the design's clamp (${expTs.toFixed(1)}px / byline ${expMs.toFixed(1)}px)`,
+      got && got.cards.length > 0 && Math.abs(got.cards[0].ts - expTs) <= 0.6 &&
+      Math.abs(got.cards[0].ms - expMs) <= 0.6,
+      got && got.cards.length ? `title=${got.cards[0].ts} meta=${got.cards[0].ms}` : 'no cards')
+    check(`D${exp}c2 at ~${w}px: every card is at least the 300px minimum track wide`,
+      got && got.cards.length > 0 && got.cards.every(c => c.w >= 300),
+      got && `widths=${[...new Set(got.cards.map(c => c.w))]}`)
     env.shot(`ltree-d-${exp}col`)
   }
 

@@ -27,11 +27,14 @@ html, body {
 #stage {
   height: 100%;
   display: flex;
-  /* flex-start (NOT stretch): stretch would pin the column to the stage height
-     and flex-crush the chrome when content overflows — the launcher pane's
-     clipped-tagline regression (2026-07-24). The column takes its content
-     height and the stage scrolls. */
-  align-items: flex-start;
+  /* stretch pins the column to the stage height so the FOOTER always sits on the
+     pane's bottom edge and a long grid can never push it off-screen. The chrome
+     is safe from the launcher pane's clipped-tagline flex-crush (2026-07-24)
+     because every chrome child below carries flex-shrink:0 — #grid is the only
+     shrinkable child, and it clips (see its overflow) rather than scrolling the
+     page. `auto` remains as the last resort for a pane too short to hold even
+     the chrome. */
+  align-items: stretch;
   overflow: auto;
 }
 
@@ -139,14 +142,26 @@ html, body {
 #morebelow { margin-bottom: 12px; }
 
 /* ── Story grid ───────────────────────────────────────────────────────────
-   Track count driven by the pushed state (1..6); section headers span all
-   tracks; cards keep a fixed 140px footprint. */
+   Track count driven by the pushed state (1..6) — LinkTreeRenderer.ShellPaneColumns
+   is the px-mirror of the design's auto-fill over a FLUID minimum track,
+   minmax(min(clamp(300px,26vw,430px),100%),1fr), so a 1512pt window lands on 3
+   columns at ~450px rather than fanning out; section headers span all tracks;
+   cards keep the design's fixed 162px footprint. */
 #grid {
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
   column-gap: clamp(20px, 2.6vw, 40px);
   row-gap: 0;
   align-items: stretch;
+  /* The ONLY shrinkable child of #column. The TUI budgets the pushed window in
+     21px terminal lines while these cards are a fixed 174px stride, so a tall
+     list can overrun the pane by a few px; when it does the overrun is taken
+     off the BOTTOM of the grid (dead card padding) instead of scrolling the
+     page and pushing the status bar out of view. */
+  flex: 1 1 auto;
+  min-height: 0;
+  align-content: start;
+  overflow: hidden;
 }
 
 .section {
@@ -177,9 +192,9 @@ html, body {
   flex-direction: column;
 }
 .card {
-  height: 140px;
+  height: 162px;
   position: relative;
-  padding: 13px 13px 13px 20px;
+  padding: 15px 15px 15px 22px;
   overflow: hidden;
 }
 /* Selection only ever recolors: sel-bg fill + glowing 4px phosphor rail. */
@@ -196,7 +211,7 @@ html, body {
 
 .card-title {
   font-weight: 700;
-  font-size: clamp(16px, 1.36vw, 20px);
+  font-size: clamp(17px, 1.52vw, 23px);
   line-height: 1.4;
   display: -webkit-box;
   -webkit-line-clamp: 3;
@@ -216,9 +231,9 @@ html, body {
 
 .card-meta {
   color: var(--tr-med);
-  font-size: clamp(11.5px, 0.94vw, 13.5px);
+  font-size: clamp(12.5px, 1.02vw, 15.5px);
   line-height: 1.5;
-  margin-top: 6px;
+  margin-top: 8px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;

@@ -151,12 +151,17 @@ internal class LinkTreeRenderer
     /// <summary>
     /// The HTML link-tree pane's responsive column count for a given terminal
     /// width ("Link Tree Responsive.dc.html", workspace-vingi): the cell-unit
-    /// mirror of the design's <c>repeat(auto-fill, minmax(min(300px,100%),1fr))</c>
+    /// mirror of the design's
+    /// <c>repeat(auto-fill, minmax(min(clamp(300px,26vw,430px),100%),1fr))</c>
     /// with <c>clamp(20px,2.6vw,40px)</c> gaps inside <c>clamp(16px,2.4vw,36px)</c>
-    /// side padding. Terminal cells map to design px at ~11.2 px/cell (measured
+    /// side padding. The minimum track is FLUID, not a fixed 300px: it is what
+    /// stops a wide window fanning out into narrow columns, and what buys the
+    /// larger headline type ("A 15-inch MacBook lands on 3 columns at ~450px per
+    /// card"). Terminal cells map to design px at ~11.2 px/cell (measured
     /// live 2026-07-24: a 1360px window is 121 cols at the 18px scale; CSS zoom
-    /// cancels out of the ratio). Breakpoints land per the design: ≤650px → 1,
-    /// 650–1000 → 2 (the 700px docked pane), 1000–1400 → 3, ≥1400 → 4.
+    /// cancels out of the ratio). Breakpoints land per the design's own table:
+    /// ≤650px → 1, 650–975 → 2 (the docked-sidecar split), 975–1900 → 3 (laptop
+    /// and up, including a 1512pt MacBook), ≥1900 → 4 (external display).
     /// Terminal-mode rendering never calls this.
     /// </summary>
     internal static int ShellPaneColumns(int terminalWidth)
@@ -165,8 +170,9 @@ internal class LinkTreeRenderer
         var w = terminalWidth * cellPx;
         var pad = Math.Clamp(0.024 * w, 16, 36);
         var gap = Math.Clamp(0.026 * w, 20, 40);
+        var track = Math.Clamp(0.26 * w, 300, 430);
         var content = w - (2 * pad);
-        return Math.Clamp((int)((content + gap) / (300 + gap)), 1, 6);
+        return Math.Clamp((int)((content + gap) / (track + gap)), 1, 6);
     }
 
     /// <summary>
