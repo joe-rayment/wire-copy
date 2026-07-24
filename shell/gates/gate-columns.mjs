@@ -10,6 +10,9 @@
 //   FILL   — the tile rule spans essentially the whole width (no dead-space ribbon).
 //   SPOTLIGHT — Right steps the highlighted tile column 0 → 1 and a further Right stays
 //            at 1 (there is no column 2); the selection bg lands on the SELECTED column.
+//   META   — fixture stories carry author/date; the SELECTED card's meta line renders
+//            white-on-fill (selection fg) and the treatment MOVES with the selection
+//            (workspace-v654).
 //   DOCKED — with the live-page pane revealed (the "browser sidecar" that narrows the
 //            reader — the exact case that used to collapse the grid to 1 column), the
 //            story list still renders 2 columns, long titles WRAP across lines, and
@@ -77,12 +80,21 @@ async function measureLauncher (env, term, label) {
   check(`${label}: rendered column count is 2 (1 ┼ per rule row) at ${vp.cols} cols`,
     crossCounts.every(n => n === 1), `crosses per rule row=[${crossCounts.join(',')}]`)
 
-  // FILL: the rule spans the content width; the last column absorbs the remainder.
+  // FILL: since workspace-pn5f the launcher is a CENTRED column capped at
+  // LauncherRenderer.ContentColumnWidth (84, Launcher.dc.html's column): narrow
+  // terminals fill edge-to-edge as before; wide ones centre the capped column
+  // with symmetric gutters instead of fanning tiles across the whole width.
+  const CONTENT_COL = 84
   const ruleLine = vp.lines[rules[0]]
   const ruleChars = [...ruleLine].map((ch, i) => ('─┼'.includes(ch) ? i : -1)).filter(i => i >= 0)
-  check(`${label}: grid fills the width (no ribbon, last column flush)`,
-    ruleChars[0] <= 2 && ruleChars[ruleChars.length - 1] >= vp.cols - 3,
-    `rule ${ruleChars[0]}..${ruleChars[ruleChars.length - 1]} of ${vp.cols} cols`)
+  const first = ruleChars[0]
+  const last = ruleChars[ruleChars.length - 1]
+  const ruleWidth = last - first + 1
+  const expectedW = Math.max(1, Math.min(vp.cols - 2, CONTENT_COL))
+  const gutterSkew = Math.abs(first - (vp.cols - 1 - last))
+  check(`${label}: grid is the centred capped column (width ~${expectedW}, symmetric gutters)`,
+    ruleWidth >= expectedW - 2 && ruleWidth <= expectedW && gutterSkew <= 2,
+    `rule ${first}..${last} (w=${ruleWidth}) of ${vp.cols} cols, expected ~${expectedW}, gutter skew ${gutterSkew}`)
 
   // HEIGHT: the stride between consecutive rule rows is the card height. It must equal
   // max(5, floor(terminalRows/4)) — a tile is a quarter of the FULL screen tall
@@ -157,7 +169,13 @@ for (const cfg of [
 // (LinkTreeGridMapper) than the launcher, and the auto-revealed live-page pane is the
 // exact "browser sidecar narrows the terminal" case that used to collapse it to 1 column.
 const FPORT = 8151
-const link = (href, text) => `<li><a href="${href}">${text}</a></li>`
+// Each story carries author/date meta (workspace-v654): a .byline span + <time datetime>
+// inside the <li> container is exactly what LinkExtractor.ExtractLinkMetadata picks up,
+// so the rendered cards get an "Ada Lovelace · <date>" meta line under the title — the
+// line whose white-on-fill selected treatment the checks below drive and observe.
+const AUTHOR = 'Ada Lovelace'
+const link = (href, text) =>
+  `<li><a href="${href}">${text}</a> <span class="byline">${AUTHOR}</span> <time datetime="2026-07-19T08:00:00Z">Jul 19</time></li>`
 const WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
 const TAIL = 'carrying a long newsroom headline that must wrap across several tile lines instead of truncating away'
 const fixture = http.createServer((req, res) => {
@@ -169,6 +187,28 @@ ${WORDS.map((w, i) => link(`/a${i + 1}.html`, `Dispatch ${w}: ${TAIL}`)).join('\
 })
 await new Promise(r => fixture.listen(FPORT, '127.0.0.1', r))
 const listUrl = `http://127.0.0.1:${FPORT}/`
+
+// Foreground color key of one cell (mode:color), for the meta white-on-fill checks.
+async function fgAt (term, baseY, vpRow, col) {
+  return term.eval(`(() => {
+    const line = term.buffer.active.getLine(${baseY} + ${vpRow})
+    if (!line) return 'none'
+    const c = line.getCell(${col})
+    return c ? c.getFgColorMode() + ':' + c.getFgColor() : 'none'
+  })()`)
+}
+
+// Per column (left of / right of the divider), the first viewport row+col where the
+// fixture byline renders. Returns [left, right], each {row, col} or null.
+function bylinePositions (vp, dividerCol) {
+  return [[0, dividerCol], [dividerCol + 1, vp.cols]].map(([a, b]) => {
+    for (let r = 0; r < vp.lines.length; r++) {
+      const idx = (vp.lines[r] || '').slice(a, b).indexOf(AUTHOR)
+      if (idx >= 0) return { row: r, col: a + idx }
+    }
+    return null
+  })
+}
 
 // Asserts the story grid is exactly 2 columns and titles wrap, in the CURRENT viewport.
 async function measureStoryGrid (term, label) {
@@ -227,9 +267,41 @@ async function measureStoryGrid (term, label) {
     const dividerCols = []
     for (let c = 0; c < (vpDocked.lines[rowOne] || '').length; c++) if (vpDocked.lines[rowOne][c] === '│') dividerCols.push(c)
     const c0 = (await selectedColumn(term, vpDocked.baseY, rowOne, dividerCols)).col
+
+    // Meta white-on-fill (workspace-v654): the byline renders under BOTH cards, the
+    // SELECTED card's meta wears the selection foreground (same fg as its selected
+    // title — the design's white-on-fill), the unselected one stays metadata green.
+    const [metaL, metaR] = bylinePositions(vpDocked, dividerCols[0])
+    check('story-meta: author/date meta renders under both docked cards', !!metaL && !!metaR,
+      `left=${JSON.stringify(metaL)} right=${JSON.stringify(metaR)}`)
+    let selMetaFg = 'none', unselMetaFg = 'none'
+    if (metaL && metaR) {
+      const selTitleFg = await fgAt(term, vpDocked.baseY, rowOne, vpDocked.lines[rowOne].indexOf('Dispatch one'))
+      selMetaFg = await fgAt(term, vpDocked.baseY, metaL.row, metaL.col)
+      unselMetaFg = await fgAt(term, vpDocked.baseY, metaR.row, metaR.col)
+      check('story-meta: selected card meta is white-on-fill (fg == selected title fg)',
+        selMetaFg !== 'none' && selMetaFg === selTitleFg, `metaFg=${selMetaFg} titleFg=${selTitleFg}`)
+      check('story-meta: unselected card meta does NOT wear the selection fg',
+        unselMetaFg !== selMetaFg, `unselMetaFg=${unselMetaFg} selMetaFg=${selMetaFg}`)
+    }
+    env.shot('columns-story-meta')
+
     env.key('Right'); await sleep(700)
     const c1 = (await selectedColumn(term, vpDocked.baseY, rowOne, dividerCols)).col
     check('story: Right moves selection to column 1 while docked', c0 === 0 && c1 === 1, `cols=[${c0},${c1}]`)
+
+    // The state CHANGE, not just the initial state: after Right the white-on-fill
+    // must have MOVED — column 1's meta gains the selection fg, column 0's reverts.
+    if (metaL && metaR) {
+      const vpMoved = await viewport(term)
+      const [metaL2, metaR2] = bylinePositions(vpMoved, dividerCols[0])
+      const fgL2 = metaL2 ? await fgAt(term, vpMoved.baseY, metaL2.row, metaL2.col) : 'none'
+      const fgR2 = metaR2 ? await fgAt(term, vpMoved.baseY, metaR2.row, metaR2.col) : 'none'
+      check('story-meta: white-on-fill moved with the selection (col1 gained it, col0 dropped it)',
+        fgR2 === selMetaFg && fgL2 === unselMetaFg,
+        `after Right: leftFg=${fgL2} rightFg=${fgR2} (selFg=${selMetaFg} normalFg=${unselMetaFg})`)
+      env.shot('columns-story-meta-moved')
+    }
 
     // Undock (| hides the pane → reader reflows to FULL width): still 2 columns, wider
     // tiles, selection still on Dispatch two.
