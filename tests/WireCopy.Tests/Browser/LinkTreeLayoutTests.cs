@@ -452,19 +452,21 @@ public class LinkTreeLayoutTests
     #region Title wrapping in 5-line mode
 
     [Fact]
-    public void BuildCardLine_5Line_LongTitleWrapsToLine2()
+    public void BuildCardLine_5Line_LongTitleWrapsToTwoLines()
     {
-        // Title wider than textWidth wraps to line 2 instead of truncating on line 1
+        // Title wider than textWidth wraps instead of truncating. With the
+        // centred content block (workspace-e86u) a 2-line title + meta fills
+        // lines 0-2 of a 5-line card: title on 0 and 1, meta on 2.
         var textWidth = LinkTreeRenderer.GetTitleTextWidth(40);
         var longTitle = string.Join(" ", Enumerable.Repeat("word", textWidth / 3));
         var node = CreateLinkNode(longTitle, "https://example.com", LinkType.Content);
 
+        var line0 = LinkTreeRenderer.BuildCardLine(node, false, 5, 0, 40, TestPalette);
         var line1 = LinkTreeRenderer.BuildCardLine(node, false, 5, 1, 40, TestPalette);
-        var line2 = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 40, TestPalette);
 
-        // Line 1 has first part, line 2 has overflow
-        line1.Should().Contain("word");
-        StripAnsi(line2).Trim().Should().NotBeEmpty();
+        // Line 0 has first part, line 1 has overflow
+        line0.Should().Contain("word");
+        StripAnsi(line1).Trim().Should().NotBeEmpty();
     }
 
     [Fact]
@@ -486,9 +488,11 @@ public class LinkTreeLayoutTests
         var veryLongTitle = string.Join(" ", Enumerable.Repeat("longword", textWidth));
         var node = CreateLinkNode(veryLongTitle, "https://example.com", LinkType.Content);
 
-        var line2 = LinkTreeRenderer.BuildCardLine(node, false, 5, 2, 40, TestPalette);
+        // Centred block (workspace-e86u): the 2-line title budget sits on
+        // lines 0-1, so the ellipsized final title line is line 1.
+        var line1 = LinkTreeRenderer.BuildCardLine(node, false, 5, 1, 40, TestPalette);
 
-        line2.Should().Contain("\u2026");
+        line1.Should().Contain("\u2026");
     }
 
     [Fact]
@@ -692,16 +696,19 @@ public class LinkTreeLayoutTests
     }
 
     [Fact]
-    public void BuildCardLine_TallCell_ShortTitle_MetadataStillUnderTitle()
+    public void BuildCardLine_TallCell_ShortTitle_MetadataCentredUnderTitle()
     {
+        // Centred content block (Card Redesign.dc.html 1a, workspace-e86u): a
+        // 1-line title + meta pair centres in the 7-line content area of an
+        // 8-line card — title on line 2, meta on line 3, pads around it.
         const int cardHeight = 8;
         var node = CreateLinkNodeWithMetadata("Short", "https://example.com", LinkType.Content, "Jane Doe", null);
 
-        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 1, 40, TestPalette)).Should().Contain("Short");
-        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 2, 40, TestPalette)).Should().Contain("Jane Doe");
+        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 2, 40, TestPalette)).Should().Contain("Short");
+        StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, 3, 40, TestPalette)).Should().Contain("Jane Doe");
 
-        // The slack pads between the metadata and the separator.
-        for (var i = 3; i <= 6; i++)
+        // Centring pads above the title and between the metadata and the separator.
+        foreach (var i in new[] { 0, 1, 4, 5, 6 })
         {
             StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, cardHeight, i, 40, TestPalette)).Trim().Should().BeEmpty();
         }
@@ -901,6 +908,50 @@ public class LinkTreeLayoutTests
         p0.Value.Row.Should().Be(p1.Value.Row);
         p2!.Value.Col.Should().Be(2);
         p2.Value.Row.Should().Be(p0.Value.Row + layout.CellHeight);
+    }
+
+    [Fact]
+    public void TryGetSelectedRowScreenPosition_RowMatchesWhereTheTitleActuallyRenders()
+    {
+        // Centred content block (workspace-e86u): the title's line inside a
+        // tall card now depends on how many lines the title wraps to. The
+        // spotlight helper MUST mirror the renderer's centring, per node —
+        // a short title centres deeper into the cell than a long one.
+        var shortNode = CreateLinkNode("Short", "https://example.com/a", LinkType.Content);
+        var textWidth = LinkTreeRenderer.GetTitleTextWidth(40);
+        var longTitle = string.Join(" ", Enumerable.Repeat("word", textWidth));
+        var longNode = CreateLinkNode(longTitle, "https://example.com/b", LinkType.Content);
+        var nodes = new List<LinkNode> { shortNode, longNode };
+
+        var layout = LinkTreeRenderer.ComputeLayout(82, 44);
+        layout.CellHeight.Should().BeGreaterThan(5, "the test needs a tall card where centring shifts the title");
+
+        foreach (var (idx, node) in new[] { (0, shortNode), (1, longNode) })
+        {
+            var pos = LinkTreeRenderer.TryGetSelectedRowScreenPosition(nodes, idx, 0, layout, 100);
+            pos.Should().NotBeNull();
+
+            // Find the cell line the renderer actually puts the first title text on.
+            var isLastCol = idx == layout.Columns - 1;
+            var cellW = isLastCol
+                ? ResponsiveGrid.LastCellWidthFor(layout.Width, layout.Columns)
+                : layout.CellWidth;
+            var expectedFirstWord = node.Link.DisplayText.Split(' ')[0];
+            var renderedTitleLine = -1;
+            for (var line = 0; line < layout.CellHeight; line++)
+            {
+                var text = StripAnsi(LinkTreeRenderer.BuildCardLine(node, false, layout.CellHeight, line, cellW, TestPalette));
+                if (text.Contains(expectedFirstWord))
+                {
+                    renderedTitleLine = line;
+                    break;
+                }
+            }
+
+            renderedTitleLine.Should().BeGreaterThan(0, "a tall card centres its content below the top edge");
+            pos!.Value.Row.Should().Be(layout.HeaderLines + renderedTitleLine,
+                $"the spotlight must land on the line where node {idx}'s title text renders");
+        }
     }
 
     #endregion

@@ -78,7 +78,7 @@ public class LauncherChromeRegressionTests
         try
         {
             renderer.RenderLauncher(bookmarks, selectedIndex: 0, scrollOffset: 0, options);
-            renderer.RenderFooter(width);
+            renderer.RenderFooter(width, bookmarks.Count);
         }
         finally
         {

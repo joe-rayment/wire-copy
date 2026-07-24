@@ -197,11 +197,12 @@ internal class LinkTreeRenderer
         ThemePalette palette,
         IReadOnlySet<string>? cachedUrls = null,
         bool isToggled = false,
-        string? searchQuery = null)
+        string? searchQuery = null,
+        bool drawSeparator = true)
     {
         return isSelected
-            ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette, isToggled, searchQuery)
-            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette, isToggled, searchQuery);
+            ? BuildSelectedCardLine(node, cardHeight, lineIndex, width, palette, isToggled, searchQuery, drawSeparator)
+            : BuildNormalCardLine(node, cardHeight, lineIndex, width, palette, isToggled, searchQuery, drawSeparator);
     }
 
     /// <summary>
@@ -291,6 +292,20 @@ internal class LinkTreeRenderer
     internal static int GetTitleLineBudget(int cardHeight)
     {
         return cardHeight >= 5 ? Math.Max(2, cardHeight - 4) : 1;
+    }
+
+    /// <summary>
+    /// First line of the card's content block (wrapped title + author/date)
+    /// when the block is vertically centred in the content area — every cell
+    /// line except the trailing separator slot (Card Redesign.dc.html 1a,
+    /// workspace-e86u). The separator slot stays reserved even on the bottom
+    /// grid row (where the rule is suppressed) so all rows share one geometry.
+    /// At the 5-line floor with a 1-line title this is line 1 — the classic
+    /// card layout.
+    /// </summary>
+    internal static int GetContentTopLine(int cardHeight, int contentLineCount)
+    {
+        return Math.Max(0, (cardHeight - 1 - contentLineCount) / 2);
     }
 
     /// <summary>
@@ -405,8 +420,23 @@ internal class LinkTreeRenderer
                     return null;
                 }
 
-                // Title line within the card: row 1 of a 5-row card, row 0 of a compact card.
-                var titleLineIdx = layout.CellHeight >= 5 ? 1 : 0;
+                // Title line within the card: the centred content block's
+                // first line for standard cards (Card Redesign.dc.html 1a —
+                // MUST mirror BuildSelectedCardLine or the spotlight lands on
+                // the wrong row), row 0 of a compact card.
+                var titleLineIdx = 0;
+                if (layout.CellHeight >= 5)
+                {
+                    var isLastColumn = gridCol == layout.Columns - 1;
+                    var cellW = isLastColumn
+                        ? ResponsiveGrid.LastCellWidthFor(layout.Width, layout.Columns)
+                        : layout.CellWidth;
+                    var titleLines = GetWrappedTitleLines(
+                        gr.Cells[gridCol].Link.DisplayText,
+                        GetTitleTextWidth(cellW),
+                        GetTitleLineBudget(layout.CellHeight));
+                    titleLineIdx = GetContentTopLine(layout.CellHeight, titleLines.Count + 1);
+                }
 
                 // Cards write at column 0 of the line. The title text sits after the
                 // leading prefix character (accent bar/space/dot) + 1 separator space = col 2.
@@ -470,59 +500,67 @@ internal class LinkTreeRenderer
         int width,
         ThemePalette palette,
         bool isToggled = false,
-        string? searchQuery = null)
+        string? searchQuery = null,
+        bool drawSeparator = true)
     {
         var sb = new StringBuilder();
-        var accentFg = palette.HeaderBorderFg.AnsiFg;
         var selBg = palette.SelectedItemBg.AnsiBg;
         var selFg = palette.SelectedItemFg.AnsiFg;
         var contentWidth = width - 1;
 
-        var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-        var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1;
-
-        // Standard cards (workspace-21uy): the title wraps across up to
-        // GetTitleLineBudget lines starting at line 1, the author/date row sits
-        // directly beneath the last title line, and any slack pads before the
-        // separator. Compact cards keep the classic single-line vocabulary.
+        // Standard cards (workspace-21uy, centred per Card Redesign.dc.html 1a,
+        // workspace-e86u): the title wraps across up to GetTitleLineBudget
+        // lines, the author/date row sits directly beneath the last title line,
+        // and the whole block is vertically centred in the content area.
+        // Compact cards keep the classic top-pinned single-line vocabulary.
         IReadOnlyList<string> titleLines;
+        int titleLineIdx;
         int authorDateLineIdx;
         int metadataLineIdx;
         if (cardHeight >= 5)
         {
             titleLines = GetWrappedTitleLines(node.Link.DisplayText, GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
+            titleLineIdx = GetContentTopLine(cardHeight, titleLines.Count + 1);
             authorDateLineIdx = titleLineIdx + Math.Max(1, titleLines.Count);
             metadataLineIdx = -1;
         }
         else
         {
             titleLines = Array.Empty<string>();
+            titleLineIdx = 0;
             authorDateLineIdx = -1;
             metadataLineIdx = GetMetadataLineIndex(cardHeight);
         }
 
+        var isSeparator = lineIndex == cardHeight - 1 && cardHeight > 1 && drawSeparator;
+
         // workspace-zlv0 (refines mj9x + 63jj): the selection rectangle fills
-        // every row of the cell EXCEPT the separator. The separator is the
+        // every row of the cell EXCEPT a drawn separator. The separator is the
         // dim ─ rule that visually divides cell rows from each other — that
         // divider is the cell's bottom border and must survive the highlight
-        // (workspace-63jj). Top padding, title rows, blank content slots, all
-        // get selBg so the green box still reaches the top edge.
+        // (workspace-63jj). On the grid's BOTTOM row the rule is suppressed
+        // (Card Redesign.dc.html — the status bar's own rule caps the grid),
+        // so the last line falls through to the selBg fill and the highlight
+        // reaches the card's bottom edge.
         if (isSeparator)
         {
             return $"{palette.HeaderBorderFg.AnsiFg}{new string('─', width)}{Reset}";
         }
 
         // workspace-mj9x: the selection rectangle covers the ENTIRE card —
-        // top padding, separator row, and any blank content slots all get
-        // selBg. The accent bar (or check on toggled title) sits inside selBg
-        // so column 0 isn't a black gap to the left of the highlight.
+        // top padding and any blank content slots all get selBg. The rail
+        // (or check on toggled title) sits inside selBg so column 0 isn't a
+        // black gap to the left of the highlight. Rail colour is the design's
+        // focus-bar muted green (--tr-focus-bar): HeaderBorderFg equals the
+        // selection fill in Phosphor, which made the rail invisible
+        // (workspace-e86u; same fix as the launcher's workspace-7t0a.2).
         if (isToggled && lineIndex == titleLineIdx)
         {
             sb.Append($"{selBg}{palette.GetAccentFg().AnsiFg}\u2713");
         }
         else
         {
-            sb.Append($"{selBg}{accentFg}\u258c");
+            sb.Append($"{selBg}{palette.GetMutedFg().AnsiFg}\u258c");
         }
 
         if (cardHeight >= 5 && lineIndex >= titleLineIdx && lineIndex < titleLineIdx + titleLines.Count)
@@ -544,10 +582,13 @@ internal class LinkTreeRenderer
         }
         else if (lineIndex == authorDateLineIdx || lineIndex == metadataLineIdx)
         {
+            // Selected metadata wears the selection foreground (the design's
+            // white-on-fill, Card Redesign.dc.html) instead of staying
+            // metadata green on the fill.
             var subtitle = GetMetadataSubtitle(node, contentWidth - 1);
             if (!string.IsNullOrWhiteSpace(subtitle))
             {
-                sb.Append($"{selBg}{palette.SecondaryText.AnsiFg} {subtitle}");
+                sb.Append($"{selBg}{selFg} {subtitle}");
                 sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - subtitle.Length))}{Reset}");
             }
             else
@@ -575,26 +616,29 @@ internal class LinkTreeRenderer
         int width,
         ThemePalette palette,
         bool isToggled = false,
-        string? searchQuery = null)
+        string? searchQuery = null,
+        bool drawSeparator = true)
     {
-        var titleLineIdx = cardHeight >= 5 ? 1 : 0;
-
-        // Standard cards (workspace-21uy): title wraps across up to
-        // GetTitleLineBudget lines from line 1, author/date directly beneath,
-        // slack pads before the separator. Compact cards keep the classic
-        // single truncated title line.
+        // Standard cards (workspace-21uy, centred per Card Redesign.dc.html 1a,
+        // workspace-e86u): title wraps across up to GetTitleLineBudget lines,
+        // author/date directly beneath, and the block is vertically centred in
+        // the content area. Compact cards keep the classic top-pinned single
+        // truncated title line.
         IReadOnlyList<string> titleLines;
+        int titleLineIdx;
         int authorDateLineIdx;
         int metadataLineIdx;
         if (cardHeight >= 5)
         {
             titleLines = GetWrappedTitleLines(node.Link.DisplayText, GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
+            titleLineIdx = GetContentTopLine(cardHeight, titleLines.Count + 1);
             authorDateLineIdx = titleLineIdx + Math.Max(1, titleLines.Count);
             metadataLineIdx = -1;
         }
         else
         {
             titleLines = Array.Empty<string>();
+            titleLineIdx = 0;
             authorDateLineIdx = -1;
             metadataLineIdx = GetMetadataLineIndex(cardHeight);
         }
@@ -637,7 +681,9 @@ internal class LinkTreeRenderer
             return $" {palette.SecondaryText.AnsiFg}{subtitle}{metaPad}{Reset}";
         }
 
-        if (lineIndex == cardHeight - 1 && cardHeight > 1)
+        // Bottom grid row draws no rule (Card Redesign.dc.html) — the status
+        // bar's own rule caps the grid; the line renders as blank padding.
+        if (lineIndex == cardHeight - 1 && cardHeight > 1 && drawSeparator)
         {
             return $"{palette.HeaderBorderFg.AnsiFg}{new string('\u2500', width)}{Reset}";
         }
@@ -725,6 +771,19 @@ internal class LinkTreeRenderer
                 break;
             }
 
+            // Is this the BOTTOM rendered row? Mirror the loop's own admission
+            // test one row ahead: if the next row won't fit (or none exists),
+            // this row's cards draw no bottom rule (Card Redesign.dc.html,
+            // workspace-e86u) — the status bar's rule caps the grid instead.
+            var isBottomRow = true;
+            if (row + 1 < gridRows.Count)
+            {
+                var next = gridRows[row + 1];
+                var nextNeeded = next.IsGroupHeader ? GetLinesForNode(next.Left, groupCardHeight) : layout.CellHeight;
+                var nextAvailable = row + 2 < gridRows.Count ? maxLines - 1 : maxLines;
+                isBottomRow = linesUsed + linesNeeded + nextNeeded > nextAvailable;
+            }
+
             if (gr.IsGroupHeader)
             {
                 var selIndicator = string.Empty;
@@ -741,7 +800,7 @@ internal class LinkTreeRenderer
             }
             else
             {
-                RenderGridRow(gr, layout, p, options.CachedUrls, tree.SelectedNodeIds, context.SearchQuery);
+                RenderGridRow(gr, layout, p, options.CachedUrls, tree.SelectedNodeIds, context.SearchQuery, drawSeparator: !isBottomRow);
             }
 
             linesUsed += linesNeeded;
@@ -898,12 +957,12 @@ internal class LinkTreeRenderer
         }
     }
 
-    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null, HashSet<Guid>? selectedIds = null, string? searchQuery = null)
+    private void RenderGridRow(GridRow row, LinkTreeLayout layout, ThemePalette p, IReadOnlySet<string>? cachedUrls = null, HashSet<Guid>? selectedIds = null, string? searchQuery = null, bool drawSeparator = true)
     {
         for (var lineIdx = 0; lineIdx < layout.CellHeight; lineIdx++)
         {
             var sb = new StringBuilder();
-            var isSeparatorLine = lineIdx == layout.CellHeight - 1 && layout.CellHeight > 1;
+            var isSeparatorLine = lineIdx == layout.CellHeight - 1 && layout.CellHeight > 1 && drawSeparator;
 
             // Responsive N columns (workspace-ehon): render one cell per column
             // slot, a divider between them (\u253c on the separator line so the card
@@ -929,7 +988,7 @@ internal class LinkTreeRenderer
                 {
                     var node = row.Cells[col];
                     var toggled = selectedIds != null && selectedIds.Contains(node.Id);
-                    sb.Append(BuildCardLine(node, node.IsSelected, layout.CellHeight, lineIdx, cellW, p, cachedUrls, toggled, searchQuery));
+                    sb.Append(BuildCardLine(node, node.IsSelected, layout.CellHeight, lineIdx, cellW, p, cachedUrls, toggled, searchQuery, drawSeparator));
                 }
                 else
                 {
