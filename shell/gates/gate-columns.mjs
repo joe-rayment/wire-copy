@@ -28,11 +28,15 @@ import { Env, attach, pollTermText, check, summary, buildTui, sleep } from './li
 buildTui('Release')
 
 // The current visible screen only (no scrollback), plus its base row and dims.
+// Lines are CLAMPED to term.cols: after a dock narrows the pty, xterm keeps the
+// old wider line cells in its buffer beyond the new width — invisible on the
+// canvas but returned by an unclamped translateToString, which made the gate
+// "see" a third column that no user can (workspace-vingi diagnosis).
 async function viewport (term) {
   return term.eval(`(() => {
     const b = term.buffer.active
     const lines = []
-    for (let i = 0; i < term.rows; i++) { const l = b.getLine(b.baseY + i); lines.push(l ? l.translateToString(true) : '') }
+    for (let i = 0; i < term.rows; i++) { const l = b.getLine(b.baseY + i); lines.push(l ? l.translateToString(true, 0, term.cols) : '') }
     return { lines, baseY: b.baseY, cols: term.cols, rows: term.rows }
   })()`)
 }
@@ -149,8 +153,14 @@ for (const cfg of [
         cols.push((await selectedColumn(term, vp.baseY, probeRow, crosses)).col)
         if (k < 2) { env.key('Right'); await sleep(700) }
       }
-      check('spotlight: Right steps column 0 → 1, then stays at 1 (no third column)',
-        cols[0] === 0 && cols[1] === 1 && cols[2] === 1, `cols=[${cols.join(',')}]`)
+      // Since workspace-8d02r launcher ARROWS move in the HTML pane's responsive
+      // geometry (3 columns at 1360px), while this hidden terminal grid keeps its
+      // fixed 2 columns: the second Right advances to index 2, which the terminal
+      // projects on the NEXT row — so the fill leaves the probe row. The
+      // user-visible arrow behaviour is proven on the pane itself in
+      // gate-launcher-html H4c/H4d.
+      check('spotlight: Right steps column 0 → 1, then advances beyond the probe row (pane-geometry nav)',
+        cols[0] === 0 && cols[1] === 1 && cols[2] === -1, `cols=[${cols.join(',')}]`)
       env.shot('columns-spotlight')
     }
     term.close()
@@ -210,22 +220,54 @@ function bylinePositions (vp, dividerCol) {
   })
 }
 
-// Asserts the story grid is exactly 2 columns and titles wrap, in the CURRENT viewport.
-async function measureStoryGrid (term, label) {
+// Waits until the story grid has SETTLED at `expCols` columns — a dock/undock
+// narrows or widens the pty and the re-render arrives asynchronously; until it
+// does, the buffer still holds the previous width's render WRAPPED by the new
+// terminal width (visible as mid-word fragments). Polling for the settled shape
+// is the honest wait; the timeout failing means the resize re-render never came.
+async function waitStoryCols (term, expCols, timeout = 12000) {
+  const names = ['one', 'two', 'three', 'four', 'five']
+  const t0 = Date.now()
+  let vp = null
+  while (Date.now() - t0 < timeout) {
+    vp = await viewport(term)
+    const rowOne = vp.lines.findIndex(l => l.includes('Dispatch one'))
+    if (rowOne >= 0) {
+      const line = vp.lines[rowOne]
+      const onRow = names.slice(1, expCols).every(w => line.includes(`Dispatch ${w}`))
+      const nextName = `Dispatch ${names[expCols]}`
+      const rowNext = vp.lines.findIndex(l => l.includes(nextName))
+      if (onRow && !line.includes(nextName) && rowNext > rowOne) return vp
+    }
+    await sleep(500)
+  }
+  return vp
+}
+
+// Asserts the story grid renders exactly `expCols` columns and titles wrap, in the
+// CURRENT viewport. Since workspace-vingi the SHELL-mode story grid follows the HTML
+// link-tree pane's responsive track count (LinkTreeRenderer.ShellPaneColumns): the
+// docked ~58% split at 1360px renders 2 columns, the full 1360px window 3. The
+// fixed-2 contract (workspace-ehon) still governs plain-terminal mode only.
+async function measureStoryGrid (term, label, expCols = 2) {
   const vp = await viewport(term)
   const rowOne = vp.lines.findIndex(l => l.includes('Dispatch one'))
   check(`${label}: story list on screen`, rowOne >= 0)
   if (rowOne < 0) return vp
 
-  // Exactly 2 columns: Dispatch one + two share the first card row; three does NOT.
+  // Exactly expCols columns: Dispatches one..expCols share the first card row;
+  // the next one does NOT.
   const line = vp.lines[rowOne]
-  check(`${label}: Dispatch one & two share a row (2 columns)`,
-    line.includes('Dispatch two'), `line="${line.replace(/\s+/g, ' ').trim().slice(0, 90)}"`)
-  check(`${label}: Dispatch three is NOT on that row (not 3+ columns)`,
-    !line.includes('Dispatch three'), `line="${line.replace(/\s+/g, ' ').trim().slice(0, 90)}"`)
-  const rowThree = vp.lines.findIndex(l => l.includes('Dispatch three'))
-  check(`${label}: Dispatch three wrapped to the next tile row (grid did not collapse to 1 col)`,
-    rowThree > rowOne, `rowOne=${rowOne} rowThree=${rowThree}`)
+  const names = ['one', 'two', 'three', 'four', 'five']
+  const onRow = names.slice(1, expCols).every(w => line.includes(`Dispatch ${w}`))
+  check(`${label}: Dispatches 1..${expCols} share a row (${expCols} columns)`,
+    onRow, `line="${line.replace(/\s+/g, ' ').trim().slice(0, 110)}"`)
+  const nextName = `Dispatch ${names[expCols]}`
+  check(`${label}: ${nextName} is NOT on that row (not ${expCols + 1}+ columns)`,
+    !line.includes(nextName), `line="${line.replace(/\s+/g, ' ').trim().slice(0, 110)}"`)
+  const rowNext = vp.lines.findIndex(l => l.includes(nextName))
+  check(`${label}: ${nextName} wrapped to the next tile row (grid did not collapse to 1 col)`,
+    rowNext > rowOne, `rowOne=${rowOne} rowNext=${rowNext}`)
 
   // Wrapped title: the long headline continues on the line(s) below the title row.
   // Probe with a phrase from the MIDDLE of the tail ('across several') — it lands intact
@@ -256,9 +298,9 @@ async function measureStoryGrid (term, label) {
     let st = null
     for (let i = 0; i < 40; i++) { st = await term.eval('window.__wc.state()'); if (st?.revealed) break; await sleep(500) }
     check('story: pane auto-revealed (reader narrowed by the docked sidecar)', !!st?.revealed)
-    await sleep(2300)
+    await waitStoryCols(term, 2)
 
-    const vpDocked = await measureStoryGrid(term, 'docked')
+    const vpDocked = await measureStoryGrid(term, 'docked', 2)
     env.shot('columns-story-docked')
 
     // Move the selection to column 1 (Dispatch two) — the state CHANGE the doctrine
@@ -303,31 +345,32 @@ async function measureStoryGrid (term, label) {
       env.shot('columns-story-meta-moved')
     }
 
-    // Undock (| hides the pane → reader reflows to FULL width): still 2 columns, wider
-    // tiles, selection still on Dispatch two.
+    // Undock (| hides the pane → reader reflows to FULL width): the responsive grid
+    // fans out to 3 columns at 1360px (workspace-vingi), selection still on
+    // Dispatch two.
     env.key('bar'); await sleep(500)
     let stHid = null
     for (let i = 0; i < 20; i++) { stHid = await term.eval('window.__wc.state()'); if (!stHid?.revealed) break; await sleep(400) }
     check('story: | undocks the pane', stHid?.revealed === false)
-    await sleep(2000)
-    const vpFull = await measureStoryGrid(term, 'undocked-full-width')
+    await waitStoryCols(term, 3)
+    const vpFull = await measureStoryGrid(term, 'undocked-full-width', 3)
     const rowOneF = vpFull.lines.findIndex(l => l.includes('Dispatch one'))
     const divF = []
     for (let c = 0; c < (vpFull.lines[rowOneF] || '').length; c++) if (vpFull.lines[rowOneF][c] === '│') divF.push(c)
-    check('story: undock widened the tiles (divider moved right)',
-      divF.length === 1 && dividerCols.length === 1 && divF[0] > dividerCols[0],
-      `docked divider@${dividerCols[0]} undocked@${divF[0]}`)
+    check('story: undock fanned the grid out to 3 columns (2 dividers on the card row)',
+      divF.length === 2 && dividerCols.length === 1,
+      `docked dividers=${dividerCols.length} undocked dividers=${divF.length}`)
     const cFull = (await selectedColumn(term, vpFull.baseY, rowOneF, divF)).col
     check('story: selection survived undock on the same story (column 1)', cFull === 1, `col=${cFull}`)
     env.shot('columns-story-undocked')
 
-    // Re-dock: 2 columns again, selection still held.
+    // Re-dock: back to 2 columns, selection still held.
     env.key('bar'); await sleep(500)
     let stBack = null
     for (let i = 0; i < 30; i++) { stBack = await term.eval('window.__wc.state()'); if (stBack?.revealed) break; await sleep(500) }
     check('story: | re-docks the pane', !!stBack?.revealed)
-    await sleep(2000)
-    const vpRe = await measureStoryGrid(term, 'redocked')
+    await waitStoryCols(term, 2)
+    const vpRe = await measureStoryGrid(term, 'redocked', 2)
     const rowOneR = vpRe.lines.findIndex(l => l.includes('Dispatch one'))
     const divR = []
     for (let c = 0; c < (vpRe.lines[rowOneR] || '').length; c++) if (vpRe.lines[rowOneR][c] === '│') divR.push(c)

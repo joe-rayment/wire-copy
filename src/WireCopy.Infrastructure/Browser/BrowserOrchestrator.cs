@@ -723,7 +723,7 @@ public partial class BrowserOrchestrator : IBrowserService
 
     private static int GetHierarchicalViewportHeight(RenderOptions options)
     {
-        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.ShellPane);
         return layout.VisibleRows;
     }
 
@@ -1394,8 +1394,12 @@ public partial class BrowserOrchestrator : IBrowserService
         }
 
         // The render below runs the spotlight hook, so docking immediately
-        // syncs the live page to the current selection.
-        await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+        // syncs the live page to the current selection. Re-fetch options: the
+        // dock/undock just RESIZED the terminal, so the `options` captured at
+        // keypress carry the PRE-toggle width — rendering with them would paint
+        // a wrong-width frame OVER the resize handler's corrected one (the
+        // stale wide link grid seen wrapped in the docked pane, workspace-vingi).
+        await RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).ConfigureAwait(false);
     }
 
     /// <summary>
@@ -1952,7 +1956,7 @@ public partial class BrowserOrchestrator : IBrowserService
             return;
         }
 
-        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = UI.Renderers.LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.ShellPane);
         var gridRows = UI.Renderers.LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
         var (gridRow, _) = UI.Renderers.LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedIndex);
 

@@ -78,6 +78,8 @@ const state = {
   pageView: null,     // the visible "lens" pane
   launcherView: null, // display-only launcher pane (workspace-wak1s) — never focused, mirrors the TUI launcher screen
   launcherMsg: null,  // last launcherState params from the TUI (visibility + opaque state), forwarded verbatim
+  linkView: null,     // display-only link-tree pane (workspace-vingi) — same doctrine, tracks the terminal region
+  linkTreeMsg: null,  // last linkTreeState params from the TUI, forwarded verbatim
   overlayView: null,  // transition overlay (workspace-tj1z) — inert, shown only mid-transition
   overlayShown: false,
   popupView: null,    // SSO/auth popup pane (workspace-y0bi) — at most one, over the page pane
@@ -156,6 +158,9 @@ function setTermFont (px) {
   if (state.launcherView && !state.launcherView.webContents.isDestroyed()) {
     state.launcherView.webContents.send('wc:font', termFontSize)
   }
+  if (state.linkView && !state.linkView.webContents.isDestroyed()) {
+    state.linkView.webContents.send('wc:font', termFontSize)
+  }
 }
 function handleZoomKey (input) {
   if (input.type !== 'keyDown') return false
@@ -192,6 +197,10 @@ function place () {
     pageView.setBounds({ x: w, y: 0, width: pageW, height: h })
     state.paneShown = false
   }
+  // The link-tree pane (workspace-vingi) tracks the TERMINAL region, not the full
+  // window: with the browser sidecar docked it keeps the left split ("Sidecar out"
+  // case of Link Tree Responsive.dc.html), full width otherwise.
+  if (state.linkView) state.linkView.setBounds(termView.getBounds())
 }
 
 function layout () {
@@ -504,11 +513,24 @@ function applyLauncherVisibility () {
   state.launcherShown = show
 }
 
+// The link-tree pane mirrors the launcher pane's doctrine: display-only, shows
+// exactly when the TUI says the link list is up (msg.visible) AND we're in
+// reader mode; never focused.
+function applyLinkTreeVisibility () {
+  const v = state.linkView
+  if (!v || v.webContents.isDestroyed()) return
+  const msg = state.linkTreeMsg
+  const show = !!(msg && msg.visible && state.mode === 'reader')
+  v.setVisible(show)
+  state.linkTreeShown = show
+}
+
 function setMode (m) {
   if (state.mode === m) return
   console.error(`[shell] mode → ${m}`)
   state.mode = m
   applyLauncherVisibility() // reader↔browser flips the launcher pane's visibility
+  applyLinkTreeVisibility() // …and the link-tree pane's (workspace-vingi)
   if (m === 'reader') focusTerm()
   else state.pageView.webContents.focus()
   if (state.channelServer) state.channelServer.broadcast('mode', { mode: m })
@@ -767,8 +789,20 @@ app.whenReady().then(() => {
   })
   state.launcherView.setVisible(false)
 
+  // Link-tree pane (workspace-vingi): the story list's HTML projection, same
+  // display-only doctrine as the launcher pane. Sits above termView (covers the
+  // terminal's grid) and below launcherView/overlay/popups.
+  state.linkView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'linktree', 'linktree-preload.js'),
+      backgroundThrottling: false
+    }
+  })
+  state.linkView.setVisible(false)
+
   state.win.contentView.addChildView(state.pageView)
   state.win.contentView.addChildView(state.termView)
+  state.win.contentView.addChildView(state.linkView)
   state.win.contentView.addChildView(state.launcherView)
   state.win.contentView.addChildView(state.overlayView)
   layout()
@@ -797,6 +831,13 @@ app.whenReady().then(() => {
     forwardToTerm(input)
   })
   state.launcherView.webContents.on('focus', () => setTimeout(() => focusTerm(), 30))
+  // Link-tree pane: identical display-only treatment (workspace-vingi) — every key
+  // forwards to the pty so j/k/Enter/s/Tab keep driving the TUI underneath.
+  state.linkView.webContents.on('before-input-event', (e, input) => {
+    e.preventDefault()
+    forwardToTerm(input)
+  })
+  state.linkView.webContents.on('focus', () => setTimeout(() => focusTerm(), 30))
   // Type-scale zoom is a shell concern: intercept Cmd/Ctrl +/-/0 on the terminal pane
   // before xterm sees them (the TUI binds no such chords — Ctrl+D/U/P/L only).
   state.termView.webContents.on('before-input-event', (e, input) => {
@@ -841,6 +882,17 @@ app.whenReady().then(() => {
         }
         return {}
       },
+      // Link-tree pane state (workspace-vingi): same contract as launcherState —
+      // the TUI owns all link-list logic; the shell mirrors visibility and forwards
+      // the payload verbatim without interpreting `state`.
+      linkTreeState: p => {
+        state.linkTreeMsg = p
+        applyLinkTreeVisibility()
+        if (state.linkView && !state.linkView.webContents.isDestroyed()) {
+          state.linkView.webContents.send('wc:linktree', p)
+        }
+        return {}
+      },
       createPage: p => createTaggedPage(String(p.tag || ''))
     }
   })
@@ -877,6 +929,10 @@ app.whenReady().then(() => {
     state.launcherView.webContents.loadURL(
       `http://127.0.0.1:${termSrv.address().port}/launcher/launcher.html?font=${termFontSize}`)
       .catch(err => console.error('[shell] launcher pane load failed (template may not exist yet): ' + err))
+    // Link-tree pane (workspace-vingi): same loopback server + zoom contract.
+    state.linkView.webContents.loadURL(
+      `http://127.0.0.1:${termSrv.address().port}/linktree/linktree.html?font=${termFontSize}`)
+      .catch(err => console.error('[shell] link-tree pane load failed: ' + err))
   })
 
   // Overlay transition acks (workspace-tj1z.3/.4).
@@ -947,6 +1003,8 @@ app.whenReady().then(() => {
     paneShown: state.paneShown,
     launcherShown: !!state.launcherShown,
     launcherBounds: state.launcherView ? state.launcherView.getBounds() : null,
+    linkTreeShown: !!state.linkTreeShown,
+    linkTreeBounds: state.linkView ? state.linkView.getBounds() : null,
     contentSize: state.win.getContentSize(),
     termBounds: state.termView.getBounds(),
     pageBounds: state.pageView.getBounds(),

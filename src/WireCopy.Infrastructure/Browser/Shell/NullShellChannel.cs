@@ -51,4 +51,8 @@ public sealed class NullShellChannel : IShellChannel
     /// <inheritdoc />
     public Task SendLauncherStateAsync(bool visible, LauncherViewState? state, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task SendLinkTreeStateAsync(bool visible, LinkTreeViewState? state, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }

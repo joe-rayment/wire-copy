@@ -55,6 +55,10 @@ public class TerminalPageRenderer : IPageRenderer
     // launcher-leave signal). Only meaningful under a live shell.
     private bool _launcherStateVisible;
 
+    // workspace-vingi: true once a linkTreeState with visible:true has been pushed,
+    // so leaving the link list hides the shell's HTML link-tree pane exactly once.
+    private bool _linkTreeStateVisible;
+
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
         : this(themeProvider, logger, podcastJobManager: null, shellChannel: null)
     {
@@ -110,9 +114,22 @@ public class TerminalPageRenderer : IPageRenderer
         if (page.LinkTree != null)
         {
             _linkTreeRenderer.RenderLinkTree(page.LinkTree, context, remainingHeight, options);
+
+            // workspace-vingi: mirror the link list to the shell as an HTML pane.
+            // The view-model replays the SAME admission window the grid render
+            // used (same remainingHeight budget). Fire and forget — the shell
+            // round-trip must never block or throw into the render path.
+            if (_shellChannel.IsConnected)
+            {
+                var linkState = LinkTreeRenderer.BuildViewState(
+                    page, context, options, remainingHeight, linkCount, sectionCount);
+                _ = _shellChannel.SendLinkTreeStateAsync(true, linkState);
+                _linkTreeStateVisible = true;
+            }
         }
         else
         {
+            LeaveLinkTreeIfShown(); // workspace-vingi: no tree — the pane must not linger
             var ep = BuiltInThemes.Get(_themeProvider.CurrentTheme);
             _helpers.WriteLine();
             _helpers.WriteLine($"  {ep.SecondaryText.AnsiFg}This page is keeping its links to itself.{Reset}");
@@ -135,6 +152,7 @@ public class TerminalPageRenderer : IPageRenderer
         var paragraphSpans = _paragraphSpans;
         _paragraphSpans = null; // Consume — set fresh each render cycle
         LeaveLauncherIfShown(); // workspace-0jxo
+        LeaveLinkTreeIfShown(); // workspace-vingi
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -482,6 +500,7 @@ public class TerminalPageRenderer : IPageRenderer
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {
         LeaveLauncherIfShown(); // workspace-0jxo
+        LeaveLinkTreeIfShown(); // workspace-vingi
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -493,6 +512,7 @@ public class TerminalPageRenderer : IPageRenderer
     public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
     {
         LeaveLauncherIfShown(); // workspace-0jxo
+        LeaveLinkTreeIfShown(); // workspace-vingi
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -504,6 +524,7 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options)
     {
+        LeaveLinkTreeIfShown(); // workspace-vingi
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -669,9 +690,30 @@ public class TerminalPageRenderer : IPageRenderer
         }
     }
 
+    /// <summary>
+    /// Pushes a <c>linkTreeState</c> with <c>visible:false</c> when a non-link-tree
+    /// screen has just replaced the link list (workspace-vingi), so the shell hides
+    /// its HTML link-tree pane. Fires at most once per leave and is a no-op in
+    /// terminal mode. Called at the top of every non-link-tree render.
+    /// </summary>
+    private void LeaveLinkTreeIfShown()
+    {
+        if (!_linkTreeStateVisible)
+        {
+            return;
+        }
+
+        _linkTreeStateVisible = false;
+        if (_shellChannel.IsConnected)
+        {
+            _ = _shellChannel.SendLinkTreeStateAsync(false, null);
+        }
+    }
+
     private void RenderCenteredBox(List<CenteredBoxLine> lines, ThemeColor borderColor)
     {
         LeaveLauncherIfShown(); // workspace-0jxo: a box screen (loading/error/human-action) replaced the launcher
+        LeaveLinkTreeIfShown(); // workspace-vingi: same for the link-tree pane
 
         // Calculate box width from longest content line + 4 (2 border chars + 2 padding)
         var maxContentWidth = 0;

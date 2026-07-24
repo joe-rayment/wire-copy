@@ -1,0 +1,231 @@
+<!doctype html>
+<!-- Wire Copy link-tree pane (workspace-vingi). In shell mode the story list becomes
+     a real HTML WebContentsView that PROJECTS TUI link-tree state pushed over IPC.
+     The TUI keeps ALL logic and keyboard handling; this page is STRICTLY display-only —
+     no key handlers, no links, no focusable elements. It paints whatever
+     `window.__renderLinkTree(msg)` is handed and nothing more. Design imported from
+     "Link Tree.dc.html" + "Link Tree Responsive.dc.html" (claude.ai design project
+     153674f7): CRT-glow page title, responsive auto-column story grid whose track
+     count RIDES THE STATE (state.columns — the same count the TUI uses for arrow
+     keys), fixed-height cards where selection only recolors. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wire Copy — Links</title>
+<link rel="stylesheet" href="../launcher/tokens.css">
+<link rel="stylesheet" href="linktree.css">
+</head>
+<body>
+  <div id="stage">
+    <div id="column">
+      <div id="masthead">
+        <div id="masthead-inner">
+          <div id="masthead-left">
+            <div id="eyebrow"><span class="tick">▌</span> Link Tree</div>
+            <div id="pagetitle"></div>
+            <div id="metaline"></div>
+          </div>
+          <div id="header-right"></div>
+        </div>
+        <div id="scanlines"></div>
+      </div>
+      <div id="toprule"></div>
+      <div id="moreabove" class="scrollmark hidden"></div>
+      <div id="grid"></div>
+      <div id="footer">
+        <div id="morebelow" class="scrollmark hidden"></div>
+        <div id="footer-rule"></div>
+        <div id="footer-row">
+          <div id="footer-left"></div>
+          <div id="footer-right"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+<script>
+'use strict'
+
+const $ = id => document.getElementById(id)
+const esc = s => String(s == null ? '' : s)
+  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+
+let lastMsg = null
+
+const RULE = '─'.repeat(400)
+const CARD_SEP = '╶' + '─'.repeat(220) + '╴'
+
+// Static chrome: rules and the footer key hints (the TUI's real LinkView keys).
+function paintChrome () {
+  $('toprule').textContent = RULE
+  $('footer-rule').textContent = RULE
+}
+
+function paintHeader (state) {
+  $('pagetitle').textContent = state.title || ''
+  const meta = []
+  if (state.domain) meta.push(`<span class="m-domain">${esc(state.domain)}</span>`)
+  meta.push(`<span class="m-med">${esc(state.linkCount ?? 0)} links</span>`)
+  if ((state.sectionCount ?? 0) > 1) meta.push(`<span class="m-med">${esc(state.sectionCount)} sections</span>`)
+  if (state.cached) meta.push(`<span class="m-muted">cached</span>`)
+  $('metaline').innerHTML = meta.join(`<span class="m-sep"> · </span>`)
+
+  let right = `<div class="hr-shown">${esc(state.shownStories ?? 0)} of ${esc(state.totalStories ?? 0)} shown</div>`
+  if ((state.selectedCount ?? 0) > 0) {
+    right += `<div class="hr-sel">${esc(state.selectedCount)} selected</div>`
+  }
+  $('header-right').innerHTML = right
+}
+
+// Section select-state marker (multi-select): ✓ fully, ◐ partially selected.
+function sectionMark (item) {
+  if (item.selectState === 'full') return '✓ '
+  if (item.selectState === 'partial') return '◐ '
+  return ''
+}
+
+function itemHtml (item, selected) {
+  if (item.kind === 'section') {
+    return (
+      `<div class="section${selected ? ' selected' : ''}${item.collapsed ? ' collapsed' : ''}">` +
+        `<span class="s-tick">─</span>` +
+        `<span class="s-name">${item.collapsed ? '▶' : '▼'} ${esc(sectionMark(item))}${esc((item.title || '').toUpperCase())}</span>` +
+        `<span class="s-count">(${esc(item.count ?? 0)})</span>` +
+        `<span class="s-fill">${RULE}</span>` +
+      `</div>`
+    )
+  }
+  // Story card: fixed footprint; selection only recolors (sel-bg + glowing rail).
+  const rail = selected ? `<div class="card-rail"></div>` : ''
+  const tick = item.toggled ? `<span class="c-tick">✓ </span>` : ''
+  const meta = item.meta ? `<div class="card-meta">${esc(item.meta)}</div>` : ''
+  return (
+    `<div class="cell">` +
+      `<div class="card${selected ? ' selected' : ''}">` +
+        rail +
+        `<div class="card-title t-${esc(item.linkType || 'content')}">${tick}${esc(item.title || '')}</div>` +
+        meta +
+      `</div>` +
+      `<div class="card-sep"><span>${CARD_SEP}</span></div>` +
+    `</div>`
+  )
+}
+
+function paintGrid (state) {
+  // EXACTLY state.columns tracks — the same count the TUI uses for arrow-key
+  // movement, so keys always match the screen (launcher-pane precedent).
+  $('grid').style.setProperty('--cols', String(state.columns || 2))
+  const items = state.items || []
+  $('grid').innerHTML = items
+    .map((item, i) => itemHtml(item, i === state.selectedIndex))
+    .join('')
+}
+
+function paintScrollMarks (state) {
+  const above = state.moreAbove ?? 0
+  const below = state.moreBelow ?? 0
+  $('moreabove').classList.toggle('hidden', above <= 0)
+  $('morebelow').classList.toggle('hidden', below <= 0)
+  if (above > 0) $('moreabove').textContent = `▲ ${above} more above`
+  if (below > 0) $('morebelow').textContent = `▼ ${below} more below`
+}
+
+// Cache meter: 8 slots, filled proportionally (▰ amber / ▱ dim) + "d/t cached".
+function cacheMeterHtml (cache) {
+  if (!cache || !cache.total) return ''
+  const filled = Math.max(0, Math.min(8, Math.round((cache.done / cache.total) * 8)))
+  return (
+    `<span class="meter"><span class="m-on">${'▰'.repeat(filled)}</span>` +
+    `<span class="m-off">${'▱'.repeat(8 - filled)}</span>` +
+    `<span class="m-label"> ${esc(cache.done)}/${esc(cache.total)} cached</span></span>`
+  )
+}
+
+const HINTS = [['Enter', 'open'], ['s', 'save'], ['Tab', 'reader'], ['?', 'help']]
+
+function paintFooter (state) {
+  const parts = [`<span id="footer-app">LinkView</span>`]
+  parts.push(`<span class="f-shown">${esc(state.shownStories ?? 0)}/${esc(state.totalStories ?? 0)}</span>`)
+  const meter = cacheMeterHtml(state.cache)
+  if (meter) parts.push(meter)
+  for (const [k, label] of HINTS) {
+    parts.push(`<span class="kbd"><span class="brk">[</span><span class="key">${esc(k)}</span><span class="brk">]</span>:${esc(label)}</span>`)
+  }
+  $('footer-left').innerHTML = parts.join('')
+  $('footer-right').innerHTML = state.docked ? `<span class="docked">⇉ docked</span>` : ''
+}
+
+// Idempotent full re-render from a pushed state message.
+window.__renderLinkTree = function (msg) {
+  lastMsg = msg
+  const state = (msg && msg.state) || {}
+  paintHeader(state)
+  paintGrid(state)
+  paintScrollMarks(state)
+  paintFooter(state)
+  window.__linkTreeReady = true
+}
+
+// Zoom contract shared with the launcher pane: zoom = px / 18 (design body = 18px).
+window.__applyFont = function (px) {
+  const n = Number(px) || 18
+  document.documentElement.style.zoom = String(n / 18)
+}
+
+// ── Gate / introspection hooks ─────────────────────────────────────────────
+window.__linkTreeState = () => lastMsg
+window.__linkTreeReady = false
+
+// ── Demo fixture (?demo=1) for development — mirrors the design's NYT sample. ──
+function demoMsg () {
+  const story = (t, m, ty) => ({ kind: 'story', title: t, meta: m, linkType: ty || 'content', toggled: false })
+  return {
+    visible: true,
+    state: {
+      title: "Today's Paper",
+      domain: 'www.nytimes.com',
+      linkCount: 318,
+      sectionCount: 18,
+      cached: true,
+      columns: Math.max(1, Math.min(6, Math.floor((window.innerWidth - 2 * Math.min(36, Math.max(16, 0.024 * window.innerWidth)) + 30) / 330))),
+      items: [
+        { kind: 'section', title: 'Highlights', count: 4, collapsed: false },
+        story('Trump Demands Saudi Arabia Normalize Relations With Israel as Part of Nuclear Deal', 'Karoun Demirjian · 4 May'),
+        story('New U.S. Tariffs Aimed at Over 80 Countries Go Into Effect', 'Ana Swanson · 4 May'),
+        story("Strikes Against Saudi Tankers in the Red Sea Send Oil Past $100 a Barrel", 'Thomas Fuller · 3 May'),
+        story("Iran's Neighbors Long for a Deal, Any Deal, to End the War", 'Asim Hafeez · 3 May'),
+        { kind: 'section', title: 'The Front Page', count: 12, collapsed: false },
+        story("A Family's Daring Escape From North Korea 'to Live and Stand Tall'", 'Choe Sang-Hun · 2 May'),
+        story('U.S. Withdraws Subpoenas Issued to New York Times Journalists', 'Michael M. Grynbaum · 2 May'),
+        story('Fed Holds Rates Steady as Inflation Cools More Slowly Than Hoped', 'Colby Smith · 2 May'),
+        story('Inside the Quiet Collapse of a $12 Billion Battery Startup', 'Niraj Chokshi · 1 May'),
+        story('Heat Wave Pushes the Grid to Record Demand Across the Southwest', 'Ivan Penn · 1 May'),
+        story('Supreme Court Agrees to Hear Challenge to Federal Housing Rules', 'Adam Liptak · 1 May')
+      ],
+      selectedIndex: 1,
+      moreAbove: 0,
+      moreBelow: 5,
+      shownStories: 10,
+      totalStories: 50,
+      selectedCount: 0,
+      cache: { done: 18, total: 50 },
+      docked: false
+    }
+  }
+}
+
+// ── Boot ────────────────────────────────────────────────────────────────────
+paintChrome()
+
+const params = new URLSearchParams(location.search)
+window.__applyFont(params.get('font') || 18)
+if (params.get('demo') != null) {
+  window.__renderLinkTree(demoMsg())
+}
+
+if (window.wclt) {
+  wclt.onState(msg => window.__renderLinkTree(msg))
+  if (wclt.onFont) wclt.onFont(px => window.__applyFont(px))
+}
+</script>
+</body>
+</html>

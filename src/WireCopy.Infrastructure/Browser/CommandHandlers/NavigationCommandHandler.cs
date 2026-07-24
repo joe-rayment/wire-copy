@@ -707,7 +707,7 @@ internal static class NavigationCommandHandler
             return;
         }
 
-        var layout = LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.ShellPane);
         var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
         var (row, col) = LinkTreeGridMapper.NodeIndexToGridPosition(gridRows, selectedIndex);
 
@@ -736,7 +736,7 @@ internal static class NavigationCommandHandler
             return;
         }
 
-        var layout = LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = LinkTreeRenderer.ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.ShellPane);
         if (layout.Columns < 2)
         {
             return;

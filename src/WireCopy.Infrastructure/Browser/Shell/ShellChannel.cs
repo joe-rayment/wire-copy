@@ -114,6 +114,10 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
         => await RequestAsync("launcherState", new { visible, state }).ConfigureAwait(false);
 
     /// <inheritdoc />
+    public async Task SendLinkTreeStateAsync(bool visible, LinkTreeViewState? state, CancellationToken cancellationToken = default)
+        => await RequestAsync("linkTreeState", new { visible, state }).ConfigureAwait(false);
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         _dead = true;

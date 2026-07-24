@@ -149,10 +149,35 @@ internal class LinkTreeRenderer
     }
 
     /// <summary>
+    /// The HTML link-tree pane's responsive column count for a given terminal
+    /// width ("Link Tree Responsive.dc.html", workspace-vingi): the cell-unit
+    /// mirror of the design's <c>repeat(auto-fill, minmax(min(300px,100%),1fr))</c>
+    /// with <c>clamp(20px,2.6vw,40px)</c> gaps inside <c>clamp(16px,2.4vw,36px)</c>
+    /// side padding. Terminal cells map to design px at ~11.2 px/cell (measured
+    /// live 2026-07-24: a 1360px window is 121 cols at the 18px scale; CSS zoom
+    /// cancels out of the ratio). Breakpoints land per the design: ≤650px → 1,
+    /// 650–1000 → 2 (the 700px docked pane), 1000–1400 → 3, ≥1400 → 4.
+    /// Terminal-mode rendering never calls this.
+    /// </summary>
+    internal static int ShellPaneColumns(int terminalWidth)
+    {
+        const double cellPx = 11.2;
+        var w = terminalWidth * cellPx;
+        var pad = Math.Clamp(0.024 * w, 16, 36);
+        var gap = Math.Clamp(0.026 * w, 20, 40);
+        var content = w - (2 * pad);
+        return Math.Clamp((int)((content + gap) / (300 + gap)), 1, 6);
+    }
+
+    /// <summary>
     /// Computes shared layout parameters from terminal dimensions.
     /// Single source of truth for card dimensions, called by both the renderer and BrowserOrchestrator.
+    /// In shell mode (<paramref name="shellPane"/>) the column count follows the
+    /// HTML pane's responsive tracks (<see cref="ShellPaneColumns"/>) so the
+    /// pushed window, arrow-key movement, and the pane's grid share ONE geometry;
+    /// terminal mode keeps the fixed 2-column contract (workspace-ehon).
     /// </summary>
-    internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight)
+    internal static LinkTreeLayout ComputeLayout(int terminalWidth, int terminalHeight, bool shellPane = false)
     {
         const int headerLines = 3;
         const int statusBarLines = 2;
@@ -166,7 +191,9 @@ internal class LinkTreeRenderer
         // ResponsiveGrid owns both the column contract and the cell-height
         // formula so the launcher and story list keep one card proportion.
         // Short windows keep the compact 3-line card and scroll.
-        var columns = ResponsiveGrid.ColumnsFor(width);
+        var columns = shellPane
+            ? ShellPaneColumns(terminalWidth)
+            : ResponsiveGrid.ColumnsFor(width);
         var cellHeight = availableHeight < 15
             ? compactCellHeight
             : ResponsiveGrid.CellHeightFor(terminalHeight, standardCellHeight);
@@ -741,7 +768,7 @@ internal class LinkTreeRenderer
     private void RenderLinkList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight);
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.ShellPane);
         var visibleNodes = tree.GetVisibleNodes().ToList();
         var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
         var startRow = context.ScrollOffset;
@@ -814,6 +841,132 @@ internal class LinkTreeRenderer
             RenderScrollIndicator(layout.Width, p, false, totalRemaining);
         }
     }
+
+    /// <summary>
+    /// Projects the link tree's current window into the shell-channel view-model
+    /// ("Link Tree Responsive.dc.html", workspace-vingi). MUST mirror
+    /// <see cref="RenderLinkList"/>'s admission loop exactly — same grid rows,
+    /// same scroll offset, same line budget — so the HTML pane shows precisely
+    /// the rows the TUI admitted and the selection can never sit outside the
+    /// pane's window.
+    /// </summary>
+#pragma warning disable SA1202 // kept beside the render loop it must mirror
+    internal static LinkTreeViewState BuildViewState(
+        Page page,
+        NavigationContext context,
+        RenderOptions options,
+        int maxLines,
+        int linkCount,
+        int sectionCount)
+    {
+        var tree = page.LinkTree!;
+        var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.ShellPane);
+        var visibleNodes = tree.GetVisibleNodes().ToList();
+        var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
+        var startRow = Math.Clamp(context.ScrollOffset, 0, Math.Max(0, gridRows.Count - 1));
+
+        var linesUsed = startRow > 0 ? 1 : 0; // the ▲ scroll-up indicator line
+        var groupCardHeight = layout.CellHeight >= 5 ? 3 : layout.CellHeight;
+        var rowsRendered = 0;
+        var shownStories = 0;
+        var selectedIndex = -1;
+        var items = new List<LinkTreeItem>();
+
+        for (var row = startRow; row < gridRows.Count; row++)
+        {
+            var gr = gridRows[row];
+            var linesNeeded = gr.IsGroupHeader ? GetLinesForNode(gr.Left, groupCardHeight) : layout.CellHeight;
+            var hasMoreAfter = row + 1 < gridRows.Count;
+            var available = hasMoreAfter ? maxLines - 1 : maxLines;
+            if (linesUsed + linesNeeded > available)
+            {
+                break;
+            }
+
+            foreach (var node in gr.Cells)
+            {
+                // node.IsSelected is what the terminal grid paints (RenderGridRow /
+                // RenderGroupHeader) — the pane must use the SAME flag, never a
+                // parallel notion of selection.
+                if (node.IsSelected)
+                {
+                    selectedIndex = items.Count;
+                }
+
+                if (node.IsGroupHeader)
+                {
+                    string? selectState = null;
+                    if (tree.IsSectionFullySelected(node))
+                    {
+                        selectState = "full";
+                    }
+                    else if (tree.IsSectionPartiallySelected(node))
+                    {
+                        selectState = "partial";
+                    }
+
+                    items.Add(new LinkTreeItem
+                    {
+                        Kind = "section",
+                        Title = node.Link.DisplayText,
+                        Count = node.Children.Count,
+                        Collapsed = node.CollapseState != NodeCollapseState.Expanded,
+                        SelectState = selectState,
+                    });
+                }
+                else
+                {
+                    var meta = GetMetadataSubtitle(node, 400);
+                    items.Add(new LinkTreeItem
+                    {
+                        Kind = "story",
+                        Title = node.Link.DisplayText,
+                        Url = node.Link.Url,
+                        Meta = string.IsNullOrEmpty(meta) ? null : meta,
+                        LinkType = node.Link.Type.ToString().ToLowerInvariant(),
+                        Toggled = tree.IsNodeSelected(node),
+                    });
+                    shownStories++;
+                }
+            }
+
+            linesUsed += linesNeeded;
+            rowsRendered++;
+        }
+
+        string? domain = null;
+        try
+        {
+            domain = new Uri(page.Url).Host;
+        }
+        catch (UriFormatException)
+        {
+            // Non-absolute URL — the header simply omits the domain.
+        }
+
+        var progress = options.CacheProgress;
+        return new LinkTreeViewState
+        {
+            Title = page.Metadata.Title,
+            Domain = domain,
+            LinkCount = linkCount,
+            SectionCount = sectionCount,
+            Cached = options.CachedUrls?.Contains(page.Url) == true,
+            Columns = layout.Columns,
+            Items = items,
+            SelectedIndex = selectedIndex,
+            MoreAbove = startRow,
+            MoreBelow = Math.Max(0, gridRows.Count - startRow - rowsRendered),
+            ShownStories = shownStories,
+            TotalStories = visibleNodes.Count(n => !n.IsGroupHeader),
+            SelectedCount = tree.SelectionCount,
+            Cache = progress is { TotalCacheableLinks: > 0 }
+                ? new LinkTreeCacheMeter { Done = progress.CachedCount, Total = progress.TotalCacheableLinks }
+                : null,
+            Docked = options.BrowserDocked,
+        };
+    }
+#pragma warning restore SA1202
 
     /// <summary>
     /// Renders a sub-section header with visually lighter style than top-level groups.

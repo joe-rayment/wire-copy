@@ -1,0 +1,271 @@
+/* =============================================================================
+   Wire Copy link-tree pane — display-only projection of the TUI story list.
+   Import of "Link Tree.dc.html" + "Link Tree Responsive.dc.html" (claude.ai
+   design project 153674f7): full-bleed column with clamp() padding; CRT-glow
+   page title with a status readout on the right; ONE responsive story grid
+   whose track count comes from the PUSHED STATE (LinkTreeViewState.Columns —
+   the same count the TUI uses for arrow keys); section headers span the grid;
+   story cards hold a FIXED footprint — selection is only ever a recolor
+   (sel-bg fill + glowing rail). Footer pinned to the bottom with the ▼-more
+   mark above its rule. The TUI owns all keys; every value here is painted from
+   a pushed state message. Colours come from ../launcher/tokens.css.
+   ============================================================================= */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--tr-bg-pure);
+  color: var(--tr-green);
+  font-family: var(--tr-font-mono);
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+#stage {
+  height: 100%;
+  display: flex;
+  /* flex-start (NOT stretch): stretch would pin the column to the stage height
+     and flex-crush the chrome when content overflows — the launcher pane's
+     clipped-tagline regression (2026-07-24). The column takes its content
+     height and the stage scrolls. */
+  align-items: flex-start;
+  overflow: auto;
+}
+
+#column {
+  width: 100%;
+  min-height: 100%;
+  background: var(--tr-bg-pure);
+  padding: clamp(20px, 2.4vw, 34px) clamp(16px, 2.4vw, 36px) clamp(14px, 1.6vw, 22px);
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Masthead: CRT-glow page title + status readout ──────────────────────── */
+#masthead {
+  position: relative;
+  overflow: hidden;
+  flex-shrink: 0;
+  margin-bottom: clamp(16px, 1.9vw, 26px);
+}
+#masthead-inner {
+  position: relative;
+  z-index: 2;
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-end;
+  gap: 36px;
+  flex-wrap: wrap;
+}
+#masthead-left { min-width: 0; }
+#scanlines {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 4;
+  background: repeating-linear-gradient(
+    to bottom, transparent 0 2px, rgba(0, 0, 0, 0.42) 2px 3px);
+  opacity: 0.5;
+}
+#eyebrow {
+  color: var(--tr-bright);
+  font-size: clamp(11px, 0.92vw, 13px);
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  margin-bottom: 12px;
+}
+#pagetitle {
+  color: var(--tr-green);
+  font-size: clamp(28px, 3.1vw, 42px);
+  font-weight: 700;
+  letter-spacing: -0.015em;
+  line-height: 1;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  text-shadow: 0 0 9px rgba(0, 215, 0, 0.5), 0 0 24px rgba(0, 215, 0, 0.26),
+               0 0 48px rgba(0, 215, 0, 0.12);
+}
+#metaline {
+  margin-top: 12px;
+  font-size: clamp(12px, 1vw, 14.5px);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+#metaline .m-domain { color: var(--tr-bright); }
+#metaline .m-med    { color: var(--tr-med); }
+#metaline .m-muted  { color: var(--tr-muted); }
+#metaline .m-sep    { color: var(--tr-muted); }
+
+#header-right {
+  text-align: right;
+  flex: none;
+}
+#header-right .hr-shown {
+  color: var(--tr-green);
+  font-size: clamp(12px, 1vw, 14.5px);
+  font-weight: 700;
+}
+#header-right .hr-sel {
+  color: var(--tr-muted);
+  font-size: clamp(11px, 0.9vw, 13px);
+  margin-top: 7px;
+}
+
+/* Full-width dim rules drawn with box characters, like the terminal. */
+#toprule, #footer-rule {
+  flex-shrink: 0;
+  color: var(--tr-dim);
+  font-size: clamp(12px, 1vw, 14px);
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+}
+#toprule { margin-bottom: clamp(12px, 1.5vw, 20px); }
+
+/* Quiet scroll marks: ▲ above the grid, ▼ inside the footer block. */
+.scrollmark {
+  flex-shrink: 0;
+  text-align: center;
+  color: var(--tr-muted);
+  font-size: clamp(11px, 0.9vw, 13px);
+}
+.scrollmark.hidden { display: none; }
+#moreabove { margin-bottom: 10px; }
+#morebelow { margin-bottom: 12px; }
+
+/* ── Story grid ───────────────────────────────────────────────────────────
+   Track count driven by the pushed state (1..6); section headers span all
+   tracks; cards keep a fixed 140px footprint. */
+#grid {
+  display: grid;
+  grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
+  column-gap: clamp(20px, 2.6vw, 40px);
+  row-gap: 0;
+  align-items: stretch;
+}
+
+.section {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  white-space: nowrap;
+  font-size: clamp(12px, 1vw, 14px);
+  margin: 18px 0 10px;
+}
+.section:first-child { margin-top: 6px; }
+.section .s-tick  { color: var(--tr-dim); }
+.section .s-name  { color: var(--tr-green); font-weight: 700; letter-spacing: 0.1em; }
+.section .s-count { color: var(--tr-muted); }
+.section .s-fill  {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--tr-dim);
+}
+/* A selected (keyboard-focused) section header reads white. */
+.section.selected .s-name { color: var(--tr-white); }
+
+.cell {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+.card {
+  height: 140px;
+  position: relative;
+  padding: 13px 13px 13px 20px;
+  overflow: hidden;
+}
+/* Selection only ever recolors: sel-bg fill + glowing 4px phosphor rail. */
+.card.selected { background: var(--tr-sel-bg); }
+.card-rail {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--tr-green);
+  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
+}
+
+.card-title {
+  font-weight: 700;
+  font-size: clamp(16px, 1.36vw, 20px);
+  line-height: 1.4;
+  display: -webkit-box;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+  text-wrap: pretty;
+}
+/* Link-type colours mirror the TUI's card palette: content headlines wear the
+   title pink; navigation the phosphor; external metadata green; footer quiet. */
+.card-title.t-content    { color: var(--tr-bright); }
+.card-title.t-navigation { color: var(--tr-green); }
+.card-title.t-external   { color: var(--tr-med); }
+.card-title.t-footer     { color: var(--tr-muted); }
+.card.selected .card-title { color: var(--tr-white); }
+.card-title .c-tick { color: var(--tr-success); }
+.card.selected .card-title .c-tick { color: var(--tr-white); }
+
+.card-meta {
+  color: var(--tr-med);
+  font-size: clamp(11.5px, 0.94vw, 13.5px);
+  line-height: 1.5;
+  margin-top: 6px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card.selected .card-meta { color: var(--tr-white); }
+
+.card-sep {
+  display: flex;
+  color: var(--tr-dim);
+  font-size: 12px;
+  line-height: 1;
+}
+.card-sep span {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  white-space: nowrap;
+}
+
+/* ── Footer ─────────────────────────────────────────────────────────────── */
+#footer {
+  margin-top: auto;
+  flex-shrink: 0;
+  padding-top: clamp(14px, 1.6vw, 22px);
+}
+#footer-rule { margin-bottom: 10px; }
+#footer-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 16px;
+  font-size: clamp(11.5px, 0.95vw, 13.5px);
+}
+#footer-left {
+  display: flex;
+  align-items: baseline;
+  gap: clamp(12px, 1.5vw, 20px);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+#footer-app { color: var(--tr-green); font-weight: 700; }
+.f-shown { color: var(--tr-med); }
+.meter .m-on    { color: var(--tr-amber); }
+.meter .m-off   { color: var(--tr-dim); }
+.meter .m-label { color: var(--tr-muted); }
+.kbd { color: var(--tr-med); white-space: nowrap; }
+.kbd .brk { color: var(--tr-med); }
+.kbd .key { color: var(--tr-cyan); }
+#footer-right { flex: none; }
+#footer-right .docked { color: var(--tr-muted); }
