@@ -131,7 +131,9 @@ function rememberBounds () {
 
 // Terminal type scale (field: "everything is a little smaller"): Cmd/Ctrl +/-/0 zoom,
 // persisted; the initial value rides term.html's query string so the first fit is right.
-const FONT_DEFAULT = 16
+// 18px is Launcher.dc.html's body size — the design's whole "calm" read depends on it
+// (at 16px the same layout renders visibly smaller and denser than the mock).
+const FONT_DEFAULT = 18
 const FONT_MIN = 8
 const FONT_MAX = 32
 let termFontSize = (() => {

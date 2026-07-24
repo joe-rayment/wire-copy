@@ -25,29 +25,37 @@ namespace WireCopy.Tests.Browser;
 public class LauncherSetupHintTests
 {
     [Fact]
-    public void ComputeHeaderPlusUrlBarLines_SetupHintAddsExactlyOneRow()
+    public void ComputeHeaderPlusUrlBarLines_SetupHint_DoesNotChangeLargeHeaderHeight()
     {
         var without = LauncherRenderer.ComputeHeaderPlusUrlBarLines(100, showSetupHint: false);
         var with = LauncherRenderer.ComputeHeaderPlusUrlBarLines(100, showSetupHint: true);
 
-        // workspace-0rde: the trailing blank-before-bottom-border inside the
-        // header card is now elided when no hint is shown, so the hint
-        // legitimately adds one row to the header card. Callers that compute
-        // scroll offsets must pass the active flag.
-        with.Should().Be(without + 1,
-            "the setup hint replaces an elided blank slot inside the header card, " +
-            "adding exactly one row when present");
+        // workspace-pn5f: the large masthead card always carries a bottom
+        // padding slot (Launcher.dc.html padding-bottom); the hint occupies
+        // that slot when shown, so the header height NEVER changes — the
+        // original workspace-ayt8 "hint must not add rows" contract.
+        with.Should().Be(without,
+            "the setup hint occupies the large masthead's padding slot, adding no rows");
     }
 
     [Fact]
-    public void ComputeLayout_SetupHintAddsExactlyOneRowToHeader()
+    public void ComputeHeaderPlusUrlBarLines_SetupHintAddsOneRowOnNarrowHeader()
+    {
+        var without = LauncherRenderer.ComputeHeaderPlusUrlBarLines(60, showSetupHint: false);
+        var with = LauncherRenderer.ComputeHeaderPlusUrlBarLines(60, showSetupHint: true);
+
+        with.Should().Be(without + 1,
+            "the compact narrow card has no padding slot, so the hint adds exactly one row");
+    }
+
+    [Fact]
+    public void ComputeLayout_SetupHint_DoesNotChangeLargeHeaderLines()
     {
         var without = LauncherRenderer.ComputeLayout(100, 35, "Grid", showSetupHint: false);
         var with = LauncherRenderer.ComputeLayout(100, 35, "Grid", showSetupHint: true);
 
-        with.HeaderLines.Should().Be(without.HeaderLines + 1,
-            "header card grows by one row when the setup hint is shown; " +
-            "the trailing blank slot is otherwise elided (workspace-0rde)");
+        with.HeaderLines.Should().Be(without.HeaderLines,
+            "the hint rides the large masthead's padding slot (workspace-pn5f)");
     }
 
     [Fact]

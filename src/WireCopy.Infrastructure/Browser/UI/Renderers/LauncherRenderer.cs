@@ -14,6 +14,15 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class LauncherRenderer
 {
+    // Launcher.dc.html (workspace-pn5f re-import): the design is ONE centred
+    // column — a 900px artboard at its 18px body type is ~84 terminal cells.
+    // Masthead, URL bar, grid, and footer all live inside this column and
+    // centre on the SAME axis; wider windows get symmetric black gutters,
+    // exactly like the mock's fixed column on the page background. (The
+    // previous full-bleed render put the masthead and URL bar on slightly
+    // different centring bases — the visibly misaligned bar.)
+    internal const int ContentColumnWidth = 84;
+
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
@@ -24,7 +33,7 @@ internal class LauncherRenderer
     // at render time so each theme maps it to its own accent hue.
     private const string ReadingListGlyph = "★";
 
-    private const int WordmarkWidth = 87;
+    private const int WordmarkWidth = 67;
 
     // Grid card cell layout (workspace-bs93/stby, rebalanced by the Launcher.dc.html
     // design import, workspace-e86u) — mirrors LinkTreeRenderer's card vocabulary
@@ -48,25 +57,27 @@ internal class LauncherRenderer
     // so short windows keep the classic 5-line card.
     private const int GridCardHeight = 5;
 
-    // URL bar block height (workspace-0rde): blank + top border + content
-    // + bottom border = 4 lines. The trailing blank that previously padded
-    // the bar from below was removed; the first bookmark row's own top
-    // border now sits directly under the URL bar's bottom border with
-    // no extra gutter.
-    private const int UrlBarLines = 4;
+    // URL bar block height: blank + top border + content + bottom border
+    // + blank = 5 lines. The trailing blank (removed in workspace-0rde,
+    // restored by the workspace-pn5f re-import) is the mock's 30px gap
+    // between the URL bar and the first grid row — without it the tiles
+    // sat jammed against the bar's bottom border.
+    private const int UrlBarLines = 5;
 
-    // 6-row ASCII-art wordmark for "WIRE COPY" (hand-crafted block letters).
-    // Two-tone pink: outer rows (1,2,5,6) in HeaderTitleFg (#ff87d7 ANSI 212),
-    // inner rows (3,4) in CelebrationFg (#ff5fd7 ANSI 206) for vertical stripe.
-    // Width: 87 columns. Falls back to single-line title when terminal is narrower.
+    // 6-row ASCII-art wordmark for "WIRE COPY" — the EXACT art from
+    // Launcher.dc.html (67 columns), not a re-spaced variant: the re-import
+    // audit (workspace-pn5f) found the old 87-col letter-spaced version read
+    // wider and looser than the design. Two-tone pink: outer rows (1,2,5,6)
+    // in HeaderTitleFg (#ff87d7 ANSI 212), inner rows (3,4) in CelebrationFg
+    // (#ff5fd7 ANSI 206). Falls back to single-line title when narrower.
     private static readonly string[] Wordmark =
     [
-        "      ██╗    ██╗ ██╗ ██████╗  ███████╗      ██████╗  ██████╗  ██████╗  ██╗   ██╗       ",
-        "      ██║    ██║ ██║ ██╔══██╗ ██╔════╝     ██╔════╝ ██╔═══██╗ ██╔══██╗ ╚██╗ ██╔╝       ",
-        "      ██║ █╗ ██║ ██║ ██████╔╝ █████╗       ██║      ██║   ██║ ██████╔╝  ╚████╔╝        ",
-        "      ██║███╗██║ ██║ ██╔══██╗ ██╔══╝       ██║      ██║   ██║ ██╔═══╝    ╚██╔╝         ",
-        "      ╚███╔███╔╝ ██║ ██║  ██║ ███████╗     ╚██████╗ ╚██████╔╝ ██║         ██║          ",
-        "       ╚══╝╚══╝  ╚═╝ ╚═╝  ╚═╝ ╚══════╝      ╚═════╝  ╚═════╝  ╚═╝         ╚═╝          ",
+        "██╗    ██╗██╗██████╗ ███████╗     ██████╗ ██████╗ ██████╗ ██╗   ██╗",
+        "██║    ██║██║██╔══██╗██╔════╝    ██╔════╝██╔═══██╗██╔══██╗╚██╗ ██╔╝",
+        "██║ █╗ ██║██║██████╔╝█████╗      ██║     ██║   ██║██████╔╝ ╚████╔╝ ",
+        "██║███╗██║██║██╔══██╗██╔══╝      ██║     ██║   ██║██╔═══╝   ╚██╔╝  ",
+        "╚███╔███╔╝██║██║  ██║███████╗    ╚██████╗╚██████╔╝██║        ██║   ",
+        " ╚══╝╚══╝ ╚═╝╚═╝  ╚═╝╚══════╝     ╚═════╝ ╚═════╝ ╚═╝        ╚═╝   ",
     ];
 
     // Rows 3 and 4 (zero-indexed 2 and 3) use the darker pink (CelebrationFg) for vertical stripe.
@@ -120,7 +131,8 @@ internal class LauncherRenderer
     public void RenderFooter(int width, int bookmarkCount, string? scheduledRunBadge = null, string? statusMessage = null)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
-        var contentWidth = Math.Max(1, width - 2);
+        var contentWidth = ContentWidthFor(width);
+        var margin = new string(' ', ColumnLeftMargin(width));
 
         // workspace-xx61 (511u) + workspace-ej1i: the launcher has no status bar,
         // so a status message set by a launcher action (e.g. "Couldn't move
@@ -131,15 +143,15 @@ internal class LauncherRenderer
         // returns next render; a warning outranks chrome.
         if (!string.IsNullOrEmpty(statusMessage))
         {
-            _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{statusMessage}{Reset}");
+            _helpers.WriteLine($"{margin} {p.GetWarningFg().AnsiFg}{statusMessage}{Reset}");
         }
         else if (!string.IsNullOrEmpty(scheduledRunBadge))
         {
-            _helpers.WriteLine($" {p.GetWarningFg().AnsiFg}{scheduledRunBadge}{Reset}");
+            _helpers.WriteLine($"{margin} {p.GetWarningFg().AnsiFg}{scheduledRunBadge}{Reset}");
         }
         else
         {
-            _helpers.WriteLine($"{p.GetDimFg().AnsiFg}{new string('─', contentWidth)}{Reset}");
+            _helpers.WriteLine($"{margin}{p.GetDimFg().AnsiFg}{new string('─', contentWidth)}{Reset}");
         }
 
         // workspace-g801: surface the launcher's signature 1-9 quick-jump (the tile
@@ -161,11 +173,11 @@ internal class LauncherRenderer
         var gap = contentWidth - 1 - hintsVisibleLength - count.Length;
         if (gap >= 1)
         {
-            _helpers.WriteLine($" {hints}{new string(' ', gap)}{p.GetDimFg().AnsiFg}{count}{Reset}");
+            _helpers.WriteLine($"{margin} {hints}{new string(' ', gap)}{p.GetDimFg().AnsiFg}{count}{Reset}");
         }
         else
         {
-            _helpers.WriteLine($" {hints}");
+            _helpers.WriteLine($"{margin} {hints}");
         }
     }
 
@@ -195,20 +207,19 @@ internal class LauncherRenderer
     /// </remarks>
     internal static LauncherLayout ComputeLayout(int terminalWidth, int terminalHeight, string variant, bool showSetupHint)
     {
-        // Header height (workspace-0rde, after vertical-compression):
-        //   Large wordmark + setup hint: border + blank + 6 art + subtitle + hint + border = 11
-        //   Large wordmark, no hint:     border + blank + 6 art + subtitle + border         = 10
-        //   Narrow + setup hint:         border + title + subtitle + hint + border          = 5
-        //   Narrow, no hint:             border + title + subtitle + border                 = 4
-        // Threshold: large wordmark needs WordmarkWidth (87) + 8 chars of margin/border.
-        // Note: the inner-width threshold (terminalWidth - 2) >= WordmarkWidth + 8
-        // mirrors the rendering switch in BuildHeaderLines and avoids an
-        // off-by-two mismatch at the boundary (terminalWidth ∈ {95, 96}).
+        // Header height (workspace-pn5f, Launcher.dc.html masthead):
+        //   Large wordmark: border + blank + 6 art + blank + tagline
+        //                   + (padding | hint) + border = 12, hint or not
+        //   Narrow + setup hint: border + title + tagline + hint + border = 5
+        //   Narrow, no hint:     border + title + tagline + border        = 4
+        // Threshold: large wordmark needs WordmarkWidth (67) + 8 cells of
+        // content width; HeaderLineCount and BuildHeaderLines share the
+        // ContentWidthFor basis so the boundary can't drift between them.
         var headerLines = HeaderLineCount(terminalWidth, showSetupHint);
         const int urlBarLines = UrlBarLines;
         const int footerLines = 2;
 
-        var width = Math.Max(1, terminalWidth - 2);
+        var width = ContentWidthFor(terminalWidth);
         var availableHeight = Math.Max(4, terminalHeight - headerLines - urlBarLines - footerLines);
 
         int columns;
@@ -274,10 +285,10 @@ internal class LauncherRenderer
 
     /// <summary>
     /// Returns the line offset (in the virtual content stream) of the first
-    /// bookmark row. After workspace-0rde, the setup hint adds exactly one
-    /// row to the header card (the trailing blank-before-bottom-border is now
-    /// elided when the hint is absent), so callers must pass the active
-    /// flag to get the correct offset.
+    /// bookmark row. On the large masthead the setup hint occupies the
+    /// bottom padding slot (height unchanged); on the narrow card it adds
+    /// one row — callers must pass the active flag to get the correct
+    /// offset (workspace-pn5f).
     /// </summary>
     internal static int ComputeHeaderPlusUrlBarLines(int terminalWidth, bool showSetupHint)
     {
@@ -302,12 +313,12 @@ internal class LauncherRenderer
     /// leading blank line written by the URL-bar block.
     /// </summary>
     /// <remarks>
-    /// Header line counts (workspace-0rde):
+    /// Header line counts (workspace-pn5f):
     /// <list type="bullet">
-    ///   <item>Large wordmark (terminalWidth &gt;= WordmarkWidth + 8): top border + blank + 6 wordmark + subtitle + bottom border = 10 (or 11 with setup hint).</item>
-    ///   <item>Narrow: top border + title + subtitle + bottom border = 4 (or 5 with setup hint).</item>
+    ///   <item>Large wordmark: border + blank + 6 wordmark + blank + tagline + padding-or-hint + border = 12 (hint or not).</item>
+    ///   <item>Narrow: top border + title + tagline + bottom border = 4 (or 5 with setup hint).</item>
     /// </list>
-    /// URL bar lines: blank + top border + content + bottom border (4 lines after compression).
+    /// URL bar lines: blank + top border + content + bottom border + blank (5 lines).
     /// The input line is therefore at headerLines + 2 (1 blank + 1 top border).
     /// Because the URL bar can only be focused when <c>pageScrollOffset == 0</c>
     /// (see <see cref="CommandHandlers.LauncherCommandHandler"/>), this row is
@@ -327,6 +338,51 @@ internal class LauncherRenderer
     {
         // Mirror the BuildHeaderLines switch on inner width (terminalWidth - 2).
         return HeaderLineCount(terminalWidth, showSetupHint) + 2;
+    }
+
+    /// <summary>
+    /// Inner content width of the launcher's centred column: the usual
+    /// 2-cell allowance off the terminal width, capped at
+    /// <see cref="ContentColumnWidth"/> (Launcher.dc.html's column).
+    /// </summary>
+    internal static int ContentWidthFor(int terminalWidth)
+    {
+        return Math.Max(1, Math.Min(terminalWidth - 2, ContentColumnWidth));
+    }
+
+    /// <summary>
+    /// Left margin (in cells) that centres the content column. Computed
+    /// against <c>terminalWidth - 2</c> so terminals at or below the column
+    /// cap render exactly as before (margin 0); every launcher band uses
+    /// THIS margin so masthead, URL bar, grid, and footer share one axis.
+    /// </summary>
+    internal static int ColumnLeftMargin(int terminalWidth)
+    {
+        return Math.Max(0, (terminalWidth - 2 - ContentWidthFor(terminalWidth)) / 2);
+    }
+
+    /// <summary>
+    /// Width of the URL bar box (borders included) for the given content
+    /// width: the mock's 560px bar in its 900px column ≈ 5/8 of the content
+    /// width, floored so tiny panes keep a usable input.
+    /// </summary>
+    internal static int UrlBarWidthFor(int contentWidth)
+    {
+        return Math.Clamp(contentWidth * 5 / 8, Math.Min(30, contentWidth - 4), 70);
+    }
+
+    /// <summary>
+    /// Absolute terminal column (0-based) of the first typed character in
+    /// the URL bar, matching <see cref="BuildUrlBarLines"/> exactly. The
+    /// single source of the bar's horizontal maths — the command handler
+    /// previously duplicated the formula and the two had drifted.
+    /// </summary>
+    internal static int ComputeUrlBarInputCol(int terminalWidth)
+    {
+        var width = ContentWidthFor(terminalWidth);
+        var barWidth = UrlBarWidthFor(width);
+        var pad = Math.Max(0, (width - barWidth) / 2);
+        return ColumnLeftMargin(terminalWidth) + pad + 2;
     }
 
     internal static string ExtractDomain(string url)
@@ -351,10 +407,14 @@ internal class LauncherRenderer
     /// </summary>
     private static int HeaderLineCount(int terminalWidth, bool showSetupHint)
     {
-        var useLargeWordmark = (terminalWidth - 2) >= WordmarkWidth + 8;
+        // Large masthead card (Launcher.dc.html): top border + blank + 6
+        // wordmark rows + blank + tagline + (blank padding | setup hint)
+        // + bottom border = 12 ALWAYS — the hint occupies the padding slot,
+        // so it adds no rows (the original workspace-ayt8 contract).
+        var useLargeWordmark = ContentWidthFor(terminalWidth) >= WordmarkWidth + 8;
         if (useLargeWordmark)
         {
-            return showSetupHint ? 11 : 10;
+            return 12;
         }
 
         return showSetupHint ? 5 : 4;
@@ -479,20 +539,25 @@ internal class LauncherRenderer
             return isSelected ? $"{accentBarColor}▌{Reset}{rule}" : rule;
         }
 
+        // Card inset (Launcher.dc.html padding 22px 30px ≈ 3 cells with the
+        // rail column, workspace-pn5f): text starts 3 cells in and the badge
+        // stops 2 cells short of the right edge, instead of hugging both
+        // edges. leading includes the rail column (▌ when selected).
+        const int leading = 3;
+        const int trailing = 2;
+
         if (lineIdx == titleLine)
         {
-            // Title row: optional accent bar + leading space + NAME + glyph
-            // (RL only, trailing) + right-aligned [N] badge. badgeZone floors
-            // at 1 so the badgeless layout (items 10+) still reserves the
-            // trailing cell — without it the row ran one cell past cellWidth
-            // and shoved the next column's divider (workspace-7t0a.2).
+            // Title row: (rail|space) + inset + NAME + glyph (RL only,
+            // trailing) + gap + right-aligned [N] badge + inset. badgeZone
+            // floors at 1 so the badgeless layout (items 10+) still reserves
+            // a gap cell (workspace-7t0a.2).
             var glyphWidth = isReadingList ? 2 : 0;
             var badgeZone = badge.Length > 0 ? badge.Length + 1 : 1;
 
-            // contentWidth - 1 reserves the leading space inside the highlight.
-            var titleMax = Math.Max(1, contentWidth - 1 - glyphWidth - badgeZone);
+            var titleMax = Math.Max(1, cellWidth - leading - glyphWidth - badgeZone - trailing);
             var truncName = RenderHelpers.TruncateText(name, titleMax);
-            var gap = Math.Max(0, contentWidth - 1 - glyphWidth - truncName.Length - badgeZone);
+            var gap = Math.Max(0, cellWidth - leading - glyphWidth - truncName.Length - badge.Length - trailing);
 
             // The ★ trails the name in the metadata green (Launcher.dc.html —
             // the slot marker is quiet, not interactive cyan).
@@ -500,27 +565,26 @@ internal class LauncherRenderer
 
             if (isSelected)
             {
-                // Painted highlight: bar (inside selBg) + leading space +
-                // title + glyph + pad + badge + trailing space, all inside
-                // selBg so the box reads as a continuous rectangle. The
-                // star's own SGR keeps selBg — emitting Reset between title
-                // and glyph drops the bg (workspace-ktg4). The accent bar
-                // is also inside selBg so column 0 isn't a black gap
-                // (workspace-mj9x).
+                // Painted highlight: bar (inside selBg) + inset + title +
+                // glyph + gap + badge + inset, all inside selBg so the box
+                // reads as a continuous rectangle. The star's own SGR keeps
+                // selBg — emitting Reset between title and glyph drops the
+                // bg (workspace-ktg4). The accent bar is also inside selBg
+                // so column 0 isn't a black gap (workspace-mj9x).
                 var glyphPainted = isReadingList
                     ? $"{selFg} {glyphFg}{ReadingListGlyph}{selFg}"
                     : string.Empty;
                 var sb = new System.Text.StringBuilder();
                 sb.Append($"{selBg}{accentBarColor}▌");
-                sb.Append($"{selBg}{selFg}{Bold} {truncName}{glyphPainted}{Reset}");
+                sb.Append($"{selBg}{selFg}{Bold}{new string(' ', leading - 1)}{truncName}{glyphPainted}{Reset}");
                 sb.Append($"{selBg}{new string(' ', gap)}");
                 if (badge.Length > 0)
                 {
-                    sb.Append($"{selBg}{badgeFg}{badge}{Reset}{selBg} {Reset}");
+                    sb.Append($"{selBg}{badgeFg}{badge}{Reset}{selBg}{new string(' ', trailing)}{Reset}");
                 }
                 else
                 {
-                    sb.Append($"{selBg} {Reset}");
+                    sb.Append($"{selBg}{new string(' ', trailing)}{Reset}");
                 }
 
                 return sb.ToString();
@@ -530,25 +594,25 @@ internal class LauncherRenderer
             var titleSegment = $"{Bold}{titleFg}{truncName}{Reset}";
             if (badge.Length > 0)
             {
-                return $"  {titleSegment}{glyph}{new string(' ', gap)}{badgeFg}{badge}{Reset} ";
+                return $"{new string(' ', leading)}{titleSegment}{glyph}{new string(' ', gap)}{badgeFg}{badge}{Reset}{new string(' ', trailing)}";
             }
 
-            return $"  {titleSegment}{glyph}{new string(' ', gap)} ";
+            return $"{new string(' ', leading)}{titleSegment}{glyph}{new string(' ', gap)}{new string(' ', trailing)}";
         }
 
         if (lineIdx == subtitleLine)
         {
-            // Subtitle row: optional accent bar + leading space + domain.
-            var truncDomain = RenderHelpers.TruncateText(domain, Math.Max(1, contentWidth - 1));
-            var pad = Math.Max(0, contentWidth - 1 - truncDomain.Length);
+            // Subtitle row: (rail|space) + inset + domain, padded to the edge.
+            var truncDomain = RenderHelpers.TruncateText(domain, Math.Max(1, cellWidth - leading - trailing));
+            var pad = Math.Max(0, cellWidth - leading - truncDomain.Length);
 
             if (isSelected)
             {
                 // Bar inside selBg (workspace-mj9x) — no gap before the domain.
-                return $"{selBg}{accentBarColor}▌{selBg}{domainFg} {truncDomain}{new string(' ', pad)}{Reset}";
+                return $"{selBg}{accentBarColor}▌{selBg}{domainFg}{new string(' ', leading - 1)}{truncDomain}{new string(' ', pad)}{Reset}";
             }
 
-            return $"  {domainFg}{truncDomain}{Reset}{new string(' ', pad)}";
+            return $"{new string(' ', leading)}{domainFg}{truncDomain}{Reset}{new string(' ', pad)}";
         }
 
         // Padding rows: the centring pads above the title and below the
@@ -840,62 +904,59 @@ internal class LauncherRenderer
         var borderColor = p.GetDimFg().AnsiFg;
         var titleColor = p.HeaderTitleFg.AnsiFg;          // light pink (#ff87d7 ANSI 212)
         var titleColorDark = p.GetCelebrationFg().AnsiFg; // dark pink  (#ff5fd7 ANSI 206)
-        var subtitle = "All copy, no nonsense.";
         var useLargeWordmark = width >= WordmarkWidth + 8;
 
+        // Large mode (Launcher.dc.html, workspace-pn5f): the masthead card
+        // spans the whole content column — the box IS the column's top band,
+        // with the wordmark and tagline centred inside it, not a box shrunk
+        // to hug the art.
         var boxOuter = useLargeWordmark
-            ? Math.Min(width - 4, WordmarkWidth + 6)
+            ? width - 2
             : Math.Clamp(width * 3 / 4, Math.Min(40, width - 4), 76);
         var leftMargin = Math.Max(0, (width - boxOuter - 2) / 2);
         var margin = new string(' ', leftMargin);
 
         var lines = new List<string>();
 
-        string BoxLine(string content, int contentLen)
+        string CenteredBoxLine(string content, int contentLen)
         {
-            var pad = Math.Max(0, boxOuter - contentLen - 1);
-            return $"{margin} {borderColor}│{Reset} {content}{new string(' ', pad)}{borderColor}│{Reset}";
+            var lead = Math.Max(0, (boxOuter - contentLen) / 2);
+            var trail = Math.Max(0, boxOuter - lead - contentLen);
+            return $"{margin}{borderColor}│{Reset}{new string(' ', lead)}{content}{new string(' ', trail)}{borderColor}│{Reset}";
         }
 
         string BlankBoxLine() =>
-            $"{margin} {borderColor}│{Reset}{new string(' ', boxOuter)}{borderColor}│{Reset}";
+            $"{margin}{borderColor}│{Reset}{new string(' ', boxOuter)}{borderColor}│{Reset}";
 
         string SetupHintBoxLine()
         {
             // workspace-4z4f.1: the hint must read as optional — browsing
             // already works without keys; the keys unlock podcasts + AI layout.
+            // Centred like every other masthead line since the design
+            // re-import (the old tagline-left-edge alignment went with the
+            // left-aligned tagline itself).
             const string fullLabel = "→ Optional: add API keys for podcasts & AI layout";
             const string suffix = " · press c";
             var accent = p.GetAccentFg().AnsiFg;
-            var muted = p.SecondaryText.AnsiFg;
-
-            // Left-align with the tagline (workspace-jby8): the hint shares
-            // the same indent as "All copy, no nonsense." so the two lines
-            // form a single left edge under the wordmark, rather than the
-            // hint being centred and floating away from the rest of the card.
-            var hintPad = useLargeWordmark ? "      " : " ";
-            var inner = Math.Max(0, boxOuter - 2);
+            var mutedSuffix = p.SecondaryText.AnsiFg;
 
             // Truncation order: drop suffix first, then truncate the label.
-            var available = Math.Max(0, inner - hintPad.Length);
+            var inner = Math.Max(0, boxOuter - 2);
             var label = fullLabel;
-            var includeSuffix = suffix.Length + label.Length <= available;
-            if (!includeSuffix && label.Length > available)
+            var includeSuffix = label.Length + suffix.Length <= inner;
+            if (!includeSuffix && label.Length > inner)
             {
-                label = label[..Math.Max(0, available)];
+                label = label[..Math.Max(0, inner)];
             }
 
-            var visible = hintPad.Length + (includeSuffix ? label.Length + suffix.Length : label.Length);
-            var rightPad = Math.Max(0, inner - visible);
-
+            var visible = includeSuffix ? label.Length + suffix.Length : label.Length;
             var rendered = includeSuffix
-                ? $"{hintPad}{accent}{label}{Reset}{muted}{suffix}{Reset}{new string(' ', rightPad)}"
-                : $"{hintPad}{accent}{label}{Reset}{new string(' ', rightPad)}";
-
-            return $"{margin} {borderColor}│{Reset} {rendered} {borderColor}│{Reset}";
+                ? $"{accent}{label}{Reset}{mutedSuffix}{suffix}{Reset}"
+                : $"{accent}{label}{Reset}";
+            return CenteredBoxLine(rendered, visible);
         }
 
-        lines.Add($"{margin} {borderColor}╭{new string('─', boxOuter)}╮{Reset}");
+        lines.Add($"{margin}{borderColor}╭{new string('─', boxOuter)}╮{Reset}");
 
         if (useLargeWordmark)
         {
@@ -903,45 +964,48 @@ internal class LauncherRenderer
             for (var i = 0; i < Wordmark.Length; i++)
             {
                 var rowColor = WordmarkUsesDark[i] ? titleColorDark : titleColor;
-                lines.Add(BoxLine($"{rowColor}{Wordmark[i]}{Reset}", Wordmark[i].Length));
+                lines.Add(CenteredBoxLine($"{rowColor}{Wordmark[i]}{Reset}", Wordmark[i].Length));
             }
+
+            // Mock's 18px margin between the art and the tagline.
+            lines.Add(BlankBoxLine());
         }
         else
         {
-            lines.Add(BoxLine($" {titleColor}{"Wire Copy"}{Reset}", "Wire Copy".Length + 1));
+            lines.Add(CenteredBoxLine($"{titleColor}Wire Copy{Reset}", "Wire Copy".Length));
         }
 
-        // Align tagline's left edge with the W glyph above (workspace-usr3).
-        // Large wordmark[0] starts with 6 spaces before "██╗" (the W); the
-        // narrow fallback "Wire Copy" is rendered with a single space pad.
-        // Append `  ·  v{version}` in muted dim so the tagline remains the
-        // focal point and the version metadata sits with identity, not next
-        // to the keybindings (workspace-m8x2).
-        var taglinePad = useLargeWordmark ? "      " : " ";
-        var version = ResolveLauncherVersion();
-        var versionSuffix = $"  ·  v{version}";
-        var versionStyled = $"{p.GetDimFg().AnsiFg}{Dim}{versionSuffix}{Reset}";
-        lines.Add(BoxLine(
-            $"{taglinePad}{p.SecondaryText.AnsiFg}{subtitle}{Reset}{versionStyled}",
-            subtitle.Length + taglinePad.Length + versionSuffix.Length));
+        // Tagline centred under the wordmark, exactly the mock's copy and
+        // tones: "All copy, no nonsense · v1.0" — body in metadata green,
+        // the dot in structural dim, the version in quiet muted. (The old
+        // dim+Dim version was invisible on screen — workspace-pn5f.)
+        var tagline = "All copy, no nonsense";
+        var versionText = $"v{ResolveLauncherVersion()}";
+        var taglineRendered =
+            $"{p.SecondaryText.AnsiFg}{tagline}{Reset} {p.GetDimFg().AnsiFg}·{Reset} {p.GetMutedFg().AnsiFg}{versionText}{Reset}";
+        lines.Add(CenteredBoxLine(taglineRendered, tagline.Length + 3 + versionText.Length));
 
-        // workspace-0rde: drop the trailing blank-before-bottom-border when no
-        // setup hint is shown — the bottom border already provides visual closure.
-        // When the hint IS shown it occupies that slot, so header height is
-        // 11/5 with hint and 10/4 without.
-        if (showSetupHint)
+        // Bottom padding slot (mock padding-bottom 26px): the setup hint
+        // occupies it when shown, so the large header height NEVER changes
+        // (back to the original workspace-ayt8 contract). The narrow card
+        // stays compact: no padding slot, hint adds one row.
+        if (useLargeWordmark)
+        {
+            lines.Add(showSetupHint ? SetupHintBoxLine() : BlankBoxLine());
+        }
+        else if (showSetupHint)
         {
             lines.Add(SetupHintBoxLine());
         }
 
-        lines.Add($"{margin} {borderColor}╰{new string('─', boxOuter)}╯{Reset}");
+        lines.Add($"{margin}{borderColor}╰{new string('─', boxOuter)}╯{Reset}");
 
         return lines;
     }
 
     /// <summary>
     /// Builds the URL bar as a list of lines: blank, top border, content,
-    /// bottom border (4 lines total).
+    /// bottom border, blank (5 lines total).
     /// </summary>
     /// <remarks>
     /// workspace-0rde dropped the trailing blank that previously padded
@@ -950,12 +1014,12 @@ internal class LauncherRenderer
     /// </remarks>
     private static List<string> BuildUrlBarLines(int width, bool isSelected, ThemePalette p)
     {
-        var barWidth = Math.Clamp(width * 3 / 4, Math.Min(30, width - 4), 70);
+        var barWidth = UrlBarWidthFor(width);
         var pad = Math.Max(0, (width - barWidth) / 2);
         var innerWidth = barWidth - 4;
 
         var borderColor = isSelected ? p.SelectedItemFg.AnsiFg : p.HeaderBorderFg.AnsiFg;
-        var placeholder = isSelected ? "Type a URL and press Enter" : "Go to URL...";
+        var placeholder = isSelected ? "Type a URL and press Enter" : "Go to URL…";
         if (placeholder.Length > innerWidth)
         {
             placeholder = placeholder[..innerWidth];
@@ -965,6 +1029,7 @@ internal class LauncherRenderer
             ? $"{p.SelectedItemBg.AnsiBg}{p.SelectedItemFg.AnsiFg}"
             : $"{p.SecondaryText.AnsiFg}";
 
+        // Trailing blank = the mock's gap between the bar and the grid.
         return new List<string>
         {
             string.Empty,
@@ -973,6 +1038,7 @@ internal class LauncherRenderer
             $"{textColor}{placeholder}{new string(' ', Math.Max(0, innerWidth - placeholder.Length))}{Reset}" +
             $"{borderColor} │{Reset}",
             $"{new string(' ', pad)}{borderColor}╰{new string('─', barWidth - 2)}╯{Reset}",
+            string.Empty,
         };
     }
 
@@ -1171,27 +1237,36 @@ internal class LauncherRenderer
         var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, variant, showSetupHint);
         var viewportHeight = ComputeViewportHeight(options.TerminalHeight);
 
+        // Centred content column (Launcher.dc.html, workspace-pn5f): every
+        // band is built at the column width and written behind ONE shared
+        // left margin, so wider windows get symmetric gutters and nothing
+        // can drift off the common axis.
+        var margin = new string(' ', ColumnLeftMargin(options.TerminalWidth));
+
+        void WriteColumnLine(string line) =>
+            _helpers.WriteLine(line.Length == 0 ? line : margin + line);
+
         // Empty bookmarks: use the empty-state screen with the header pinned
         // at the top — there are no bookmarks to scroll past.
         if (bookmarks.Count == 0)
         {
             foreach (var headerLine in BuildHeaderLines(layout.Width, p, showSetupHint))
             {
-                _helpers.WriteLine(headerLine);
+                WriteColumnLine(headerLine);
             }
 
             foreach (var urlBarLine in BuildUrlBarLines(layout.Width, selectedIndex == -1, p))
             {
-                _helpers.WriteLine(urlBarLine);
+                WriteColumnLine(urlBarLine);
             }
 
-            RenderEmptyState(layout.Width, options.TerminalHeight, p);
+            RenderEmptyState(layout.Width, options.TerminalHeight, p, margin);
             return;
         }
 
         // Build the launcher in three bands:
         //   header  — wordmark / title (setup hint inside header card when ShowSetupHint)
-        //   urlBar  — URL bar (4 rows)
+        //   urlBar  — URL bar (5 rows incl. the gap under it)
         //   grid    — bookmark rows
         var header = BuildHeaderLines(layout.Width, p, showSetupHint);
         var urlBar = BuildUrlBarLines(layout.Width, selectedIndex == -1, p);
@@ -1210,12 +1285,12 @@ internal class LauncherRenderer
             // URL-input cursor math (ComputeUrlBarInputRow) is unaffected.
             foreach (var line in header)
             {
-                _helpers.WriteLine(line);
+                WriteColumnLine(line);
             }
 
             foreach (var line in urlBar)
             {
-                _helpers.WriteLine(line);
+                WriteColumnLine(line);
             }
 
             var gridArea = Math.Max(0, viewportHeight - topBands);
@@ -1227,7 +1302,7 @@ internal class LauncherRenderer
 
             foreach (var line in grid)
             {
-                _helpers.WriteLine(line);
+                WriteColumnLine(line);
             }
 
             return;
@@ -1246,7 +1321,7 @@ internal class LauncherRenderer
 
         for (var i = effectiveOffset; i < endLine; i++)
         {
-            _helpers.WriteLine(content[i]);
+            WriteColumnLine(content[i]);
         }
     }
 
@@ -1284,7 +1359,7 @@ internal class LauncherRenderer
         }
     }
 
-    private void RenderEmptyState(int width, int terminalHeight, ThemePalette p)
+    private void RenderEmptyState(int width, int terminalHeight, ThemePalette p, string margin = "")
     {
         var availableLines = Math.Max(6, terminalHeight - 4);
         var topPad = Math.Max(1, availableLines / 3);
@@ -1296,14 +1371,14 @@ internal class LauncherRenderer
 
         var heading = "Your bookmarks await";
         var headingPad = Math.Max(0, (width - heading.Length) / 2);
-        _helpers.WriteLine($"{new string(' ', headingPad)}{p.PrimaryText.AnsiFg}{Bold}{heading}{Reset}");
+        _helpers.WriteLine($"{margin}{new string(' ', headingPad)}{p.PrimaryText.AnsiFg}{Bold}{heading}{Reset}");
         _helpers.WriteLine();
 
         var instruction = "Press [a] to add your first site";
         var instrPad = Math.Max(0, (width - instruction.Length) / 2);
         var instrFormatted = $"Press {p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
                              $"{p.SecondaryText.AnsiFg}{Dim} to add your first site{Reset}";
-        _helpers.WriteLine($"{new string(' ', instrPad)}{instrFormatted}");
+        _helpers.WriteLine($"{margin}{new string(' ', instrPad)}{instrFormatted}");
         _helpers.WriteLine();
 
         // workspace-xx61: 'c' opens Setup (LauncherCommandHandler), NOT the
@@ -1312,10 +1387,10 @@ internal class LauncherRenderer
         var collLabel = "[c]  SETUP";
         var collPad = Math.Max(0, (width - collLabel.Length) / 2);
         _helpers.WriteLine(
-            $"{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
+            $"{margin}{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
             $"  {p.PrimaryText.AnsiFg}{Bold}SETUP{Reset}");
 
         var domainPad = Math.Max(0, (width - "API keys & settings".Length) / 2);
-        _helpers.WriteLine($"{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}API keys & settings{Reset}");
+        _helpers.WriteLine($"{margin}{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}API keys & settings{Reset}");
     }
 }

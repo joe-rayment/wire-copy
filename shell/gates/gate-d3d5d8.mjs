@@ -1,7 +1,7 @@
 // D3+D5+D8 gate (workspace-9d04, workspace-u5b0, workspace-wtut):
 //   D5: fresh profile boots at ~85% of the work area centered; a resize+move is
 //       remembered and RESTORED (clamped) across an app restart.
-//   D3: default type scale 16px on a platform font stack; Ctrl/Cmd +/-/0 zoom changes
+//   D3: default type scale 18px (Launcher.dc.html body size) on a platform font stack; Ctrl/Cmd +/-/0 zoom changes
 //       cols and the TUI reflows (pty told); the zoom level survives the restart.
 //   D8: Linux shows NO menu bar — the terminal pane fills the content area exactly.
 // OS-level keys via xdotool; screenshots read by a human/vision pass.
@@ -33,10 +33,10 @@ try {
 
   // ---- D3 defaults ----
   const font0 = await term.eval('window.__font()')
-  check('D3.0 default type scale is 16', font0 === 16, `font=${font0}`)
+  check('D3.0 default type scale is 18 (Launcher.dc.html body size)', font0 === 18, `font=${font0}`)
   const family = await term.eval('getComputedStyle(document.querySelector(".xterm-rows")).fontFamily')
   check('D3.1 platform font stack active (DejaVu on linux)', /DejaVu Sans Mono/.test(family), family)
-  env.shot('d3-default-16px')
+  env.shot('d3-default-18px')
 
   // ---- D3 zoom in: cols shrink, TUI reflows (pty told) ----
   const cols0 = (await term.eval('window.__dims()')).cols
@@ -47,19 +47,19 @@ try {
   await sleep(1200)
   const font1 = await term.eval('window.__font()')
   const cols1 = (await term.eval('window.__dims()')).cols
-  check('D3.2 Ctrl+= twice → 18px', font1 === 18, `font=${font1}`)
+  check('D3.2 Ctrl+= twice → 20px', font1 === 20, `font=${font1}`)
   check('D3.3 zoom-in shrank cols', cols1 < cols0, `cols ${cols0} → ${cols1}`)
   // Layout-stable content assert: the launcher footer re-words itself per width
   // ('Go to URL' vs 'go to url'), but the demo masthead renders in every layout.
   const reflow = await pollTermText(term, 'DAILY GAZETTE', 15000)
   check('D3.4 TUI reflowed at the new scale (pty resized)', reflow.ok)
-  env.shot('d3-zoomed-18px')
+  env.shot('d3-zoomed-20px')
 
   // ---- D3 reset then settle on 17 for the persistence leg ----
   env.key('ctrl+0'); await sleep(800)
-  check('D3.5 Ctrl+0 resets to 16', (await term.eval('window.__font()')) === 16)
+  check('D3.5 Ctrl+0 resets to 18', (await term.eval('window.__font()')) === 18)
   env.key('ctrl+equal'); await sleep(800)
-  check('D3.6 Ctrl+= → 17 (persisted for restart leg)', (await term.eval('window.__font()')) === 17)
+  check('D3.6 Ctrl+= → 19 (persisted for restart leg)', (await term.eval('window.__font()')) === 19)
 
   // ---- D5 resize + move, then restart ----
   const wid = env.activate()
@@ -87,7 +87,7 @@ try {
     near(st.winBounds.width, preQuit.width, 20) && near(st.winBounds.height, preQuit.height, 20),
     `pre=${JSON.stringify(preQuit)} post=${JSON.stringify(st.winBounds)}`)
   const font2 = await term.eval('window.__font()')
-  check('D3.7 zoom level SURVIVED the restart (17px)', font2 === 17, `font=${font2}`)
+  check('D3.7 zoom level SURVIVED the restart (19px)', font2 === 19, `font=${font2}`)
   env.shot('d5-restored-bounds')
   term.close()
 } catch (err) {

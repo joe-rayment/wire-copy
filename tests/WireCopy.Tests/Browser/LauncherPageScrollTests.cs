@@ -32,7 +32,7 @@ public class LauncherPageScrollTests
 
     private const string WordmarkSignature = "████";
     private const string UrlBarPlaceholderActive = "Type a URL and press Enter";
-    private const string UrlBarPlaceholderInactive = "Go to URL...";
+    private const string UrlBarPlaceholderInactive = "Go to URL…";
 
     [Fact]
     public void ScrollOffset_Zero_RendersWordmarkAndUrlBarAndItems()
@@ -253,8 +253,22 @@ public class LauncherPageScrollTests
         var footerLines = layout.FooterLines;
 
         var bookmarkAreaLines = layout.VisibleRows * layout.CellHeight;
-        (headerLines + bookmarkAreaLines + footerLines).Should().BeLessOrEqualTo(TerminalHeight,
-            "initial render must fit in the terminal: header + visible bookmark rows + footer ≤ terminalHeight");
+
+        // The taller Launcher.dc.html masthead (workspace-pn5f) can leave a
+        // short terminal too little room for even ONE full-height tile; the
+        // layout then floors VisibleRows at 1 and the launcher scrolls. The
+        // fit invariant only applies when at least one cell genuinely fits.
+        var available = TerminalHeight - headerLines - footerLines;
+        if (available >= layout.CellHeight)
+        {
+            (headerLines + bookmarkAreaLines + footerLines).Should().BeLessOrEqualTo(TerminalHeight,
+                "initial render must fit in the terminal: header + visible bookmark rows + footer ≤ terminalHeight");
+        }
+        else
+        {
+            layout.VisibleRows.Should().Be(1,
+                "when not even one cell fits under the chrome, VisibleRows floors at 1 and the view scrolls");
+        }
     }
 
     private static List<Bookmark> CreateBookmarks(int count)

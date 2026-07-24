@@ -54,8 +54,9 @@ public class LauncherBoxedGridTests
     [Fact]
     public void Grid_NonzeroRemainder_SeparatorRowsFillFullWidth()
     {
-        // Width 170 → inner 168 → 2 columns with base cell 83 and a REMAINDER-absorbing last
-        // cell of 84. This invokes the REAL renderer (BuildGridRowLine) — unlike the composed
+        // Width 170 → content column clamped to 84 (workspace-pn5f) → 2 columns with base
+        // cell 41 and a REMAINDER-absorbing last cell, rendered behind a centring margin.
+        // This invokes the REAL renderer (BuildGridRowLine) — unlike the composed
         // reconstruction tests — so it catches a regression where the last column used
         // layout.CellWidth instead of ResponsiveGrid.LastCellWidthFor: the separator rule would
         // fall short by the remainder, a ragged/clipped right edge (workspace-ehon review).
@@ -77,8 +78,12 @@ public class LauncherBoxedGridTests
             }
 
             ruleRows++;
-            text.Length.Should().Be(layout.Width,
-                "every separator rule row must fill the full content width (last column absorbs the remainder)");
+
+            // Since the workspace-pn5f centred column, wide terminals render
+            // the grid behind a shared left margin — the visible line is
+            // margin + full column width, still flush on both column edges.
+            text.Length.Should().Be(LauncherRenderer.ColumnLeftMargin(width) + layout.Width,
+                "every separator rule row must fill the full content column (last column absorbs the remainder)");
         }
 
         ruleRows.Should().BeGreaterThan(0, "the grid must render separator rule rows");
