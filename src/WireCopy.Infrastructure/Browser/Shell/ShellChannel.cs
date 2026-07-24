@@ -4,6 +4,7 @@ using System.Collections.Concurrent;
 using System.Net.Sockets;
 using System.Text.Json;
 using Microsoft.Extensions.Logging;
+using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
 
 namespace WireCopy.Infrastructure.Browser.Shell;
@@ -107,6 +108,10 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
     /// <inheritdoc />
     public async Task<bool> NotifyResizeRenderedAsync(int cols, int rows, CancellationToken cancellationToken = default)
         => await RequestAsync("resized", new { cols, rows }).ConfigureAwait(false) is not null;
+
+    /// <inheritdoc />
+    public async Task SendLauncherStateAsync(bool visible, LauncherViewState? state, CancellationToken cancellationToken = default)
+        => await RequestAsync("launcherState", new { visible, state }).ConfigureAwait(false);
 
     /// <inheritdoc />
     public async ValueTask DisposeAsync()

@@ -8,6 +8,7 @@ using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
+using WireCopy.Infrastructure.Browser.Shell;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
@@ -46,10 +47,16 @@ public class TerminalPageRenderer : IPageRenderer
     private readonly LauncherRenderer _launcherRenderer;
     private readonly StatusBarRenderer _statusBarRenderer;
     private readonly PreloadDetailRenderer _preloadDetailRenderer;
+    private readonly IShellChannel _shellChannel;
     private IReadOnlyList<LineCacheManager.ParagraphSpan>? _paragraphSpans;
 
+    // workspace-0jxo: true once a launcherState with visible:true has been pushed,
+    // so the NEXT non-launcher render can push visible:false exactly once (the
+    // launcher-leave signal). Only meaningful under a live shell.
+    private bool _launcherStateVisible;
+
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
-        : this(themeProvider, logger, podcastJobManager: null)
+        : this(themeProvider, logger, podcastJobManager: null, shellChannel: null)
     {
     }
 
@@ -61,6 +68,19 @@ public class TerminalPageRenderer : IPageRenderer
         IThemeProvider themeProvider,
         ILogger<TerminalPageRenderer> logger,
         IPodcastBackgroundJobManager? podcastJobManager)
+        : this(themeProvider, logger, podcastJobManager, shellChannel: null)
+    {
+    }
+
+    // workspace-0jxo: the shell channel is optional so terminal-only tests keep
+    // compiling; DI always provides one (a NullShellChannel in plain-terminal
+    // mode). When absent we substitute NullShellChannel so no null checks are
+    // needed and terminal mode is byte-identical (IsConnected is always false).
+    public TerminalPageRenderer(
+        IThemeProvider themeProvider,
+        ILogger<TerminalPageRenderer> logger,
+        IPodcastBackgroundJobManager? podcastJobManager,
+        IShellChannel? shellChannel)
     {
         _themeProvider = themeProvider;
         _helpers = new RenderHelpers();
@@ -70,10 +90,12 @@ public class TerminalPageRenderer : IPageRenderer
         _launcherRenderer = new LauncherRenderer(_helpers, themeProvider);
         _statusBarRenderer = new StatusBarRenderer(_helpers, themeProvider, podcastJobManager);
         _preloadDetailRenderer = new PreloadDetailRenderer(_helpers, themeProvider);
+        _shellChannel = shellChannel ?? new NullShellChannel();
     }
 
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
     {
+        LeaveLauncherIfShown(); // workspace-0jxo
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -112,6 +134,7 @@ public class TerminalPageRenderer : IPageRenderer
     {
         var paragraphSpans = _paragraphSpans;
         _paragraphSpans = null; // Consume — set fresh each render cycle
+        LeaveLauncherIfShown(); // workspace-0jxo
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -458,6 +481,7 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderCollectionList(List<Collection> collections, int selectedIndex, Guid? defaultCollectionId, int scrollOffset, RenderOptions options)
     {
+        LeaveLauncherIfShown(); // workspace-0jxo
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -468,6 +492,7 @@ public class TerminalPageRenderer : IPageRenderer
 
     public void RenderCollectionItems(Collection collection, int selectedIndex, int scrollOffset, RenderOptions options)
     {
+        LeaveLauncherIfShown(); // workspace-0jxo
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
@@ -486,6 +511,18 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.PositionAtBottom();
         _launcherRenderer.RenderFooter(options.TerminalWidth, bookmarks.Count, options.ScheduledRunBadge, options.StatusMessage);
         RenderPreloadDetailOverlay(options);
+
+        // workspace-0jxo: mirror the launcher to the shell as an HTML pane. The
+        // view-model reuses the SAME slot composition the grid just drew. Fire
+        // and forget — the shell round-trip must never block or throw into the
+        // render path (it fails soft on a lost channel). No-op in terminal mode
+        // (NullShellChannel.IsConnected is false).
+        if (_shellChannel.IsConnected)
+        {
+            var state = LauncherRenderer.BuildViewState(bookmarks, selectedIndex, options);
+            _ = _shellChannel.SendLauncherStateAsync(true, state);
+            _launcherStateVisible = true;
+        }
     }
 
     public void RenderStatusBar(NavigationContext context, ViewMode mode)
@@ -612,8 +649,30 @@ public class TerminalPageRenderer : IPageRenderer
     /// Renders a centered rounded box with the given content lines.
     /// The box is horizontally centered and positioned at 1/3 from the top.
     /// </summary>
+    /// <summary>
+    /// Pushes a <c>launcherState</c> with <c>visible:false</c> when a non-launcher
+    /// screen has just replaced the launcher (workspace-0jxo), so the shell hides
+    /// its HTML launcher pane. Fires at most once per launcher-leave and is a
+    /// no-op in terminal mode. Called at the top of every non-launcher render.
+    /// </summary>
+    private void LeaveLauncherIfShown()
+    {
+        if (!_launcherStateVisible)
+        {
+            return;
+        }
+
+        _launcherStateVisible = false;
+        if (_shellChannel.IsConnected)
+        {
+            _ = _shellChannel.SendLauncherStateAsync(false, null);
+        }
+    }
+
     private void RenderCenteredBox(List<CenteredBoxLine> lines, ThemeColor borderColor)
     {
+        LeaveLauncherIfShown(); // workspace-0jxo: a box screen (loading/error/human-action) replaced the launcher
+
         // Calculate box width from longest content line + 4 (2 border chars + 2 padding)
         var maxContentWidth = 0;
         foreach (var line in lines)

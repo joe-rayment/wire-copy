@@ -1,5 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using WireCopy.Application.DTOs.Browser;
+
 namespace WireCopy.Application.Interfaces.Browser;
 
 /// <summary>
@@ -39,4 +41,13 @@ public interface IShellChannel
     /// connected or on failure.
     /// </summary>
     Task<bool> NotifyResizeRenderedAsync(int cols, int rows, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Pushes the launcher's view-model to the shell so it can render the launcher as an HTML
+    /// pane (workspace-0jxo). <paramref name="visible"/> is true on every launcher render/state
+    /// change (carrying <paramref name="state"/>), and false — with a null <paramref name="state"/> —
+    /// when a non-launcher screen replaces the launcher. Fire-and-forget from the render path:
+    /// callers do not await this, and it never throws (a lost channel fails soft).
+    /// </summary>
+    Task SendLauncherStateAsync(bool visible, LauncherViewState? state, CancellationToken cancellationToken = default);
 }

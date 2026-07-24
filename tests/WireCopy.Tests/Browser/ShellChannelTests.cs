@@ -4,6 +4,7 @@ using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
 using Microsoft.Extensions.Logging.Abstractions;
+using WireCopy.Application.DTOs.Browser;
 using WireCopy.Infrastructure.Browser.Shell;
 using Xunit;
 
@@ -74,6 +75,73 @@ public sealed class ShellChannelTests : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SendLauncherState_RoundTripsParams_IncludingNullUrlAndUrlTyping()
+    {
+        // workspace-0jxo: the launcherState params must arrive at the shell intact
+        // over the real socket — a null slot URL stays JSON null, and the URL-typing
+        // payload survives the round-trip (both are load-bearing for the HTML pane).
+        _server = await MiniShellServer.StartAsync(_socketPath);
+        await using var channel = ShellChannel.TryConnect(_socketPath, NullLogger.Instance);
+
+        var state = new LauncherViewState
+        {
+            Slots = new List<LauncherSlot>
+            {
+                new() { Index = 0, Kind = "bookmark", Title = "ALPHA", Url = "https://alpha.example", Hint = "alpha.example", Badge = "1" },
+                new() { Index = 1, Kind = "readingList", Title = "READING LIST", Url = null, Hint = "nothing saved yet", Star = true, Badge = "2" },
+            },
+            SelectedIndex = -1,
+            UrlTyping = new LauncherUrlTyping { Buffer = "al", Cursor = 2 },
+            Paging = new LauncherPaging { Offset = 0, Visible = 2, Total = 2 },
+            BookmarkCount = 1,
+            Footer = new LauncherFooter(),
+            Tagline = "All copy, no nonsense",
+            Version = "v1.0",
+        };
+
+        await channel!.SendLauncherStateAsync(true, state);
+
+        for (var i = 0; i < 100 && _server.LastLauncherState is null; i++)
+        {
+            await Task.Delay(20);
+        }
+
+        var p = _server.LastLauncherState!.Value;
+        Assert.True(p.GetProperty("visible").GetBoolean());
+
+        var s = p.GetProperty("state");
+        Assert.Equal(-1, s.GetProperty("selectedIndex").GetInt32());
+
+        var slots = s.GetProperty("slots");
+        Assert.Equal(2, slots.GetArrayLength());
+        Assert.Equal("readingList", slots[1].GetProperty("kind").GetString());
+        Assert.Equal(JsonValueKind.Null, slots[1].GetProperty("url").ValueKind);
+        Assert.True(slots[1].GetProperty("star").GetBoolean());
+
+        var typing = s.GetProperty("urlTyping");
+        Assert.Equal("al", typing.GetProperty("buffer").GetString());
+        Assert.Equal(2, typing.GetProperty("cursor").GetInt32());
+    }
+
+    [Fact]
+    public async Task SendLauncherState_Hidden_SendsNullState()
+    {
+        _server = await MiniShellServer.StartAsync(_socketPath);
+        await using var channel = ShellChannel.TryConnect(_socketPath, NullLogger.Instance);
+
+        await channel!.SendLauncherStateAsync(false, null);
+
+        for (var i = 0; i < 100 && _server.LastLauncherState is null; i++)
+        {
+            await Task.Delay(20);
+        }
+
+        var p = _server.LastLauncherState!.Value;
+        Assert.False(p.GetProperty("visible").GetBoolean());
+        Assert.Equal(JsonValueKind.Null, p.GetProperty("state").ValueKind);
+    }
+
+    [Fact]
     public async Task ServerError_ReturnsFalse_NotThrow()
     {
         _server = await MiniShellServer.StartAsync(_socketPath);
@@ -137,6 +205,8 @@ public sealed class ShellChannelTests : IAsyncLifetime
 
         public JsonElement? LastSetPaneVisible { get; private set; }
 
+        public JsonElement? LastLauncherState { get; private set; }
+
         public static Task<MiniShellServer> StartAsync(string socketPath)
         {
             var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
@@ -194,6 +264,10 @@ public sealed class ShellChannelTests : IAsyncLifetime
                         case "setPane":
                             LastSetPaneVisible = msg.GetProperty("params").GetProperty("visible").Clone();
                             reply = new { id, ok = true, result = new { visible = true } };
+                            break;
+                        case "launcherState":
+                            LastLauncherState = msg.GetProperty("params").Clone();
+                            reply = new { id, ok = true, result = new { } };
                             break;
                         case "createPage" when msg.GetProperty("params").GetProperty("tag").GetString() == "boom":
                             reply = new { id, ok = false, error = "boom" };

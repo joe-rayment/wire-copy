@@ -1,8 +1,14 @@
-// Launcher.dc.html design gate (workspace-pn5f): the launcher renders as ONE
-// centred column — masthead, URL bar, grid, footer on the SAME axis — at the
-// design's 18px body type, with the centred tagline and card insets. Also
-// drives the REAL 'o' → type flow so the relocated URL-bar input position is
-// proven by where typed characters actually land, not by row math alone.
+// Launcher.dc.html design gate (workspace-pn5f); REBASED for the HTML launcher pane
+// (workspace-k1spg). Since L6, an HTML WebContentsView (launcher.html) is projected on
+// TOP of this TUI-grid launcher in shell mode — but the TUI grid still renders underneath
+// the pane (it is the source of the pushed state and the plain-terminal fallback). This
+// gate therefore now serves as the TUI-GRID-IN-SHELL regression: it reads the TERMINAL
+// buffer (window.__termText), asserting the covered grid still lays out correctly — ONE
+// centred column (masthead, URL bar, grid, footer on the SAME axis) at the design's 18px
+// body type, with the centred tagline and card insets — and drives the REAL 'o' → type
+// flow so the URL-bar input position is proven by where typed characters land in the grid.
+// The user-visible HTML PANE (the thing actually on screen) is covered by
+// gate-launcher-html.mjs; this gate guards the terminal rendering behind it.
 // Headful under Xvfb (never headless). Run from shell/: node gates/gate-launcher-design.mjs
 import { Env, attach, pollTermText, check, summary, buildTui, sleep } from './lib.mjs'
 

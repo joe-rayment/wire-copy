@@ -225,6 +225,7 @@ public partial class BrowserOrchestrator : IBrowserService
             GetCurrentRenderOptions = GetCurrentRenderOptions,
             NotifyResizeRendered = (cols, rows) =>
                 _shellChannel?.NotifyResizeRenderedAsync(cols, rows) ?? Task.FromResult(false),
+            ExportLauncherUrlTyping = SendLauncherUrlTypingAsync,
             CreateCollectionService = CreateCollectionService,
             GetReaderViewportHeight = GetReaderViewportHeight,
             GetHierarchicalViewportHeight = GetHierarchicalViewportHeight,

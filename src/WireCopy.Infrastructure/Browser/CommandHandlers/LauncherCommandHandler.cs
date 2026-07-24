@@ -451,8 +451,28 @@ internal static class LauncherCommandHandler
         // Pre-seed with the initial character if provided (user started typing on URL bar)
         var seed = initialChar.HasValue ? initialChar.Value.ToString() : null;
 
-        // Prompt directly inside the URL bar
-        var input = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: urlBarRow, col: inputCol, initialInput: seed).ConfigureAwait(false);
+        // Prompt directly inside the URL bar. workspace-0jxo: when a live shell
+        // is attached, mirror each keystroke to its HTML launcher pane via the
+        // concrete input handler's per-change overload (the buffer is otherwise
+        // invisible — the pane covers the terminal). Falls back to the plain
+        // prompt when there's no shell or the handler is a test double, so
+        // terminal-mode behaviour is unchanged.
+        string? input;
+        if (ctx.ExportLauncherUrlTyping is { } exportTyping
+            && ctx.InputHandler is UI.TerminalInputHandler terminalInput)
+        {
+            input = await terminalInput.PromptForInputWithChangeAsync(
+                string.Empty,
+                ct,
+                urlBarRow,
+                inputCol,
+                seed,
+                (buffer, cursor) => _ = exportTyping(buffer, cursor)).ConfigureAwait(false);
+        }
+        else
+        {
+            input = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: urlBarRow, col: inputCol, initialInput: seed).ConfigureAwait(false);
+        }
 
         if (string.IsNullOrWhiteSpace(input))
         {

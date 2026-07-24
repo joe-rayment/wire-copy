@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
 
 namespace WireCopy.Infrastructure.Browser.Shell;
@@ -46,4 +47,8 @@ public sealed class NullShellChannel : IShellChannel
     /// <inheritdoc />
     public Task<bool> NotifyResizeRenderedAsync(int cols, int rows, CancellationToken cancellationToken = default)
         => Task.FromResult(false);
+
+    /// <inheritdoc />
+    public Task SendLauncherStateAsync(bool visible, LauncherViewState? state, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
 }

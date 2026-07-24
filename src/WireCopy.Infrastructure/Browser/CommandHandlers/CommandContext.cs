@@ -127,6 +127,14 @@ internal class CommandContext
     /// </summary>
     public Func<int, int, Task<bool>>? NotifyResizeRendered { get; init; }
 
+    /// <summary>
+    /// Pushes the URL bar's in-progress typed buffer + cursor to the shell's HTML
+    /// launcher pane on each keystroke (workspace-0jxo), so the pane can mirror
+    /// what the user is typing while it covers the terminal. Null / no-op without
+    /// a live shell. Arguments are (buffer, cursorPosition).
+    /// </summary>
+    public Func<string, int, Task>? ExportLauncherUrlTyping { get; init; }
+
     public required Func<CancellationToken, Task> RefreshCollectionsAsync { get; init; }
 
     public required Func<CancellationToken, Task> RefreshBookmarksAsync { get; init; }

@@ -211,8 +211,24 @@ public class TerminalInputHandler : IInputHandler
         return PromptForInputCoreAsync(prompt, cancellationToken, isSecret: false, row: null, col: col, initialInput: null, interceptKey: null, clearWidth: null, ghostHint: hint);
     }
 
+    /// <summary>
+    /// workspace-0jxo — specialised entry point for the launcher's go-to-URL bar
+    /// that fires <paramref name="onChange"/> with the (buffer, cursor) after every
+    /// edit, so the desktop shell's HTML launcher pane can mirror what is being
+    /// typed while it covers the terminal. Terminal echo/prompt behaviour is
+    /// byte-identical to <see cref="PromptForInputAsync"/> — the callback only
+    /// observes; it never writes. Lives on the concrete class (like the other
+    /// specialised wrappers) so the 7-arg <see cref="IInputHandler"/> signature and
+    /// its NSubstitute mocks stay untouched.
+    /// </summary>
+    public Task<string?> PromptForInputWithChangeAsync(
+        string prompt, CancellationToken cancellationToken, int? row, int? col, string? initialInput, Action<string, int>? onChange)
+    {
+        return PromptForInputCoreAsync(prompt, cancellationToken, isSecret: false, row: row, col: col, initialInput: initialInput, interceptKey: null, clearWidth: null, ghostHint: null, onChange: onChange);
+    }
+
 #pragma warning disable SA1202 // private core kept adjacent to the two public wrappers that delegate to it
-    private async Task<string?> PromptForInputCoreAsync(string prompt, CancellationToken cancellationToken, bool isSecret, int? row, int? col, string? initialInput, Func<char, bool>? interceptKey, int? clearWidth, string? ghostHint = null)
+    private async Task<string?> PromptForInputCoreAsync(string prompt, CancellationToken cancellationToken, bool isSecret, int? row, int? col, string? initialInput, Func<char, bool>? interceptKey, int? clearWidth, string? ghostHint = null, Action<string, int>? onChange = null)
     {
         EnsureKeyReaderStarted();
 
@@ -251,6 +267,11 @@ public class TerminalInputHandler : IInputHandler
             var input = new System.Text.StringBuilder();
             var cursorPos = 0;
 
+            // workspace-0jxo: onChange?.Invoke(buffer, cursor) after every edit
+            // mirrors the buffer/cursor to the caller (the HTML launcher pane).
+            // Observation only — it never touches the console — so terminal echo
+            // stays byte-identical when onChange is null.
+
             // Cap the visible input width so we never write past the right
             // border of a FormField box. Falls back to "WindowWidth - prompt"
             // when no explicit clearWidth was supplied.
@@ -275,6 +296,7 @@ public class TerminalInputHandler : IInputHandler
                 input.Append(initialInput);
                 cursorPos = initialInput.Length;
                 RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                onChange?.Invoke(input.ToString(), cursorPos);
             }
 
             // workspace-khpe.5: repaints the prompt label and current input at the
@@ -368,6 +390,7 @@ public class TerminalInputHandler : IInputHandler
                         input.Remove(cursorPos - 1, 1);
                         cursorPos--;
                         RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                        onChange?.Invoke(input.ToString(), cursorPos);
                     }
 
                     continue;
@@ -379,6 +402,7 @@ public class TerminalInputHandler : IInputHandler
                     {
                         input.Remove(cursorPos, 1);
                         RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                        onChange?.Invoke(input.ToString(), cursorPos);
                     }
 
                     continue;
@@ -393,6 +417,7 @@ public class TerminalInputHandler : IInputHandler
                     {
                         cursorPos--;
                         RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                        onChange?.Invoke(input.ToString(), cursorPos);
                     }
 
                     continue;
@@ -404,6 +429,7 @@ public class TerminalInputHandler : IInputHandler
                     {
                         cursorPos++;
                         RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                        onChange?.Invoke(input.ToString(), cursorPos);
                     }
 
                     continue;
@@ -413,6 +439,7 @@ public class TerminalInputHandler : IInputHandler
                 {
                     cursorPos = 0;
                     RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                    onChange?.Invoke(input.ToString(), cursorPos);
                     continue;
                 }
 
@@ -420,6 +447,7 @@ public class TerminalInputHandler : IInputHandler
                 {
                     cursorPos = input.Length;
                     RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                    onChange?.Invoke(input.ToString(), cursorPos);
                     continue;
                 }
 
@@ -451,6 +479,7 @@ public class TerminalInputHandler : IInputHandler
                     input.Insert(cursorPos, keyInfo.KeyChar);
                     cursorPos++;
                     RedrawInput(input, promptStart, targetRow, cursorPos, isSecret, maxInputCells);
+                    onChange?.Invoke(input.ToString(), cursorPos);
                 }
             }
         }

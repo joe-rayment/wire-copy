@@ -1,0 +1,61 @@
+/* =============================================================================
+   Wire Copy Design System — Phosphor 2.0 tokens (vendored from the
+   "Wire Copy Design System" claude.ai project, colors_and_type.css).
+   Local copy for the launcher pane — the app must work offline.
+   ============================================================================= */
+
+:root {
+  /* ── Text hierarchy (ANSI 256 mappings in comments) ──────────────────── */
+  --tr-bright:  #ff87d7; /* ANSI 212 · Titles, content link headlines        */
+  --tr-green:   #00d700; /* ANSI 40  · Body text — the phosphor              */
+  --tr-med:     #00af00; /* ANSI 34  · Metadata, domains, secondary text     */
+  --tr-muted:   #5f875f; /* ANSI 65  · Hints, aged phosphor, quiet labels    */
+  --tr-dim:     #005f00; /* ANSI 22  · Borders, structural chrome            */
+
+  /* ── Accent colors ──────────────────────────────────────────────────── */
+  --tr-cyan:    #00ffff; /* ANSI 51  · Interactive keys ONLY                 */
+  --tr-white:   #e4e4e4; /* ANSI 254 · Selected item text (warm off-white)   */
+  --tr-pink:    #ff5fd7; /* ANSI 206 · Celebration only (rare)               */
+  --tr-success: #87ff5f; /* ANSI 119 · Completion / success                  */
+  --tr-amber:   #ffaf00; /* ANSI 214 · Warnings, active progress             */
+  --tr-red:     #ff5f5f; /* ANSI 203 · Errors                                */
+
+  /* ── Backgrounds ────────────────────────────────────────────────────── */
+  --tr-bg:      #0a0a0a; /*          · Page / terminal background            */
+  --tr-bg-pure: #000000; /*          · Pure terminal black (inside chrome)   */
+  --tr-sel-bg:  #005f00; /* ANSI 22  · Selection row background              */
+  --tr-hi-bg:   #005f87; /* ANSI 24  · Search highlight background           */
+  --tr-hi-fg:   #ffffff; /*          · Search highlight foreground           */
+
+  /* ── Semantic aliases ───────────────────────────────────────────────── */
+  --tr-fg-primary:   var(--tr-green);
+  --tr-fg-secondary: var(--tr-med);
+  --tr-fg-tertiary:  var(--tr-muted);
+  --tr-fg-title:     var(--tr-bright);
+  --tr-fg-accent:    var(--tr-cyan);
+  --tr-border:       var(--tr-dim);
+  --tr-border-strong:var(--tr-muted);
+
+  /* ── Typography ─────────────────────────────────────────────────────── */
+  /* Bundled JetBrains Mono leads the stack — no runtime network fetches.  */
+  --tr-font-mono: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/JetBrainsMono-Regular.ttf') format('truetype');
+  font-weight: 400;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/JetBrainsMono-Medium.ttf') format('truetype');
+  font-weight: 500;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('../fonts/JetBrainsMono-Bold.ttf') format('truetype');
+  font-weight: 700;
+  font-style: normal;
+}

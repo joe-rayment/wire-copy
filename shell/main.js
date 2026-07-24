@@ -76,6 +76,8 @@ const state = {
   win: null,
   termView: null,
   pageView: null,     // the visible "lens" pane
+  launcherView: null, // display-only launcher pane (workspace-wak1s) — never focused, mirrors the TUI launcher screen
+  launcherMsg: null,  // last launcherState params from the TUI (visibility + opaque state), forwarded verbatim
   overlayView: null,  // transition overlay (workspace-tj1z) — inert, shown only mid-transition
   overlayShown: false,
   popupView: null,    // SSO/auth popup pane (workspace-y0bi) — at most one, over the page pane
@@ -149,6 +151,11 @@ function setTermFont (px) {
   termFontSize = next
   writeJson(prefsFile('term-prefs.json'), { fontSize: termFontSize })
   if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('wc:font', termFontSize)
+  // The launcher pane self-scales (zoom = px/18); push live zoom the same way (L5,
+  // workspace-e2qz3). The initial value rides its ?font= query param at load.
+  if (state.launcherView && !state.launcherView.webContents.isDestroyed()) {
+    state.launcherView.webContents.send('wc:font', termFontSize)
+  }
 }
 function handleZoomKey (input) {
   if (input.type !== 'keyDown') return false
@@ -172,6 +179,10 @@ function place () {
   const [w, h] = win.getContentSize()
   const pageW = Math.round(w * PAGE_FRACTION)
   pageView.setVisible(true)
+  // The launcher pane always spans the full content area (it only ever SHOWS in the
+  // non-revealed reader-launcher state, where termView is full-width too); keep it laid
+  // out on every resize so a persisted-zoom pane is correctly sized before it appears.
+  if (state.launcherView) state.launcherView.setBounds({ x: 0, y: 0, width: w, height: h })
   if (state.revealed) {
     termView.setBounds({ x: 0, y: 0, width: w - pageW, height: h })
     pageView.setBounds({ x: w - pageW, y: 0, width: pageW, height: h })
@@ -481,10 +492,23 @@ function focusTerm () {
   if (!termView.webContents.isDestroyed()) termView.webContents.focus()
 }
 
+// The launcher pane is display-only: it shows exactly when the TUI says its launcher
+// screen is up (msg.visible) AND we're in reader mode. Any change to either input
+// re-evaluates here — never focus it, just toggle visibility.
+function applyLauncherVisibility () {
+  const v = state.launcherView
+  if (!v || v.webContents.isDestroyed()) return
+  const msg = state.launcherMsg
+  const show = !!(msg && msg.visible && state.mode === 'reader')
+  v.setVisible(show)
+  state.launcherShown = show
+}
+
 function setMode (m) {
   if (state.mode === m) return
   console.error(`[shell] mode → ${m}`)
   state.mode = m
+  applyLauncherVisibility() // reader↔browser flips the launcher pane's visibility
   if (m === 'reader') focusTerm()
   else state.pageView.webContents.focus()
   if (state.channelServer) state.channelServer.broadcast('mode', { mode: m })
@@ -730,8 +754,22 @@ app.whenReady().then(() => {
   })
   state.overlayView.setVisible(false)
 
+  // Launcher pane (workspace-wak1s): a display-only WebContentsView mirroring the TUI's
+  // launcher screen. Inserted ABOVE termView but BELOW overlayView + popups (both re-add
+  // themselves topmost on show), so it covers the terminal's grid launcher while staying
+  // under transitions/popups. Strictly display-only — never focused, keys forwarded to
+  // the pty (below), so Enter/1-9/o/a/? keep flowing to the TUI underneath.
+  state.launcherView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'launcher', 'launcher-preload.js'),
+      backgroundThrottling: false
+    }
+  })
+  state.launcherView.setVisible(false)
+
   state.win.contentView.addChildView(state.pageView)
   state.win.contentView.addChildView(state.termView)
+  state.win.contentView.addChildView(state.launcherView)
   state.win.contentView.addChildView(state.overlayView)
   layout()
   state.win.on('resize', () => { layout(); rememberBounds() })
@@ -750,6 +788,15 @@ app.whenReady().then(() => {
     forwardToTerm(input)
   })
   state.overlayView.webContents.on('focus', () => setTimeout(() => focusTerm(), 30))
+  // Launcher pane display-only doctrine (workspace-wak1s): identical treatment to the
+  // overlay — it is NEVER .focus()'d; any stray key that lands on it is forwarded to the
+  // pty (so Enter/1-9/o/a/? still drive the TUI), and a stolen focus bounces back within
+  // 30ms. The enforcement loop below (which only restores termView focus) is untouched.
+  state.launcherView.webContents.on('before-input-event', (e, input) => {
+    e.preventDefault()
+    forwardToTerm(input)
+  })
+  state.launcherView.webContents.on('focus', () => setTimeout(() => focusTerm(), 30))
   // Type-scale zoom is a shell concern: intercept Cmd/Ctrl +/-/0 on the terminal pane
   // before xterm sees them (the TUI binds no such chords — Ctrl+D/U/P/L only).
   state.termView.webContents.on('before-input-event', (e, input) => {
@@ -782,6 +829,18 @@ app.whenReady().then(() => {
         return {}
       },
       setMode: p => { setMode(p.mode === 'browser' ? 'browser' : 'reader'); return { mode: state.mode } },
+      // Launcher pane state (workspace-wak1s): the TUI owns all launcher logic; the shell
+      // just mirrors it. Store the whole params object, recompute visibility (visible &&
+      // reader mode), and forward the payload verbatim to the pane — the shell never
+      // interprets `state`.
+      launcherState: p => {
+        state.launcherMsg = p
+        applyLauncherVisibility()
+        if (state.launcherView && !state.launcherView.webContents.isDestroyed()) {
+          state.launcherView.webContents.send('wc:launcher', p)
+        }
+        return {}
+      },
       createPage: p => createTaggedPage(String(p.tag || ''))
     }
   })
@@ -811,6 +870,13 @@ app.whenReady().then(() => {
     // focus steal (workspace-tj1z.2).
     state.overlayView.webContents.loadURL(
       `http://127.0.0.1:${termSrv.address().port}/overlay.html`)
+    // Launcher pane (workspace-wak1s/e2qz3): same loopback server. The persisted zoom
+    // rides ?font= so the pane scales (zoom = px/18, template's job) before first paint.
+    // A missing template (authored in parallel) 404s — guard so a load failure logs and
+    // never crashes the shell; the pane simply stays blank until the file lands.
+    state.launcherView.webContents.loadURL(
+      `http://127.0.0.1:${termSrv.address().port}/launcher/launcher.html?font=${termFontSize}`)
+      .catch(err => console.error('[shell] launcher pane load failed (template may not exist yet): ' + err))
   })
 
   // Overlay transition acks (workspace-tj1z.3/.4).
@@ -879,6 +945,8 @@ app.whenReady().then(() => {
     transGen,
     seamDirty: lastSeamDirty,
     paneShown: state.paneShown,
+    launcherShown: !!state.launcherShown,
+    launcherBounds: state.launcherView ? state.launcherView.getBounds() : null,
     contentSize: state.win.getContentSize(),
     termBounds: state.termView.getBounds(),
     pageBounds: state.pageView.getBounds(),

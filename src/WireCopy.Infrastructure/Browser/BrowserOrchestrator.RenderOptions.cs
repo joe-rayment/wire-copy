@@ -94,6 +94,31 @@ public partial class BrowserOrchestrator
     }
 
     /// <summary>
+    /// workspace-0jxo: pushes the launcher URL bar's in-progress buffer + cursor
+    /// to the shell's HTML launcher pane on each keystroke, reusing the same
+    /// view-model builder the grid render uses (URL bar focused ⇒ selectedIndex
+    /// -1, with the typed buffer attached). Fire-and-forget and a no-op without a
+    /// live shell; never throws into the input loop.
+    /// </summary>
+    private Task SendLauncherUrlTypingAsync(string buffer, int cursor)
+    {
+        if (_shellChannel is null || !_shellChannel.IsConnected)
+        {
+            return Task.CompletedTask;
+        }
+
+        var options = GetCurrentRenderOptions();
+        var bookmarks = _commandContext.Bookmarks
+            ?? Array.Empty<Domain.Entities.Bookmarks.Bookmark>();
+        var state = UI.Renderers.LauncherRenderer.BuildViewState(
+            bookmarks,
+            selectedIndex: -1,
+            options,
+            new LauncherUrlTyping { Buffer = buffer, Cursor = cursor });
+        return _shellChannel.SendLauncherStateAsync(true, state);
+    }
+
+    /// <summary>
     /// Returns the live non-expired saved-item count for the Reading List, used
     /// by the launcher tile's subtitle (workspace-fbcn). Counts only items within
     /// the same TTL the purge uses (<see cref="ReadingListExpiryHours"/>) so the

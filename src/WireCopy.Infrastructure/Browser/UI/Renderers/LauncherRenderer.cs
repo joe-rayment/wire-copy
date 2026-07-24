@@ -64,6 +64,23 @@ internal class LauncherRenderer
     // sat jammed against the bar's bottom border.
     private const int UrlBarLines = 5;
 
+    // Launcher.dc.html artboard: a 2-column × 3-row grid, so the HTML pane
+    // pages the tiles in windows of six. The TUI itself line-scrolls a single
+    // virtual stream; this fixed page size is the HTML-pane projection only —
+    // the per-slot FACTS (kind/title/url/hint/star) are shared with the grid
+    // render via ComposeSlot so the two can never disagree about a tile.
+    private const int GridColumns = 2;
+    private const int LauncherPageSize = 6;
+
+    // The setup-hint copy, shared between the masthead render (SetupHintBoxLine)
+    // and the exported view-model (workspace-0jxo) so both read the same string.
+    private const string SetupHintLabel = "→ Optional: add API keys for podcasts & AI layout";
+    private const string SetupHintSuffix = " · press c";
+
+    // The launcher tagline (Launcher.dc.html) — shared between BuildHeaderLines
+    // and the exported view-model.
+    private const string TaglineText = "All copy, no nonsense";
+
     // 6-row ASCII-art wordmark for "WIRE COPY" — the EXACT art from
     // Launcher.dc.html (67 columns), not a re-spaced variant: the re-import
     // audit (workspace-pn5f) found the old 87-col letter-spaced version read
@@ -399,6 +416,132 @@ internal class LauncherRenderer
     }
 
     /// <summary>
+    /// The per-slot facts for launcher virtual index <paramref name="virtualIndex"/>:
+    /// the single source of truth for what a launcher tile IS (bookmark vs the
+    /// Reading List virtual slot, its title, subtitle, href, and ★ marker).
+    /// Both the Grid card render (<see cref="BuildCardCellLine"/>) and the
+    /// exported view-model (<see cref="BuildViewState"/>) consume this so the
+    /// HTML pane can never drift from the terminal grid (workspace-0jxo).
+    /// Reading List lives at virtual index 1 when bookmarks are present
+    /// (workspace-ul5z); bookmarks shift one slot later.
+    /// </summary>
+    internal static LauncherSlotFacts ComposeSlot(
+        IReadOnlyList<Bookmark> bookmarks, int virtualIndex, int? readingListCount)
+    {
+        if (virtualIndex == 1 && bookmarks.Count > 0)
+        {
+            return new LauncherSlotFacts(
+                IsReadingList: true,
+                Title: "READING LIST",
+                Hint: ReadingListSubtitle(readingListCount),
+                Url: null);
+        }
+
+        var bookmarkIdx = virtualIndex == 0 ? 0 : virtualIndex - 1;
+        var bookmark = bookmarks[bookmarkIdx];
+        return new LauncherSlotFacts(
+            IsReadingList: false,
+            Title: bookmark.Name.ToUpperInvariant(),
+            Hint: ExtractDomain(bookmark.Url),
+            Url: bookmark.Url);
+    }
+
+    /// <summary>
+    /// Projects the launcher's current bookmarks/selection/options into the
+    /// shell-channel view-model (workspace-0jxo). Reuses <see cref="ComposeSlot"/>
+    /// for tile facts, so the exported slots are exactly what the Grid render
+    /// draws. The tiles are paged into a fixed 6-cell window (<see cref="LauncherPageSize"/>)
+    /// centred on the selected tile's page; trailing cells of the last page are
+    /// <c>empty</c> so the HTML grid stays rectangular. Any non-tile focus
+    /// (URL bar, setup hint) reports <c>selectedIndex = -1</c>; the setup hint is
+    /// carried separately in <see cref="LauncherViewState.SetupHint"/>.
+    /// </summary>
+    internal static LauncherViewState BuildViewState(
+        IReadOnlyList<Bookmark> bookmarks,
+        int selectedIndex,
+        RenderOptions options,
+        LauncherUrlTyping? urlTyping = null)
+    {
+        var footer = new LauncherFooter
+        {
+            Badge = options.ScheduledRunBadge,
+            Status = options.StatusMessage,
+        };
+        var setupHint = options.ShowSetupHint
+            ? SetupHintLabel + SetupHintSuffix
+            : null;
+        var tagline = TaglineText;
+        var version = $"v{ResolveLauncherVersion()}";
+
+        // Empty bookmarks → the empty-state screen (no tiles). Report an empty
+        // window; the URL bar / setup hint is still reachable.
+        if (bookmarks.Count == 0)
+        {
+            return new LauncherViewState
+            {
+                Slots = [],
+                SelectedIndex = -1,
+                UrlTyping = urlTyping,
+                SetupHint = setupHint,
+                Paging = new LauncherPaging { Offset = 0, Visible = 0, Total = 0 },
+                BookmarkCount = 0,
+                Footer = footer,
+                Tagline = tagline,
+                Version = version,
+            };
+        }
+
+        var total = bookmarks.Count + 1; // bookmarks + the Reading List virtual slot
+        var offset = selectedIndex >= 0
+            ? (selectedIndex / LauncherPageSize) * LauncherPageSize
+            : 0;
+        var visible = Math.Min(LauncherPageSize, total - offset);
+
+        // Pad the window up to a whole number of grid ROWS (2 columns) so the
+        // HTML grid's last row is never half-empty, capped at the page size —
+        // matching how the TUI grid continues its trailing cells.
+        var windowLength = Math.Min(
+            LauncherPageSize,
+            ((visible + GridColumns - 1) / GridColumns) * GridColumns);
+
+        var slots = new List<LauncherSlot>(windowLength);
+        for (var i = 0; i < windowLength; i++)
+        {
+            var virtualIndex = offset + i;
+            if (virtualIndex >= total)
+            {
+                slots.Add(new LauncherSlot { Index = virtualIndex, Kind = "empty" });
+                continue;
+            }
+
+            var facts = ComposeSlot(bookmarks, virtualIndex, options.ReadingListItemCount);
+            slots.Add(new LauncherSlot
+            {
+                Index = virtualIndex,
+                Kind = facts.IsReadingList ? "readingList" : "bookmark",
+                Title = facts.Title,
+                Url = facts.Url,
+                Hint = facts.Hint,
+                Star = facts.IsReadingList,
+                Badge = virtualIndex < 9 ? (virtualIndex + 1).ToString() : null,
+            });
+        }
+
+        return new LauncherViewState
+        {
+            Slots = slots,
+            SelectedIndex = selectedIndex >= 0 ? selectedIndex - offset : -1,
+            UrlTyping = urlTyping,
+            SetupHint = setupHint,
+            Paging = new LauncherPaging { Offset = offset, Visible = visible, Total = total },
+            BookmarkCount = bookmarks.Count,
+            Footer = footer,
+            Tagline = tagline,
+            Version = version,
+        };
+    }
+
+    /// <summary>
     /// Returns the header card height for the given terminal width and
     /// setup-hint state. Centralised so <see cref="ComputeLayout"/>,
     /// <see cref="ComputeHeaderPlusUrlBarLines"/>, and
@@ -457,24 +600,14 @@ internal class LauncherRenderer
         //   virtual 0 → bookmark[0]
         //   virtual 1 → Reading List (cyan accent bar + ★ glyph)
         //   virtual N (≥ 2) → bookmark[N - 1]
-        var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
+        // Slot facts come from the shared composer (workspace-0jxo) so the grid
+        // card and the exported view-model can never disagree about a tile.
+        var facts = ComposeSlot(bookmarks, itemIdx, readingListCount);
+        var isReadingList = facts.IsReadingList;
         var isSelected = itemIdx == selectedIndex;
 
-        string name;
-        string domain;
-
-        if (isReadingList)
-        {
-            name = "READING LIST";
-            domain = ReadingListSubtitle(readingListCount);
-        }
-        else
-        {
-            var bookmarkIdx = itemIdx == 0 ? 0 : itemIdx - 1;
-            var bookmark = bookmarks[bookmarkIdx];
-            name = bookmark.Name.ToUpperInvariant();
-            domain = ExtractDomain(bookmark.Url);
-        }
+        var name = facts.Title;
+        var domain = facts.Hint;
 
         // Digit badge `[N]` for slots 0..8 (digits 1-9). Reading List keeps a
         // numeric badge consistent with its slot (`[2]`) so the digit-jump
@@ -935,8 +1068,8 @@ internal class LauncherRenderer
             // Centred like every other masthead line since the design
             // re-import (the old tagline-left-edge alignment went with the
             // left-aligned tagline itself).
-            const string fullLabel = "→ Optional: add API keys for podcasts & AI layout";
-            const string suffix = " · press c";
+            const string fullLabel = SetupHintLabel;
+            const string suffix = SetupHintSuffix;
             var accent = p.GetAccentFg().AnsiFg;
             var mutedSuffix = p.SecondaryText.AnsiFg;
 
@@ -979,7 +1112,7 @@ internal class LauncherRenderer
         // tones: "All copy, no nonsense · v1.0" — body in metadata green,
         // the dot in structural dim, the version in quiet muted. (The old
         // dim+Dim version was invisible on screen — workspace-pn5f.)
-        var tagline = "All copy, no nonsense";
+        var tagline = TaglineText;
         var versionText = $"v{ResolveLauncherVersion()}";
         var taglineRendered =
             $"{p.SecondaryText.AnsiFg}{tagline}{Reset} {p.GetDimFg().AnsiFg}·{Reset} {p.GetMutedFg().AnsiFg}{versionText}{Reset}";

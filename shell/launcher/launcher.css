@@ -1,0 +1,221 @@
+/* =============================================================================
+   Wire Copy launcher pane — display-only projection of the TUI launcher state.
+   Import of Launcher.dc.html (claude.ai "Wire Copy Design System" project): ONE
+   centred column on the page background; masthead / URL bar / grid / footer all
+   share the column's horizontal axis. This page carries NO logic — the TUI owns
+   all keys; every value here is painted from a pushed state message. Colours and
+   the four-step type ramp come from tokens.css.
+   ============================================================================= */
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--tr-bg);          /* #0a0a0a page under the column */
+  color: var(--tr-green);
+  font-family: var(--tr-font-mono);
+  /* Display-only pane: no selection, no text cursor, no focus rings. The TUI
+     owns interaction; this surface only projects state. */
+  user-select: none;
+  cursor: default;
+  overflow: hidden;
+}
+
+/* The centred column: the mock's fixed 900px artboard drawn on pure black over
+   the page. Wider windows get symmetric #0a0a0a gutters, exactly like the mock. */
+#stage {
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  overflow: auto;
+}
+#column {
+  width: min(900px, 100%);
+  min-height: 100%;
+  background: var(--tr-bg-pure);     /* #000 inside the column */
+  padding: 40px 0 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ── Masthead ─────────────────────────────────────────────────────────────
+   1px dim border card; the wordmark and tagline centre inside it. */
+#masthead {
+  border: 1px solid var(--tr-dim);
+  padding: 30px 32px 26px;
+  margin: 0 12px;
+  text-align: center;
+}
+#wordmark {
+  margin: 0;
+  font-size: 18px;
+  line-height: 1.0;                  /* box-drawing rows must stay contiguous */
+  white-space: pre;                  /* the art must never wrap or collapse spaces */
+  display: inline-block;
+  text-align: left;
+}
+/* Two-tone pink: outer rows light (#ff87d7), the two middle rows a brighter
+   pink (#ff5fd7) — the exact stripe from LauncherRenderer's Wordmark art. */
+#wordmark .row      { color: var(--tr-bright); }
+#wordmark .row-dark { color: var(--tr-pink); }
+
+#tagline {
+  margin-top: 18px;                  /* mock's gap between art and tagline */
+  font-size: 16px;
+  color: var(--tr-muted);
+}
+#tagline .sep { color: var(--tr-dim); margin: 0 .5em; }
+#tagline .ver { color: var(--tr-muted); }
+
+/* ── URL bar ──────────────────────────────────────────────────────────────
+   560px, centred; 1px dim border; when the bar is focused (selectedIndex −1 or
+   URL typing) the border brightens to the focus-bar muted green. */
+#urlbar-wrap {
+  display: flex;
+  justify-content: center;
+  margin: 30px 0 0;
+}
+#urlbar {
+  width: min(560px, calc(100% - 24px));
+  border: 1px solid var(--tr-dim);
+  padding: 14px 18px;
+  font-size: 18px;
+  color: var(--tr-med);
+  white-space: pre;
+  overflow: hidden;
+}
+#urlbar.focused { border-color: var(--tr-muted); }
+#urlbar .placeholder { color: var(--tr-med); }
+#urlbar .typed { color: var(--tr-green); }
+/* Inverse-video block cursor sitting on the character at the cursor index. */
+#urlbar .cursor {
+  background: var(--tr-green);
+  color: var(--tr-bg-pure);
+}
+
+/* Centred setup-hint row between the URL bar and the grid. */
+#setuphint {
+  margin: 18px 0 0;
+  text-align: center;
+  font-size: 16px;
+  color: var(--tr-muted);
+}
+
+/* Quiet paging markers around the grid window. */
+.paging {
+  text-align: center;
+  font-size: 15px;
+  color: var(--tr-muted);
+  padding: 6px 0;
+}
+.paging.hidden { display: none; }
+
+/* ── Bookmark grid ────────────────────────────────────────────────────────
+   2 columns × 3 rows; hairline separators BETWEEN cells only (dim). */
+#grid {
+  margin: 22px 12px 0;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  flex: 1 0 auto;
+}
+.card {
+  min-height: 150px;
+  /* Horizontal padding trimmed from the mock's 30px to 16px: at the 900px
+     column each cell is ~438px (the grid keeps a 12px inset to line up with the
+     masthead/footer), and a 17-char title (the mock's "THE DAILY GAZETTE"
+     sample, the screenshot's "NYT TODAY'S PAPER") at 34px JetBrains Mono is
+     ~358px. 16px leaves the full title + right-aligned [n] index a few px of
+     slack so it never trips the ellipsis. */
+  padding: 22px 16px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;           /* title+url block centred in the cell */
+  overflow: hidden;
+}
+/* Internal hairlines: left edge on the right column, top edge on rows 2 & 3. */
+.card:nth-child(2n)   { border-left: 1px solid var(--tr-dim); }
+.card:nth-child(n+3)  { border-top: 1px solid var(--tr-dim); }
+
+/* Selected card: selection-green fill + a 3px muted inset left rail (drawn with
+   an inset shadow so it never shifts the padding), white title, 80%-white url. */
+.card.selected {
+  background: var(--tr-sel-bg);
+  box-shadow: inset 3px 0 0 0 var(--tr-muted);
+}
+
+.card-title-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+.card-title {
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: .02em;
+  line-height: 1.08;
+  color: var(--tr-green);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.card.selected .card-title { color: var(--tr-white); }
+/* Reading-list marker: a quiet metadata-green star trailing the title. */
+.rl-star {
+  font-size: 26px;
+  color: var(--tr-med);
+  margin-left: .35em;
+}
+.card.selected .rl-star { color: var(--tr-white); }
+
+/* [n] quick-jump index: interactive cyan, right-aligned, stays cyan when selected. */
+.card-index {
+  font-size: 18px;
+  color: var(--tr-cyan);
+  flex: 0 0 auto;
+}
+
+.card-url {
+  margin-top: 8px;
+  font-size: 18px;
+  color: var(--tr-med);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.card.selected .card-url { color: rgba(228, 228, 228, .8); }
+/* Reading-list empty-state prompt: quiet muted copy. */
+.card-url.hint { color: var(--tr-muted); }
+.card.selected .card-url.hint { color: rgba(228, 228, 228, .8); }
+
+.card.empty { min-height: 150px; }   /* blank cell, but the grid lines remain */
+
+/* ── Footer ───────────────────────────────────────────────────────────────
+   Key hints left (keys cyan, bracket + label muted); count right (dim). An
+   optional scheduled-run badge (amber) and transient status (green) sit left
+   of the count. */
+#footer {
+  margin: 22px 12px 0;
+  padding-top: 10px;
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 15px;
+  gap: 16px;
+}
+#footer-hints { display: flex; gap: 20px; flex-wrap: wrap; }
+.kbd { color: var(--tr-muted); white-space: nowrap; }
+.kbd .brk { color: var(--tr-muted); }
+.kbd .key { color: var(--tr-cyan); }
+#footer-right {
+  display: flex;
+  align-items: baseline;
+  gap: 14px;
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+#footer-right .badge  { color: var(--tr-amber); }
+#footer-right .status { color: var(--tr-green); }
+#footer-right .count  { color: var(--tr-dim); }
