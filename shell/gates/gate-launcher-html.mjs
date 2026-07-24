@@ -33,15 +33,19 @@ const env = new Env({ display: ':81', cdpPort: 9291 })
 //    launcher card 1. Path: $XDG_DATA_HOME/WireCopy/bookmarks.json. ──
 const dataDir = path.join(env.extraEnv.XDG_DATA_HOME, 'WireCopy')
 mkdirSync(dataDir, { recursive: true })
+// 9 bookmarks = the user's real launcher shape (2026-07-24): with the Reading
+// List that is 10 slots → 3 visible card rows + paging, making the column
+// TALLER than the window — the regime where the masthead was once flex-crushed
+// and the tagline clipped. Card 1 stays the fixture for the Enter-opens leg.
 writeFileSync(path.join(dataDir, 'bookmarks.json'), JSON.stringify({
   version: 1,
   bookmarks: [
     { name: 'FIXTURE HOME', url: FIX_URL },
-    { name: 'SECOND SITE', url: `http://127.0.0.1:${FIX_PORT}/second` },
-    { name: 'THIRD SITE', url: `http://127.0.0.1:${FIX_PORT}/third` }
+    ...['second', 'third', 'fourth', 'fifth', 'sixth', 'seventh', 'eighth', 'ninth']
+      .map(p => ({ name: `${p.toUpperCase()} SITE`, url: `http://127.0.0.1:${FIX_PORT}/${p}` }))
   ]
 }, null, 2))
-const SEEDED_BOOKMARKS = 3
+const SEEDED_BOOKMARKS = 9
 
 await env.up()
 const shell = env.launchShell()
@@ -83,6 +87,20 @@ const MASTHEAD_JS = `(function(){
     eyebrow:eye?eye.textContent.trim():null};
 })()`
 const ZOOM_JS = `document.documentElement.style.zoom`
+// Masthead clip probe (user regression 2026-07-24): when the column overflows
+// the window, the tagline must remain FULLY visible above the URL bar — the
+// stage scrolls; chrome is never crushed into its overflow:hidden.
+const CLIP_JS = `(function(){
+  const m=document.getElementById('masthead');
+  const t=document.getElementById('tagline');
+  const b=document.getElementById('urlbar');
+  const s=document.getElementById('stage');
+  const tr=t.getBoundingClientRect(), br=b.getBoundingClientRect();
+  return {mScroll:m.scrollHeight, mClient:m.clientHeight,
+    tagH:Math.round(tr.height), tagBottom:Math.round(tr.bottom),
+    barTop:Math.round(br.top), stScroll:s.scrollHeight, stClient:s.clientHeight,
+    tagText:t.textContent};
+})()`
 
 let la = null // launcher-pane CDP client
 try {
@@ -134,6 +152,11 @@ try {
     mast && mast.left <= 20 && Math.abs(mast.left - mast.gridLeft) <= 4 &&
     /Launcher/i.test(mast.eyebrow || ''),
     mast && `left=${mast.left} gridLeft=${mast.gridLeft} eyebrow="${mast.eyebrow}"`)
+  const clip0 = await la.eval(CLIP_JS)
+  check('A6e tagline fully visible above the URL bar at launch size (masthead not clipped)',
+    clip0.mScroll <= clip0.mClient + 1 && clip0.tagH >= 15 && clip0.tagBottom <= clip0.barTop &&
+    /All copy/.test(clip0.tagText),
+    JSON.stringify(clip0))
   const cards0 = await la.eval(CARDS_JS)
   const sel0 = cards0[0]
   check('A7 selected card has sel-bg fill rgb(0,95,0)', sel0.selected && sel0.bg === 'rgb(0, 95, 0)',
@@ -244,6 +267,22 @@ try {
   env.key('ctrl+0'); await sleep(700)
   const zoomReset = await la.eval(ZOOM_JS)
   check('F3 Ctrl+0 reset the pane zoom to 1', Math.abs(parseFloat(zoomReset) - 1) < 0.002, `zoom=${zoomReset}`)
+
+  // ── (g) Short window (the user's regression, 2026-07-24): shrink the REAL window so
+  //    the column cannot fit; the tagline must stay fully visible above the URL bar and
+  //    the stage must SCROLL — the masthead must never be flex-crushed into its
+  //    overflow:hidden clip. ──────────────────────────────────────────────────────────
+  const wid = env.activate()
+  env.x('windowsize', wid, '1000', '520')
+  await sleep(1200)
+  const clipG = await la.eval(CLIP_JS)
+  check('G0 short window put the pane in the overflow regime (stage content taller than viewport)',
+    clipG.stScroll > clipG.stClient + 20, `stageScroll=${clipG.stScroll} stageClient=${clipG.stClient}`)
+  check('G1 tagline still FULLY visible above the URL bar — masthead not crushed/clipped',
+    clipG.mScroll <= clipG.mClient + 1 && clipG.tagH >= 15 && clipG.tagBottom <= clipG.barTop &&
+    /All copy/.test(clipG.tagText),
+    JSON.stringify(clipG))
+  env.shot('lhtml-g-short-window')
 
   // No main-process crash while driving all of the above.
   const crashed = /Uncaught|TypeError|ReferenceError|A JavaScript error occurred in the main process/.test(shell.stderrText)

@@ -32,6 +32,12 @@ html, body {
   height: 100%;
   display: flex;
   justify-content: flex-start;
+  /* flex-start (NOT the default stretch): stretch pins the column to the stage
+     height, so when many bookmarks make the content taller than the window the
+     flex children get CRUSHED — the masthead squeezed and its overflow:hidden
+     clipped the tagline behind the URL bar (user regression 2026-07-24). With
+     flex-start the column takes its content height and the stage scrolls. */
+  align-items: flex-start;
   overflow: auto;
 }
 #column {
@@ -56,6 +62,7 @@ html, body {
 #masthead {
   position: relative;
   overflow: hidden;
+  flex-shrink: 0;                    /* chrome rows must never be crushed */
   margin: 0 12px;
   padding-bottom: 8px;
   text-align: left;
@@ -120,6 +127,7 @@ html, body {
 #urlbar-wrap {
   display: flex;
   justify-content: flex-start;
+  flex-shrink: 0;
   margin: 30px 12px 0;
 }
 #urlbar {
@@ -142,6 +150,7 @@ html, body {
 
 /* Centred setup-hint row between the URL bar and the grid. */
 #setuphint {
+  flex-shrink: 0;
   margin: 18px 0 0;
   text-align: center;
   font-size: 16px;
@@ -150,6 +159,7 @@ html, body {
 
 /* Quiet paging markers around the grid window. */
 .paging {
+  flex-shrink: 0;
   text-align: center;
   font-size: 15px;
   color: var(--tr-muted);
@@ -244,6 +254,7 @@ html, body {
    of the count. */
 #footer {
   margin: 22px 12px 0;
+  flex-shrink: 0;
   padding-top: 10px;
   display: flex;
   align-items: baseline;
