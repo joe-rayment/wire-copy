@@ -408,11 +408,15 @@ public class TerminalInputHandlerTests
         var testKey = new ConsoleKeyInfo('z', ConsoleKey.Z, false, false, false);
         channel.Writer.TryWrite(testKey);
 
-        // Wait briefly for the continuation to fire
-        await Task.Delay(50);
-
-        // The abandoned task consumed 'z', but the continuation pushed it back
+        // The continuation runs on the thread pool — poll until the key is
+        // pushed back instead of racing it with a fixed delay.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         var hasKey = channel.Reader.TryRead(out var result);
+        while (!hasKey && DateTime.UtcNow < deadline)
+        {
+            await Task.Delay(25);
+            hasKey = channel.Reader.TryRead(out result);
+        }
         hasKey.Should().BeTrue("continuation should push consumed key back into channel");
         result.KeyChar.Should().Be('z');
     }

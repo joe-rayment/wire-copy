@@ -379,11 +379,16 @@ public class DiskCacheStoreTests : IDisposable
 
         cache.Put("https://example.com/new-page", result);
 
-        // Give the background write a moment to complete
-        Thread.Sleep(200);
-
-        // Verify it's on disk
+        // The disk write is queued to the thread pool — poll until it lands
+        // instead of racing it with a fixed sleep.
+        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
         var loaded = _store.LoadAll();
+        while (loaded.Count == 0 && DateTime.UtcNow < deadline)
+        {
+            Thread.Sleep(25);
+            loaded = _store.LoadAll();
+        }
+
         loaded.Should().HaveCount(1);
         loaded[0].Result.Html.Should().Be("<html>new content</html>");
     }
