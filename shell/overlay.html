@@ -8,6 +8,11 @@
 <html>
 <head>
 <meta charset="utf-8">
+<!-- The drawer handle's proxy is cut from the SAME stylesheet the resting handle pane
+     uses (workspace-2dmuu), so the bar the user watches travel is materially identical
+     to the one it hands off to when this stage drops. -->
+<link rel="stylesheet" href="launcher/tokens.css">
+<link rel="stylesheet" href="handle/handle.css">
 <style>
   html, body { margin: 0; height: 100%; background: #000000; overflow: hidden; }
   /* Backdrop pair: the reader snapshot behind the sliding card. #backA is the frame
@@ -26,6 +31,19 @@
     overflow: hidden; display: none;
   }
   #card img { display: block; }
+  /* Drawer-handle proxy: a sibling AFTER #card so it rides ON the sliding page (its
+     destination is the card's top edge) instead of being clipped by #card's overflow.
+     Moved only by transform — compositor-only, no layout per frame. The clip window is
+     the SAME 8px the resting pane's strip imposes, so the bloom cannot change size when
+     this stage drops off the real handle. cursor:pointer + the click listener below make
+     the bar the one live control on an otherwise inert overlay: mid-flight the mouse can
+     reverse the drawer exactly as pressing | already can. */
+  #handleClip {
+    left: 0; top: 0; display: none;
+    transform-origin: center; will-change: transform;
+    cursor: pointer;
+  }
+  #handle { left: 50%; top: 50%; transform: translate(-50%, -50%); }
 </style>
 </head>
 <body>
@@ -33,20 +51,40 @@
   <img id="backB" alt="">
   <div id="scrim"></div>
   <div id="card"><img id="cardImg" alt=""></div>
+  <div id="handleClip" class="wc-bar-clip"><div id="handle" class="wc-bar"></div></div>
 <script>
   const backA = document.getElementById('backA')
   const backB = document.getElementById('backB')
   const card = document.getElementById('card')
   const cardImg = document.getElementById('cardImg')
   const scrim = document.getElementById('scrim')
+  const handle = document.getElementById('handle')
+  const handleClip = document.getElementById('handleClip')
 
-  const anim = { phase: 'idle', gen: 0, slide: null, corner: null, scrimAnim: null, fade: null, x0: 0, x1: 0 }
+  const anim = { phase: 'idle', gen: 0, slide: null, corner: null, scrimAnim: null, fade: null, handleAnim: null, x0: 0, x1: 0 }
+
+  // The CLIP is positioned by the bar's CENTRE: rotating a len×thick box about its own
+  // centre gives a thick×len box centred on the same point, which is what makes the
+  // vertical→horizontal change one object turning rather than two bars crossfading.
+  // The clip is longer than the bar so only the bloom's thin axis is ever cut — the
+  // same window the resting strip imposes.
+  const CLIP_PAD = 40   // long-axis slack: the bloom must never be cut along the bar
+  const CLIP_THICK = 8  // thin-axis window: EXACTLY the resting strip's 8px
+  function barTransform (g, len) {
+    return `translate(${g.cx - (len + CLIP_PAD) / 2}px, ${g.cy - CLIP_THICK / 2}px) rotate(${g.deg}deg)`
+  }
+
+  // The one live control on an inert stage. Everything else on this overlay absorbs the
+  // mouse by design; the bar must not, or it would be a visibly animating control that
+  // ignores clicks for the 340ms it is most obviously there.
+  handleClip.addEventListener('click', e => { e.stopPropagation(); window.wcov.handleClick() })
 
   function cancelAll () {
-    for (const a of [anim.slide, anim.corner, anim.scrimAnim, anim.fade]) { try { a && a.cancel() } catch {} }
-    anim.slide = anim.corner = anim.scrimAnim = anim.fade = null
+    for (const a of [anim.slide, anim.corner, anim.scrimAnim, anim.fade, anim.handleAnim]) { try { a && a.cancel() } catch {} }
+    anim.slide = anim.corner = anim.scrimAnim = anim.fade = anim.handleAnim = null
     anim.phase = 'idle'
     card.style.display = 'none'
+    handleClip.style.display = 'none'
     backA.removeAttribute('src')
     backB.removeAttribute('src')
     backB.style.opacity = '0'
@@ -70,12 +108,23 @@
     card.style.height = p.h + 'px'
     card.style.transform = `translateX(${p.cardX0}px)`
     card.style.display = 'block'
+    // Drawer handle: staged here, but whether to DRAW it is decided at wcov:go from
+    // freshly re-evaluated availability — a transition on the launcher (or before any
+    // page exists) must show no bar at all.
+    handle.style.width = p.barLen + 'px'
+    handle.style.height = p.barThick + 'px'
+    handleClip.style.width = (p.barLen + CLIP_PAD) + 'px'
+    handleClip.style.height = CLIP_THICK + 'px'
+    handleClip.style.transform = barTransform(p.handleFrom, p.barLen)
+    handleClip.style.display = 'none'
     try { await Promise.all([backA.decode(), cardImg.decode()]) } catch {}
     window.wcov.armed(p.gen)
   })
 
   window.wcov.onGo(p => {
     if (p.gen !== anim.gen) return
+    anim.handleOn = !!p.handleOn
+    handleClip.style.display = anim.handleOn ? 'block' : 'none'
     const { durMs, easing, scrimFrom, scrimTo, cornerFrom, cornerTo } = anim.params
     anim.phase = 'slide'
     anim.slide = card.animate(
@@ -91,6 +140,24 @@
     anim.scrimAnim = scrim.animate(
       [{ opacity: scrimFrom }, { opacity: scrimTo }],
       { duration: durMs, easing: 'linear', fill: 'forwards' })
+    // The handle travels on the card's own easing, but TIPS OVER late: at 62% of the
+    // slide it has covered ~72% of the distance and only ~32% of the rotation, so the
+    // drawer comes out first and the pull swings down onto it — a drawer being opened,
+    // not a bar being tweened. The mid keyframe is what makes it read as physical.
+    const { handleFrom, handleTo, barLen } = anim.params
+    if (anim.handleOn) {
+      const lerp = (a, b, t) => a + ((b - a) * t)
+      const mid = {
+        cx: lerp(handleFrom.cx, handleTo.cx, 0.72),
+        cy: lerp(handleFrom.cy, handleTo.cy, 0.72),
+        deg: lerp(handleFrom.deg, handleTo.deg, 0.32)
+      }
+      anim.handleAnim = handleClip.animate([
+        { transform: barTransform(handleFrom, barLen), offset: 0 },
+        { transform: barTransform(mid, barLen), offset: 0.62 },
+        { transform: barTransform(handleTo, barLen), offset: 1 }
+      ], { duration: durMs, easing, fill: 'forwards' })
+    }
     anim.slide.onfinish = () => { window.wcov.done(anim.gen, 'slide') }
   })
 
@@ -110,7 +177,10 @@
   window.wcov.onReverse(p => {
     if (p.gen !== anim.gen || !anim.slide) return
     anim.phase = 'slide'
-    for (const a of [anim.slide, anim.corner, anim.scrimAnim]) { try { a && a.reverse() } catch {} }
+    // The handle MUST be in this array. Every animation here carries fill:'forwards',
+    // so one left out would run on to the wrong end and stay pinned there — the bar
+    // would sit horizontal over a drawer that had just shut.
+    for (const a of [anim.slide, anim.corner, anim.scrimAnim, anim.handleAnim]) { try { a && a.reverse() } catch {} }
   })
 
   window.wcov.onAbort(() => cancelAll())
@@ -127,7 +197,20 @@
     const progress = anim.slide && anim.slide.effect
       ? (anim.slide.currentTime || 0) / (anim.slide.effect.getTiming().duration || 1)
       : null
-    return { phase: anim.phase, gen: anim.gen, cardX, progress }
+    // Live handle geometry, read back off the composited matrix — a gate asserts where
+    // the bar actually IS and which way it runs, not that an animation object exists.
+    let hnd = null
+    if (handleClip.style.display !== 'none') {
+      const r = handle.getBoundingClientRect()
+      hnd = {
+        cx: Math.round(r.left + (r.width / 2)),
+        cy: Math.round(r.top + (r.height / 2)),
+        w: Math.round(r.width),
+        h: Math.round(r.height),
+        orient: r.width >= r.height ? 'horizontal' : 'vertical'
+      }
+    }
+    return { phase: anim.phase, gen: anim.gen, cardX, progress, handle: hnd }
   }
 </script>
 </body>

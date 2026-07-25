@@ -31,6 +31,17 @@ const ROOT = path.resolve(__dirname, '..')
 const CDP_PORT = process.env.WIRECOPY_SHELL_CDP_PORT || '9223'
 const PAGE_FRACTION = 0.42 // page pane is a feature, not the focus — never dominant
 
+// Drawer handle (workspace-2dmuu) — the browser sidecar's pull. Shut, it is a strip on
+// the dock edge exactly as wide as term.html's 8px right padding, so it occludes no
+// glyph column. Open, it is a small pill FLOATING over the top of the live page: the
+// page keeps its full height and the bar sits on it rather than pushing it down. The
+// painted stroke is BAR_LEN × BAR_THICK in both states — the same object, re-oriented.
+const HANDLE_W = 8
+const HANDLE_H = 16
+const HANDLE_PILL_W = 160
+const BAR_LEN = 96
+const BAR_THICK = 4
+
 // Packaged app (workspace-mwer): the self-contained .NET API ships under resources/api
 // (its own apphost — no dotnet on the machine needed), and writable state (logs, the
 // TUI's working dir) moves to userData; the repo layout only exists in dev.
@@ -80,6 +91,10 @@ const state = {
   launcherMsg: null,  // last launcherState params from the TUI (visibility + opaque state), forwarded verbatim
   linkView: null,     // display-only link-tree pane (workspace-vingi) — same doctrine, tracks the terminal region
   linkTreeMsg: null,  // last linkTreeState params from the TUI, forwarded verbatim
+  handleView: null,   // drawer handle (workspace-2dmuu) — the sidecar's pull; clicks become a '|' byte
+  handleShown: false,
+  handleReady: false, // its page has painted — never show an empty strip
+  handleOrient: 'vertical',
   overlayView: null,  // transition overlay (workspace-tj1z) — inert, shown only mid-transition
   overlayShown: false,
   popupView: null,    // SSO/auth popup pane (workspace-y0bi) — at most one, over the page pane
@@ -201,6 +216,67 @@ function place () {
   // window: with the browser sidecar docked it keeps the left split ("Sidecar out"
   // case of Link Tree.dc.html), full width otherwise.
   if (state.linkView) state.linkView.setBounds(termView.getBounds())
+  placeHandle(w, h, pageW)
+  // Re-evaluated on every snap, so the flag the overlay reads at arm time is fresh:
+  // availability can change asynchronously (a navigation completing, the launcher
+  // coming up) in the middle of a transition.
+  applyHandleVisibility()
+}
+
+// The handle's RESTING geometry (workspace-2dmuu). Everything that can end a
+// transition — the capture-failure snap, the overlay-never-armed bail, a window resize
+// mid-flight, the 1200ms dropCap, WIRECOPY_SHELL_NO_ANIM=1 — routes through place(),
+// so computing the handle here (and only here) means it is already correct in its final
+// orientation the instant the overlay stops covering the window. The REAL view never
+// animates, exactly like every other view (workspace-tj1z); the overlay plays a proxy.
+function placeHandle (w, h, pageW) {
+  const v = state.handleView
+  if (!v) return
+  const orient = state.revealed ? 'horizontal' : 'vertical'
+  if (state.revealed) {
+    // A pill centred on the page pane's top edge, floating OVER the page — pageView
+    // keeps its full height, so the live page is never resized by the drawer's frame.
+    v.setBounds({
+      x: (w - pageW) + Math.round((pageW - HANDLE_PILL_W) / 2),
+      y: 0,
+      width: HANDLE_PILL_W,
+      height: HANDLE_H
+    })
+  } else {
+    // Full-height strip on the dock edge: the pointer only has to find the 8px column,
+    // and the painted stroke is a centred BAR_LEN segment inside it.
+    v.setBounds({ x: w - HANDLE_W, y: 0, width: HANDLE_W, height: h })
+  }
+  if (orient !== state.handleOrient) {
+    state.handleOrient = orient
+    if (!v.webContents.isDestroyed()) v.webContents.send('wch:state', { orient })
+  }
+}
+
+// The handle shows only when pulling the drawer would actually reveal something, and
+// never over the launcher screen. Two independent reasons for the launcher rule:
+// the drawer has no page to show there, and '|' is not bound in launcher mode — with
+// the URL bar selected the TUI would type it INTO the URL input.
+function lensHasPage () {
+  const wc = state.pageView && state.pageView.webContents
+  if (!wc || wc.isDestroyed()) return false
+  const url = wc.getURL() || ''
+  return !!url && !url.startsWith('about:')
+}
+
+// ONE predicate for "the pull is live", used by both the visibility rule and the click
+// guard. Two expressions that only mostly agree would eventually show a lit, hovering
+// control that silently does nothing.
+function handleActionable () {
+  return state.handleReady && lensHasPage() && !(state.launcherMsg && state.launcherMsg.visible)
+}
+
+function applyHandleVisibility () {
+  const v = state.handleView
+  if (!v || v.webContents.isDestroyed()) return
+  const show = handleActionable()
+  v.setVisible(show)
+  state.handleShown = show
 }
 
 function layout () {
@@ -241,6 +317,7 @@ function overlayWc () {
   const v = state.overlayView
   return v && !v.webContents.isDestroyed() ? v.webContents : null
 }
+
 
 function showOverlay () {
   // Re-add on EVERY show: tops the z-order above a possible SSO popup (same pattern
@@ -342,7 +419,22 @@ async function beginTransition (show) {
     cornerFrom: show ? 8 : 0,
     cornerTo: show ? 0 : 8,
     scrimFrom: show ? 0 : 0.10,
-    scrimTo: show ? 0.10 : 0
+    scrimTo: show ? 0.10 : 0,
+    // Drawer handle (workspace-2dmuu). The REAL handle view is already snapped to its
+    // destination and invisible under this opaque stage; what the user sees travel and
+    // tip over is the overlay's proxy of the same bar (same handle.css). Centres, not
+    // rects: rotating a BAR_LEN×BAR_THICK box about its centre yields the other
+    // orientation about the same point, so this is one object turning, not a crossfade.
+    // Whether to DRAW it is decided later, at wcov:go — availability is re-evaluated on
+    // every snap and this payload is built before the snap happens.
+    handleFrom: show
+      ? { cx: w - (HANDLE_W / 2), cy: h / 2, deg: 90 }
+      : { cx: dockedX + (pageW / 2), cy: HANDLE_H / 2, deg: 0 },
+    handleTo: show
+      ? { cx: dockedX + (pageW / 2), cy: HANDLE_H / 2, deg: 0 }
+      : { cx: w - (HANDLE_W / 2), cy: h / 2, deg: 90 },
+    barLen: BAR_LEN,
+    barThick: BAR_THICK
   })
   t.armedTimer = setTimeout(() => {
     // Overlay never armed (wedged renderer): bail to an instant snap.
@@ -360,7 +452,9 @@ function onOverlayArmed (t) {
   t.phase = 'slide'
   // (4) Card slide + scrim run in the overlay's compositor.
   const wc = overlayWc()
-  if (wc) wc.send('wcov:go', { gen: t.gen })
+  // handleOn is read HERE, after place() has re-evaluated availability, so the proxy
+  // can never animate a bar the resting pane is about to hide (or skip one it shows).
+  if (wc) wc.send('wcov:go', { gen: t.gen, handleOn: !!state.handleShown })
   startSettle(t)
   // Absolute backstop: the overlay must never be left covering the window.
   t.dropCap = setTimeout(() => { if (trans === t) finishDrop(t) }, 1200)
@@ -523,6 +617,21 @@ function applyLinkTreeVisibility () {
   const show = !!(msg && msg.visible && state.mode === 'reader')
   v.setVisible(show)
   state.linkTreeShown = show
+}
+
+// The click → the TUI. The shell NEVER flips the drawer itself: .NET owns the dock
+// state (_userWantsDock / _isDocked) and reconciles it on every navigation, so a
+// shell-local setPaneVisible would make the next '|' a silent no-op, leave the status
+// bar and the link-tree pane's "⇉ docked" badge lying, stop the spotlight following the
+// selection, and let a background preload slam the drawer shut again. Writing the byte
+// straight to the pty is byte-identical to a real keystroke at every layer above it —
+// and unlike forwardToTerm it needs no renderer and wins no focus race.
+function requestDockToggle () {
+  // Re-check the SAME predicate the visibility rule uses — a click that raced a state
+  // change must not reach the pty. '|' is unbound in launcher mode and would be typed
+  // into the URL bar instead of toggling anything.
+  if (!state.ptyProc || !handleActionable()) return
+  state.ptyProc.write('|')
 }
 
 function setMode (m) {
@@ -800,12 +909,28 @@ app.whenReady().then(() => {
   })
   state.linkView.setVisible(false)
 
+  // Drawer handle (workspace-2dmuu): the sidecar's pull. Added ABOVE the launcher and
+  // link-tree panes (so the bar is never buried by them) and BELOW the overlay — which
+  // re-adds itself topmost on every show, and so hides the real handle for the whole
+  // transition for free, exactly when the overlay's own proxy is animating in its
+  // place. SSO popups also re-add topmost, so they cover it too. That single placement
+  // is the entire z-order story; nothing re-orders the handle anywhere.
+  state.handleView = new WebContentsView({
+    webPreferences: {
+      preload: path.join(__dirname, 'handle', 'handle-preload.js'),
+      backgroundThrottling: false
+    }
+  })
+  state.handleView.setVisible(false)
+
   state.win.contentView.addChildView(state.pageView)
   state.win.contentView.addChildView(state.termView)
   state.win.contentView.addChildView(state.linkView)
   state.win.contentView.addChildView(state.launcherView)
+  state.win.contentView.addChildView(state.handleView)
   state.win.contentView.addChildView(state.overlayView)
   layout()
+  applyHandleVisibility() // false at boot: the lens is still about:blank#wc-lens
   state.win.on('resize', () => { layout(); rememberBounds() })
   state.win.on('move', rememberBounds)
   state.win.on('focus', () => { if (state.mode === 'reader') focusTerm() })
@@ -838,6 +963,37 @@ app.whenReady().then(() => {
     forwardToTerm(input)
   })
   state.linkView.webContents.on('focus', () => setTimeout(() => focusTerm(), 30))
+  // Drawer handle. Display-only in the same sense as the launcher and link-tree panes —
+  // no attachFocusDoctrine, no 'input-event' handler, so a click on the bar can never
+  // flip the shell into browser mode (that rule lives only on pageView).
+  //
+  // But NOT the same handlers: launcherView and linkView can only ever be visible in
+  // reader mode, so their unguarded bounce is safe. The handle is the first view that
+  // stays live in BROWSER mode — where the page rightly owns the keyboard — so both
+  // handlers carry pageView's reader-mode guard instead. Unguarded, a stray focus on
+  // the bar would yank the keyboard off the page the user is reading, and every key
+  // landing here would be re-sent to a terminal that is not listening.
+  state.handleView.webContents.on('before-input-event', (e, input) => {
+    if (state.mode !== 'reader') return
+    e.preventDefault()
+    forwardToTerm(input)
+  })
+  state.handleView.webContents.on('focus', () => setTimeout(() => {
+    if (state.mode === 'reader') focusTerm()
+  }, 30))
+  // Re-assert the orientation whenever the pane (re)loads: placeHandle only pushes on a
+  // CHANGE, so a load that lands after the last change would otherwise paint the stale
+  // resting state until the next toggle.
+  state.handleView.webContents.on('did-finish-load', () => {
+    if (state.handleView.webContents.isDestroyed()) return
+    state.handleView.webContents.send('wch:state', { orient: state.handleOrient })
+    state.handleReady = true
+    applyHandleVisibility()
+  })
+  // The drawer only exists once there is a page to pull out. did-navigate fires on the
+  // lens's own navigations, which is exactly when availability changes.
+  state.pageView.webContents.on('did-navigate', () => applyHandleVisibility())
+  state.pageView.webContents.on('did-navigate-in-page', () => applyHandleVisibility())
   // Type-scale zoom is a shell concern: intercept Cmd/Ctrl +/-/0 on the terminal pane
   // before xterm sees them (the TUI binds no such chords — Ctrl+D/U/P/L only).
   state.termView.webContents.on('before-input-event', (e, input) => {
@@ -877,6 +1033,7 @@ app.whenReady().then(() => {
       launcherState: p => {
         state.launcherMsg = p
         applyLauncherVisibility()
+        applyHandleVisibility() // the drawer's pull hides while the launcher is up
         if (state.launcherView && !state.launcherView.webContents.isDestroyed()) {
           state.launcherView.webContents.send('wc:launcher', p)
         }
@@ -933,6 +1090,27 @@ app.whenReady().then(() => {
     state.linkView.webContents.loadURL(
       `http://127.0.0.1:${termSrv.address().port}/linktree/linktree.html?font=${termFontSize}`)
       .catch(err => console.error('[shell] link-tree pane load failed: ' + err))
+    // Drawer handle (workspace-2dmuu): chrome, not content — it does NOT ride the
+    // ?font= zoom contract. A window's frame does not grow when you enlarge the type
+    // inside it, and the bar has to keep its exact relationship to the 8px dock strip.
+    state.handleView.webContents.loadURL(
+      `http://127.0.0.1:${termSrv.address().port}/handle/handle.html?orient=${state.handleOrient}`)
+      .catch(err => console.error('[shell] handle pane load failed: ' + err))
+  })
+
+  // Drawer-handle click (workspace-2dmuu). Sender-guarded like the overlay acks. This
+  // is the ONLY renderer→main message the handle can send, and all it does is put a
+  // '|' on the TUI's stdin — the shell never decides the drawer's state.
+  ipcMain.on('wch:toggle', e => {
+    if (!state.handleView || e.sender !== state.handleView.webContents) return
+    requestDockToggle()
+  })
+  // The same click, landing on the overlay's proxy while the stage covers the window.
+  // Without it the bar would be a visibly animating control that ignores the mouse for
+  // the ~340ms it is most obviously there, while | reverses cleanly the whole time.
+  ipcMain.on('wcov:handleClick', e => {
+    if (!state.overlayView || e.sender !== state.overlayView.webContents) return
+    requestDockToggle()
   })
 
   // Overlay transition acks (workspace-tj1z.3/.4).
@@ -1005,12 +1183,23 @@ app.whenReady().then(() => {
     launcherBounds: state.launcherView ? state.launcherView.getBounds() : null,
     linkTreeShown: !!state.linkTreeShown,
     linkTreeBounds: state.linkView ? state.linkView.getBounds() : null,
+    handleShown: !!state.handleShown,
+    handleOrient: state.handleOrient,
+    handleBounds: state.handleView ? state.handleView.getBounds() : null,
+    handleFocused: state.handleView ? state.handleView.webContents.isFocused() : false,
     contentSize: state.win.getContentSize(),
+    // Screen coordinates of the content origin — a gate needs these to aim a REAL
+    // xdotool click at a view, since xdotool works in root coordinates and every
+    // bounds value here is content-relative.
+    contentBounds: state.win.getContentBounds(),
     termBounds: state.termView.getBounds(),
     pageBounds: state.pageView.getBounds(),
     termFocused: state.termView.webContents.isFocused(),
     pageFocused: state.pageView.webContents.isFocused()
   }))
+  ipcMain.handle('wcdev:lensEval', async (_e, expr) => {
+    try { return await state.pageView.webContents.executeJavaScript(String(expr), true) } catch (err) { return String(err) }
+  })
   ipcMain.handle('wcdev:nav', async (_e, url) => {
     try { await state.pageView.webContents.loadURL(url) } catch (err) { return String(err) }
     return 'ok'

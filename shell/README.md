@@ -46,6 +46,32 @@ Designs are imported from claude.ai design project `153674f7`; colours live in
 | `launcher/launcher.html` | `Wire Copy Launcher.dc.html` + `Launcher Responsive.dc.html` |
 | `linktree/linktree.html` | `Link Tree.dc.html` (workspace-h2caq — replaced the denser `Link Tree Responsive.dc.html`) |
 
+### Interactive chrome (`handle/`)
+
+`handle/` is the ONE pane that sends. It draws the browser sidecar's pull — a vertical bar on
+the dock edge while the drawer is shut, the same bar laid horizontally over the top of the live
+page once it is open — and a click on it raises exactly one message, `wch:toggle`.
+
+It still holds no state and decides nothing. `wch:toggle` becomes `state.ptyProc.write('|')`:
+byte-identical to a real keystroke at every layer above the pty. It must NEVER call
+`setPaneVisible` directly. .NET owns the dock state in a `(_userWantsDock, _isDocked)` pair and
+reconciles it on effectively every navigation (`BrowserSession.MinimizeWindowAsync`,
+`BrowserOrchestrator.EnsureSidecarEngagedAsync`), while `setPaneVisible` early-returns on a
+same-state call — so a shell-local flip makes the next `|` a silent no-op, leaves the status bar
+and this pane's own `⇉ docked` badge lying, stops the spotlight following the selection, and lets
+the next background preload slam the drawer shut again.
+
+Two further rules the handle does not share with its siblings:
+
+- Its focus/key handlers are **mode-guarded**, unlike `launcher/` and `linktree/`. Those two can
+  only ever be visible in reader mode, so their unguarded `focusTerm()` bounce is safe. The
+  handle stays live in browser mode, where the page rightly owns the keyboard.
+- Its bar is drawn twice — here at rest, and as a proxy inside `overlay.html` for the duration of
+  a transition (the opaque stage covers the real one). Both load `handle/handle.css`, and both
+  clip the bar's bloom to the same 8px window, or the hand-off pops when the overlay drops.
+
+The display-only rule still binds `launcher/` and `linktree/` — they render, they never talk back.
+
 **The px-mirror contract — the one thing to get right when restyling.** Each pane's responsive
 `clamp()`s exist twice: once in CSS, once as px arithmetic in C# that converts terminal cells to
 design px (`PaneCellPx` 11.2 / `PaneLinePx` 21.0 in `LinkTreeRenderer`). Change one without the

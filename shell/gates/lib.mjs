@@ -103,8 +103,38 @@ export class Env {
   }
   type (text) { this.x('type', '--delay', '95', text) }
   key (k) { this.x('key', '--delay', '60', k) }
+
+  // --- OS-level MOUSE (screen/root coordinates) ---
+  // Real pointer events, same doctrine as the keys: CDP Input.dispatchMouseEvent would
+  // bypass the window manager's hit-testing and Electron's per-view routing entirely,
+  // and would "pass" for a target no real click can reach. Coordinates are ROOT-window
+  // px — convert from Electron's content-relative bounds with wcdev:state.contentBounds,
+  // which Electron reports in screen coordinates. Must be mousemove + a BARE `click`
+  // (XTEST); `xdotool click --window <wid>` sends XSendEvent, which Chromium discards.
+  mouse (x, y) { this.x('mousemove', '--sync', String(Math.round(x)), String(Math.round(y))) }
+  click (x, y, button = 1) {
+    this.mouse(x, y)
+    this.x('click', '--delay', '60', String(button))
+  }
+  drag (x0, y0, x1, y1, steps = 12) {
+    this.mouse(x0, y0)
+    this.x('mousedown', '1')
+    for (let i = 1; i <= steps; i++) {
+      this.mouse(x0 + ((x1 - x0) * i) / steps, y0 + ((y1 - y0) * i) / steps)
+    }
+    this.x('mouseup', '1')
+  }
+
   shot (name) {
     execFileSync('import', ['-display', this.display, '-window', 'root', path.join(OUT, name + '.png')])
+    console.log(`      shot: gates/out/${name}.png`)
+  }
+
+  // Crop to one window instead of the whole virtual screen — a 2600x1400 root grab is
+  // mostly black desktop, which is unreadable when a human actually looks at it (and
+  // looking at it is the point: see the Verification Doctrine).
+  shotWindow (name, wid) {
+    execFileSync('import', ['-display', this.display, '-window', wid, path.join(OUT, name + '.png')])
     console.log(`      shot: gates/out/${name}.png`)
   }
 }

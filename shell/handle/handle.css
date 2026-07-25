@@ -1,0 +1,81 @@
+/* =============================================================================
+   Wire Copy drawer handle — the browser sidecar's pull.
+   ----------------------------------------------------------------------------
+   ONE bar in two orientations: a vertical rail on the window's dock edge while
+   the drawer is shut, the SAME rail laid horizontally over the top of the live
+   page once it is open. The material is the panes' selection rail verbatim
+   (launcher.css / linktree.css .card-rail) — a 4px phosphor stroke with its 10px
+   bloom — so the handle reads as the same "this edge is live" signal the story
+   cards already use, rather than as a new piece of vocabulary.
+
+   Loaded by BOTH the resting handle pane (handle.html) and the transition overlay
+   (overlay.html, which animates a proxy of the same element through the
+   vertical→horizontal arc). One stylesheet, so the two can never drift apart.
+   ============================================================================= */
+
+/* The bar itself — shared with the overlay's #handle proxy. Square ends and no
+   radius: this is terminal chrome, and the rail it is cut from has neither. */
+.wc-bar {
+  position: absolute;
+  background: var(--tr-green);
+  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
+}
+
+/* The bloom is clipped to a fixed WC_BAR_CLIP window on the bar's THIN axis in EVERY
+   state — resting and mid-flight. Without this the proxy, which lives on a full-window
+   stage, renders the whole 10px bloom while the resting pane's 8px strip amputates it,
+   and the moment the overlay drops the halo visibly shrinks. Geometry checks are blind
+   to that: box-shadow is outside getBoundingClientRect. Clipping both to the same
+   window is what makes the hand-off invisible. The long axis is never clipped — every
+   container leaves ≥ 32px past the bar's ends, more than the bloom's reach. */
+.wc-bar-clip {
+  position: absolute;
+  overflow: hidden;
+}
+
+/* ── Resting pane (handle.html) ───────────────────────────────────────────────
+   The pane is a thin strip; its background is the same pure black as the
+   terminal and the live page's chrome, so only the bar is ever visible. The
+   strip is deliberately larger than the bar in the cross axis — the pointer only
+   has to find the strip, not the 4px stroke. */
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--tr-bg-pure);
+  overflow: hidden;
+  user-select: none;
+  cursor: pointer;
+}
+
+/* Clip window: 8px across the bar, centred in whichever strip the pane occupies. */
+#clip { left: 50%; top: 50%; }
+body[data-orient="vertical"] #clip {
+  width: 8px; height: 100%; transform: translate(-50%, -50%);
+}
+body[data-orient="horizontal"] #clip {
+  width: 100%; height: 8px; transform: translate(-50%, -50%);
+}
+
+#bar {
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+}
+body[data-orient="vertical"] #bar {
+  width: var(--wc-bar-thick, 4px);
+  height: var(--wc-bar-len, 96px);
+}
+body[data-orient="horizontal"] #bar {
+  width: var(--wc-bar-len, 96px);
+  height: var(--wc-bar-thick, 4px);
+}
+
+/* Pointer feedback. The drawer is a physical thing: brightening the bloom on
+   hover and easing it back on press is the whole affordance — no colour change,
+   no motion, nothing that could be mistaken for the drawer already moving. */
+body:hover #bar {
+  box-shadow: 0 0 14px rgba(0, 215, 0, 0.85);
+}
+body:active #bar {
+  box-shadow: 0 0 6px rgba(0, 215, 0, 0.55);
+}

@@ -43,6 +43,13 @@ mkdir -p "$STAGE/app/fonts"
 for f in main.js menu.js preload.js popup-preload.js overlay-preload.js channel.js term.html overlay.html package.json; do
   cp "$HERE/$f" "$STAGE/app/"
 done
+# The HTML panes are whole directories served off the loopback static server. They were
+# missing from BOTH hand-maintained file lists (here and package.json build.files), so a
+# packaged build shipped a launcher and link tree that 404'd — invisible because
+# gate-p7-packaged only checked that the TUI boots (workspace-2dmuu).
+for d in launcher linktree handle; do
+  cp -R "$HERE/$d" "$STAGE/app/"
+done
 cp "$HERE"/fonts/* "$STAGE/app/fonts/"
 
 echo "build-desktop: installing app runtime deps (node-pty, xterm)..."

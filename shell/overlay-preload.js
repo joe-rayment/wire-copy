@@ -10,5 +10,9 @@ contextBridge.exposeInMainWorld('wcov', {
   onReverse: cb => ipcRenderer.on('wcov:reverse', (_e, p) => cb(p)),
   onAbort: cb => ipcRenderer.on('wcov:abort', (_e, p) => cb(p)),
   armed: gen => ipcRenderer.send('wcov:armed', gen),
-  done: (gen, phase) => ipcRenderer.send('wcov:done', { gen, phase })
+  done: (gen, phase) => ipcRenderer.send('wcov:done', { gen, phase }),
+  // The one exception to "inert": the drawer-handle proxy is a live control while the
+  // stage covers the window, so the mouse can reverse a transition mid-flight exactly
+  // as pressing | already can (workspace-2dmuu). Nothing else on the stage can send.
+  handleClick: () => ipcRenderer.send('wcov:handleClick')
 })
