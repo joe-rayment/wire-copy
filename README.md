@@ -244,6 +244,9 @@ src/
 tests/
 └── WireCopy.Tests/           # Unit and integration tests, organized by feature area
 
+shell/                          # Electron single-window desktop shell (see shell/README.md)
+├── launcher/ · linktree/       # Display-only HTML panes projecting pushed TUI state
+└── gates/                      # Headful end-to-end gates (Xvfb + xdotool, never headless)
 scripts/                        # Test runner + live end-to-end gates (tmux-driven)
 docs/                           # Setup, testing, architecture, cookie encryption, design
 ```
