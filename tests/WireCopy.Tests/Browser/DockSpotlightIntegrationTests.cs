@@ -207,6 +207,157 @@ public class DockSpotlightIntegrationTests
 
     [SkippableFact]
     [Trait("Category", "Integration")]
+    public async Task ScrollToAnchor_CentersMatchingParagraph_AndRecentersOnChange()
+    {
+        // The user-visible heart of reader scroll-along: given the source text of the
+        // paragraph the reader is on, the injected script scrolls the LIVE page so that
+        // paragraph is centered — and re-centers when the reader moves. Drives the real
+        // headed browser directly (no Electron shell/dock needed), so it runs wherever a
+        // headed Chromium can launch, and asserts the OUTCOME (element centered), not a log.
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        static string Para(int i) =>
+            $"Paragraph {i:D2} opens with a distinctive sentence about subject {i:D2}, then continues with several more words so it comfortably exceeds the anchor prefix length.";
+
+        using var server = new TinySiteServer();
+        var article = server.UrlFor("article");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        Microsoft.Playwright.IPage page;
+        try
+        {
+            page = await session.GetOrCreatePageAsync();
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await page.GotoAsync(article, new Microsoft.Playwright.PageGotoOptions
+        {
+            WaitUntil = Microsoft.Playwright.WaitUntilState.DOMContentLoaded,
+        });
+
+        // Opens at the top: a deep paragraph is below the fold.
+        var before = await ProbeParagraphAsync(page, "para-30");
+        before.Found.Should().BeTrue();
+        before.InView.Should().BeFalse("para-30 is many screens down; the article opens at the top");
+
+        // Reader on paragraph 30 → the script centers para-30.
+        var r30 = await page.EvaluateAsync<string>(SpotlightScript.ScrollToAnchor, new { text = Para(30) });
+        r30.Should().Be("ok", "the anchor text matches para-30's live block");
+        var after30 = await ProbeParagraphAsync(page, "para-30");
+        _out.WriteLine($"para-30: inView={after30.InView} centerOffsetFrac={after30.CenterOffsetFraction:F3}");
+        after30.InView.Should().BeTrue();
+        after30.CenterOffsetFraction.Should().BeLessThan(0.15, "para-30 lands within 15% of the viewport center");
+
+        // Reader moves back to paragraph 10 → the live page re-centers on para-10 and
+        // para-30 is no longer centered (the state CHANGE where the bug lived).
+        var r10 = await page.EvaluateAsync<string>(SpotlightScript.ScrollToAnchor, new { text = Para(10) });
+        r10.Should().Be("ok");
+        var after10 = await ProbeParagraphAsync(page, "para-10");
+        _out.WriteLine($"para-10: inView={after10.InView} centerOffsetFrac={after10.CenterOffsetFraction:F3}");
+        after10.CenterOffsetFraction.Should().BeLessThan(0.15, "moving back re-centers para-10");
+        (await ProbeParagraphAsync(page, "para-30")).CenterOffsetFraction.Should().BeGreaterThan(0.15,
+            "para-30 is no longer centered after the reader moved back to 10");
+
+        // Guard rails: an unmatched anchor leaves the page put; a too-short anchor is ignored.
+        (await page.EvaluateAsync<string>(SpotlightScript.ScrollToAnchor, new { text = "No such paragraph exists on this page at all." }))
+            .Should().Be("not-found");
+        (await page.EvaluateAsync<string>(SpotlightScript.ScrollToAnchor, new { text = "short" }))
+            .Should().Be("too-short");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
+    public async Task Spotlight_ReaderView_ScrollsAlongToKeepSelectedParagraphCentered()
+    {
+        Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
+            "Headed browser requires an X display — run under xvfb-run.");
+
+        // Mirrors BuildPageArticle's paragraph text exactly so the anchor we send is
+        // the SAME source text the reader would carry for that paragraph.
+        static string Para(int i) =>
+            $"Paragraph {i:D2} opens with a distinctive sentence about subject {i:D2}, then continues with several more words so it comfortably exceeds the anchor prefix length.";
+
+        using var server = new TinySiteServer();
+        var article = server.UrlFor("article");
+
+        var config = Options.Create(new BrowserConfiguration { Headless = false, Sidecar = false });
+        var cookieManager = Substitute.For<ICookieManager>();
+        cookieManager.LoadCookiesAsync().Returns(Array.Empty<StoredCookie>());
+
+        using var session = new BrowserSession(config, NullLogger<BrowserSession>.Instance, cookieManager);
+
+        try
+        {
+            await session.GetOrCreatePageAsync();
+        }
+        catch (Exception ex)
+        {
+            Skip.If(true, $"Headed Chromium could not launch here: {ex.Message}");
+            return;
+        }
+
+        await using var spotlight = new DockSpotlight(session, NullLogger<DockSpotlight>.Instance);
+        var dockState = await session.ToggleWindowDockAsync();
+        Skip.If(dockState is null,
+            "Docking needs the Electron shell channel (NullShellChannel here can't dock) — run in the shell env.");
+        dockState.Should().Be(BrowserWindowState.Docked);
+        var lens = await session.GetLensPageAsync();
+        lens.Should().NotBeNull();
+
+        // Reader view opens the article at the top (follow-only, no anchor yet).
+        spotlight.RequestSync(new SpotlightTarget(article, article, string.Empty, FollowPageOnly: true));
+        await WaitUntilAsync(async () =>
+            lens!.Url.StartsWith(article, StringComparison.Ordinal)
+            && (await ProbeParagraphAsync(lens, "para-01")).Found);
+
+        // A paragraph deep in the article starts BELOW the fold — proof the page is
+        // at the top and any later centering is a real scroll, not a coincidence.
+        var deepBefore = await ProbeParagraphAsync(lens!, "para-30");
+        deepBefore.Found.Should().BeTrue();
+        deepBefore.InView.Should().BeFalse("para-30 is many screens down; the article opens at the top");
+
+        // The reader's cursor is now on paragraph 30 → the follow must scroll the live
+        // page so para-30 is CENTERED (the outcome the user sees; not a log or a flag).
+        spotlight.RequestSync(new SpotlightTarget(article, article, string.Empty, FollowPageOnly: true, AnchorText: Para(30)));
+        (bool Found, bool InView, double CenterOffsetFraction) deep = default;
+        await WaitUntilAsync(async () =>
+        {
+            deep = await ProbeParagraphAsync(lens!, "para-30");
+            return deep.InView && deep.CenterOffsetFraction < 0.15;
+        });
+        _out.WriteLine($"para-30 after follow: inView={deep.InView} centerOffsetFrac={deep.CenterOffsetFraction:F3}");
+        deep.InView.Should().BeTrue("the live page must scroll para-30 into view");
+        deep.CenterOffsetFraction.Should().BeLessThan(0.15,
+            "para-30's center must land within 15% of the viewport center — i.e. centered");
+
+        // Move the reader BACK to an earlier paragraph: the state CHANGE is where the
+        // bug lived (the panel stayed put). The live page must re-scroll so para-10 is
+        // now centered and para-30 is no longer centered.
+        spotlight.RequestSync(new SpotlightTarget(article, article, string.Empty, FollowPageOnly: true, AnchorText: Para(10)));
+        (bool Found, bool InView, double CenterOffsetFraction) early = default;
+        await WaitUntilAsync(async () =>
+        {
+            early = await ProbeParagraphAsync(lens!, "para-10");
+            return early.InView && early.CenterOffsetFraction < 0.15;
+        });
+        _out.WriteLine($"para-10 after move-back: inView={early.InView} centerOffsetFrac={early.CenterOffsetFraction:F3}");
+        early.CenterOffsetFraction.Should().BeLessThan(0.15, "moving the reader back re-centers para-10");
+        (await ProbeParagraphAsync(lens!, "para-30")).CenterOffsetFraction.Should().BeGreaterThan(0.15,
+            "para-30 is no longer the centered paragraph after the reader moved back to 10");
+    }
+
+    [SkippableFact]
+    [Trait("Category", "Integration")]
     public async Task UserDrivenLensNavigation_IsNeverYankedBack_AndOffersAdoption()
     {
         Skip.If(string.IsNullOrEmpty(Environment.GetEnvironmentVariable("DISPLAY")),
@@ -464,6 +615,33 @@ public class DockSpotlightIntegrationTests
             "() => document.querySelectorAll('.__wirecopy-tuner-box').length")).Should().Be(0);
     }
 
+    /// <summary>
+    /// Reads how the paragraph with id=<paramref name="paraId"/> sits in the live
+    /// viewport: whether any part of it is visible, and how far its vertical center
+    /// is from the viewport's vertical center (as a fraction of viewport height, so
+    /// the assertion is resolution-independent). 0.0 = perfectly centered.
+    /// </summary>
+    private static async Task<(bool Found, bool InView, double CenterOffsetFraction)> ProbeParagraphAsync(
+        Microsoft.Playwright.IPage page, string paraId)
+    {
+        var raw = await page.EvaluateAsync<double[]>(
+            """
+            (id) => {
+                const el = document.getElementById(id);
+                if (!el) return [0, 0, 999];
+                const r = el.getBoundingClientRect();
+                const vh = window.innerHeight;
+                const inView = r.bottom > 0 && r.top < vh;
+                const elCenter = r.top + r.height / 2;
+                const offset = Math.abs(elCenter - vh / 2) / vh;
+                return [1, inView ? 1 : 0, offset];
+            }
+            """,
+            paraId);
+
+        return (raw[0] == 1, raw[1] == 1, raw[2]);
+    }
+
     private static async Task<SpotlightProbe> WaitForSpotlightAsync(Microsoft.Playwright.IPage page, string storySlug)
     {
         SpotlightProbe probe = default;
@@ -691,6 +869,29 @@ public class DockSpotlightIntegrationTests
             return sb.ToString();
         }
 
+        /// <summary>
+        /// Reader scroll-along fixture: a single article whose body is 40 tall
+        /// paragraphs, each with a distinctive leading sentence (so the content
+        /// anchor's 40-char prefix resolves to exactly one paragraph) and a large
+        /// bottom margin (so each sits on its own screen — a paragraph far down
+        /// starts below the fold). Each paragraph carries id="para-NN" so the probe
+        /// can measure whether the follow scrolled it to the viewport center.
+        /// </summary>
+        private static string BuildPageArticle()
+        {
+            var sb = new StringBuilder("<!DOCTYPE html><html><head><title>Article</title>");
+            sb.Append("<style>body{margin:0;font-size:20px}p{margin:0 0 500px 0}</style></head><body>");
+            sb.Append("<h1>The Long Read</h1>");
+            for (var i = 1; i <= 40; i++)
+            {
+                sb.Append(
+                    $"<p id=\"para-{i:D2}\">Paragraph {i:D2} opens with a distinctive sentence about subject {i:D2}, then continues with several more words so it comfortably exceeds the anchor prefix length.</p>");
+            }
+
+            sb.Append("</body></html>");
+            return sb.ToString();
+        }
+
         private static string BuildPageB()
         {
             var sb = new StringBuilder("<!DOCTYPE html><html><head><title>B</title></head><body>");
@@ -719,7 +920,8 @@ public class DockSpotlightIntegrationTests
                 }
 
                 var path = ctx.Request.Url?.AbsolutePath ?? "/";
-                var html = path.StartsWith("/b", StringComparison.Ordinal) ? BuildPageB()
+                var html = path.StartsWith("/article", StringComparison.Ordinal) ? BuildPageArticle()
+                    : path.StartsWith("/b", StringComparison.Ordinal) ? BuildPageB()
                     : path.StartsWith("/c", StringComparison.Ordinal) ? BuildPageC()
                     : path.StartsWith("/d", StringComparison.Ordinal) ? BuildPageD()
                     : BuildPageA();

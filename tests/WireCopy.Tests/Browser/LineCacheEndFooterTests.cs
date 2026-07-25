@@ -115,6 +115,45 @@ public class LineCacheEndFooterTests
         _sut.ContentLineCount.Should().Be(0);
     }
 
+    // ---- Reader scroll-along: GetAnchorTextForLine maps a reader line to its
+    //      source paragraph text so the docked live page can scroll to match. ----
+
+    [Fact]
+    public void GetAnchorTextForLine_ReturnsSourceTextOfParagraphAtLine()
+    {
+        var p1 = "First paragraph with several words to fill more than one wrapped line here.";
+        var p2 = "Second paragraph that is also reasonably long so it wraps across lines too.";
+        var p3 = "Third and final paragraph of the article body content.";
+        NavigateToArticle(p1, p2, p3);
+        _sut.EnsureLineCache(_options);
+
+        var span2 = _sut.ParagraphSpans![1];
+        var midOfSecond = (span2.StartLine + span2.EndLine) / 2;
+
+        _sut.GetAnchorTextForLine(midOfSecond).Should().Be(p2,
+            "a line inside the second paragraph anchors to the second paragraph's source text");
+        _sut.GetAnchorTextForLine(_sut.ParagraphSpans![0].StartLine).Should().Be(p1);
+        _sut.GetAnchorTextForLine(_sut.ParagraphSpans![2].EndLine).Should().Be(p3);
+    }
+
+    [Fact]
+    public void GetAnchorTextForLine_HeadlineLine_AnchorsToFirstParagraph()
+    {
+        var p1 = "The opening paragraph of the article that follows the headline block.";
+        NavigateToArticle(p1, "A later paragraph.");
+        _sut.EnsureLineCache(_options);
+
+        // Line 0 is in the headline block (above the first paragraph span); it anchors
+        // DOWN to the first paragraph rather than returning null.
+        _sut.GetAnchorTextForLine(0).Should().Be(p1);
+    }
+
+    [Fact]
+    public void GetAnchorTextForLine_NoCache_ReturnsNull()
+    {
+        _sut.GetAnchorTextForLine(0).Should().BeNull("no article loaded → no anchor to follow");
+    }
+
     [Fact]
     public void EnsureLineCache_Rewrap_KeepsFooterAtNewWidth()
     {

@@ -144,7 +144,7 @@ public class RenderPerfBenchmark
         ReadableContent content, int maxWidth, ThemePalette palette)
     {
         var headline = LineCacheManager.BuildHeadlineLines(content, maxWidth, palette, "https://news.example.com/article");
-        var (contentLines, rawSpans) = LineCacheManager.WrapAllContentWithSpans(content, maxWidth);
+        var (contentLines, rawSpans, _) = LineCacheManager.WrapAllContentWithSpans(content, maxWidth);
         var headlineCount = headline.Count;
         var spans = new List<LineCacheManager.ParagraphSpan>(rawSpans.Count);
         foreach (var s in rawSpans)

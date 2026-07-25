@@ -96,6 +96,35 @@ public class DockSpotlightTests
     }
 
     [Fact]
+    public void ResolveTarget_ReaderView_CarriesAnchorTextForScrollAlong()
+    {
+        // Reader scroll-along: the anchor text (the paragraph the cursor is on) rides on
+        // the follow-only target so the live page can scroll to keep it centered.
+        var page = CreatePage("https://news.example.com/article");
+
+        var target = DockSpotlight.ResolveTarget(
+            ViewMode.Readable, page, page.LinkTree, readerAnchorText: "The quick brown fox jumped over.");
+
+        target.Should().NotBeNull();
+        target!.Value.FollowPageOnly.Should().BeTrue();
+        target.Value.AnchorText.Should().Be("The quick brown fox jumped over.");
+    }
+
+    [Fact]
+    public void ResolveTarget_ReaderView_MovingToNewParagraph_ChangesTargetIdentity()
+    {
+        // The anchor is part of the record's identity, so moving to a new paragraph
+        // yields a DIFFERENT target — otherwise RequestSync would dedupe the follow and
+        // the live page would never re-scroll (the reported "stays at the top" bug).
+        var page = CreatePage("https://news.example.com/article");
+
+        var first = DockSpotlight.ResolveTarget(ViewMode.Readable, page, page.LinkTree, readerAnchorText: "Paragraph one text here.");
+        var second = DockSpotlight.ResolveTarget(ViewMode.Readable, page, page.LinkTree, readerAnchorText: "Paragraph two text here.");
+
+        first.Should().NotBe(second);
+    }
+
+    [Fact]
     public void ResolveTarget_NoPage_ReturnsNull()
     {
         DockSpotlight.ResolveTarget(ViewMode.Hierarchical, page: null, tree: null).Should().BeNull();

@@ -1792,10 +1792,23 @@ public partial class BrowserOrchestrator : IBrowserService
     private void SyncDockSpotlight()
     {
         var page = _navigationService.CurrentPage;
+        var viewMode = _navigationService.CurrentContext.ViewMode;
+
+        // Reader scroll-along: the source text of the paragraph the cursor is on is the
+        // content anchor the docked live page scrolls to keep centered. The reader render
+        // path (RenderAsync) has already ensured the line cache by the time this runs in
+        // the render finally, so the lookup is a cheap read. Null off reader view or when
+        // no cache — the target then carries no anchor and the live page just follows the
+        // URL, exactly as before.
+        string? readerAnchorText = viewMode == ViewMode.Readable
+            ? _lineCacheManager.GetAnchorTextForLine(_navigationService.ReaderCursorLine)
+            : null;
+
         var target = DockSpotlight.ResolveTarget(
-            _navigationService.CurrentContext.ViewMode,
+            viewMode,
             page,
-            page?.LinkTree);
+            page?.LinkTree,
+            readerAnchorText);
 
         if (target is { } t)
         {

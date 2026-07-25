@@ -122,7 +122,7 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     /// <item>everything else (launcher, collections, group headers) → null = clear.</item>
     /// </list>
     /// </summary>
-    public static SpotlightTarget? ResolveTarget(ViewMode viewMode, Page? page, NavigationTree? tree)
+    public static SpotlightTarget? ResolveTarget(ViewMode viewMode, Page? page, NavigationTree? tree, string? readerAnchorText = null)
     {
         if (page == null)
         {
@@ -133,10 +133,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
         // highlight — just keep the live page on the url the terminal is reading. This is
         // the lens-coupling case main's link-tree spotlight didn't cover: cache hits and
         // headless preloads never navigate the foreground window, so without this the
-        // docked page stays stale while you read (workspace-nqqs).
+        // docked page stays stale while you read (workspace-nqqs). The anchor text (the
+        // paragraph the reader's cursor is on) rides along so the live page scrolls to
+        // keep that paragraph centered as the reader moves (reader scroll-along).
         if (viewMode == ViewMode.Readable)
         {
-            return FollowPageTarget(page.Url);
+            return FollowPageTarget(page.Url, readerAnchorText);
         }
 
         if (viewMode != ViewMode.Hierarchical)
@@ -256,10 +258,10 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     /// page the terminal is showing, no highlight box. Null for non-web URLs (launcher,
     /// skeleton, data:) where navigating a live window is meaningless.
     /// </summary>
-    private static SpotlightTarget? FollowPageTarget(string pageUrl)
+    private static SpotlightTarget? FollowPageTarget(string pageUrl, string? anchorText = null)
     {
         return CommandHandlers.BrowserDockCommandHandler.IsSummonableUrl(pageUrl)
-            ? new SpotlightTarget(pageUrl, pageUrl, string.Empty, FollowPageOnly: true)
+            ? new SpotlightTarget(pageUrl, pageUrl, string.Empty, FollowPageOnly: true, AnchorText: anchorText)
             : null;
     }
 
@@ -431,12 +433,34 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                 _lastLensNav ??= target.PageUrl;
             }
 
-            // Reader view (workspace-nqqs): the follow-navigation above IS the whole job —
-            // the page is the content, so there is no anchor to light up. Drop any box left
-            // over from a prior link selection and treat the navigation alone as success.
+            // Reader view (workspace-nqqs): there is no anchor to light up — the page is
+            // the content — so drop any box left over from a prior link selection. Then,
+            // if we know which paragraph the reader is on, scroll the live page so THAT
+            // paragraph is centered, keeping the panel following along as the reader moves
+            // (reader scroll-along). A missing/absent anchor is not a failure: the follow-
+            // navigation alone still counts, the page just stays where it is.
             if (target.FollowPageOnly)
             {
                 await page.EvaluateAsync<string>(SpotlightScript.Clear).ConfigureAwait(false);
+
+                if (!string.IsNullOrWhiteSpace(target.AnchorText))
+                {
+                    try
+                    {
+                        var scrolled = await page.EvaluateAsync<string>(
+                            SpotlightScript.ScrollToAnchor,
+                            new { text = target.AnchorText }).ConfigureAwait(false);
+                        _logger.LogDebug(
+                            "Dock spotlight: reader follow scroll to anchor => {Result} on {Url}",
+                            scrolled,
+                            target.PageUrl);
+                    }
+                    catch (Exception ex)
+                    {
+                        _logger.LogDebug(ex, "Dock spotlight: reader anchor scroll failed (advisory)");
+                    }
+                }
+
                 _applied = target;
                 _lastHintPageUrl = null; // workspace-2hfr: success = state change → re-arm the miss hint
                 return;

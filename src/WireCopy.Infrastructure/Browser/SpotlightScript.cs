@@ -113,6 +113,59 @@ internal static class SpotlightScript
         }
         """;
 
+    /// <summary>
+    /// Reader scroll-along (no highlight box): given the source text of the paragraph
+    /// the reader's cursor is on, finds the matching live block and scrolls it to the
+    /// viewport center so the panel keeps that paragraph centered as the reader moves.
+    ///
+    /// <para>
+    /// Matches by CONTENT, not a height fraction: normalizes whitespace/case, takes the
+    /// paragraph's leading prefix as a needle, and picks the TIGHTEST (shortest) block
+    /// whose text starts with it — so the actual paragraph wins over a wrapping
+    /// article/section container. Returns <c>"ok"</c>, <c>"not-found"</c> (no live block
+    /// matched — leave the page where it is), or <c>"too-short"</c> (anchor too short to
+    /// match confidently). Any leftover link-selection overlay is removed first.
+    /// </para>
+    /// </summary>
+    public const string ScrollToAnchor = """
+        (args) => {
+            const state = window['__wcSpotlight'];
+            if (state) {
+                if (state.overlay) { state.overlay.remove(); state.overlay = null; }
+                state.el = null;
+            }
+
+            const norm = (s) => (s || '').replace(/\s+/g, ' ').trim().toLowerCase();
+            const needle = norm(args.text).slice(0, 40);
+            if (needle.length < 12) return 'too-short';
+
+            const usable = (el) => {
+                const r = el.getBoundingClientRect();
+                if (r.width <= 0 || r.height <= 0) return false;
+                const st = window.getComputedStyle(el);
+                return st.visibility !== 'hidden' && st.display !== 'none';
+            };
+
+            let best = null, bestLen = Infinity;
+            const blocks = document.querySelectorAll(
+                'p,li,blockquote,h1,h2,h3,h4,h5,h6,figcaption,dd,pre');
+            for (const el of blocks) {
+                if (!usable(el)) continue;
+                const t = norm(el.textContent);
+                if (t.length >= needle.length && t.startsWith(needle) && t.length < bestLen) {
+                    best = el;
+                    bestLen = t.length;
+                }
+            }
+            if (!best) return 'not-found';
+
+            // "auto" (not smooth) so rapid reader movement doesn't queue a backlog of
+            // animations behind the live position.
+            best.scrollIntoView({ block: 'center', behavior: 'auto' });
+            return 'ok';
+        }
+        """;
+
     /// <summary>Removes the overlay (idempotent; safe on pages never spotlighted).</summary>
     public const string Clear = """
         () => {

@@ -23,6 +23,7 @@ internal class LineCacheManager
 
     private List<string>? _cachedLines;
     private List<ParagraphSpan>? _paragraphSpans;
+    private List<string>? _paragraphTexts; // source paragraph text, aligned 1:1 with _paragraphSpans (reader-follow anchor)
     private int _cachedWidth;
     private int _contentLineCount;
 
@@ -67,7 +68,7 @@ internal class LineCacheManager
 
         var palette = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var headlineLines = BuildHeadlineLines(page.ReadableContent, contentWidth, palette, page.Url);
-        var (contentLines, spans) = WrapAllContentWithSpans(page.ReadableContent, contentWidth);
+        var (contentLines, spans, spanTexts) = WrapAllContentWithSpans(page.ReadableContent, contentWidth);
 
         // Offset paragraph spans by headline line count so they reference absolute indices
         var headlineCount = headlineLines.Count;
@@ -76,6 +77,8 @@ internal class LineCacheManager
         {
             _paragraphSpans.Add(new ParagraphSpan(span.StartLine + headlineCount, span.EndLine + headlineCount));
         }
+
+        _paragraphTexts = spanTexts; // aligned 1:1 with spans/_paragraphSpans (reader-follow anchor)
 
         headlineLines.AddRange(contentLines);
 
@@ -97,8 +100,38 @@ internal class LineCacheManager
     {
         _cachedLines = null;
         _paragraphSpans = null;
+        _paragraphTexts = null;
         _cachedWidth = 0;
         _contentLineCount = 0;
+    }
+
+    /// <summary>
+    /// Returns the SOURCE TEXT of the paragraph containing (or just below) the given
+    /// line — the reader-follow content anchor. The docked live page scrolls to the
+    /// element whose text matches this, so the panel keeps the reader's current
+    /// paragraph centered instead of sitting at the top of the article. Robust to a
+    /// live page whose length differs from the reader's (ads, images, embeds). Null
+    /// when the line is below the last paragraph, or when there is no line cache.
+    /// </summary>
+    public string? GetAnchorTextForLine(int lineIndex)
+    {
+        if (_paragraphSpans == null || _paragraphTexts == null)
+        {
+            return null;
+        }
+
+        for (var i = 0; i < _paragraphSpans.Count && i < _paragraphTexts.Count; i++)
+        {
+            // First paragraph whose end is at or below the given line — i.e. the
+            // paragraph the line sits in (or the next one down when the line lands
+            // in a headline / blank separator).
+            if (lineIndex <= _paragraphSpans[i].EndLine)
+            {
+                return _paragraphTexts[i];
+            }
+        }
+
+        return null;
     }
 
     /// <summary>
@@ -280,13 +313,16 @@ internal class LineCacheManager
     }
 
     /// <summary>
-    /// Pre-wraps all paragraphs and tracks paragraph boundaries as ParagraphSpans.
-    /// Span indices are relative to the returned lines (not offset by headline).
+    /// Pre-wraps all paragraphs and tracks paragraph boundaries as ParagraphSpans,
+    /// plus the source text of each span (aligned 1:1 with Spans) used as the
+    /// reader-follow content anchor. Span indices are relative to the returned lines
+    /// (not offset by headline).
     /// </summary>
-    internal static (List<string> Lines, List<ParagraphSpan> Spans) WrapAllContentWithSpans(ReadableContent content, int maxWidth)
+    internal static (List<string> Lines, List<ParagraphSpan> Spans, List<string> SpanTexts) WrapAllContentWithSpans(ReadableContent content, int maxWidth)
     {
         var allLines = new List<string>();
         var spans = new List<ParagraphSpan>();
+        var spanTexts = new List<string>(); // source paragraph text per span, same order
 
         foreach (var paragraph in content.Paragraphs)
         {
@@ -304,10 +340,11 @@ internal class LineCacheManager
             }
 
             spans.Add(new ParagraphSpan(startLine, allLines.Count - 1));
+            spanTexts.Add(paragraph);
             allLines.Add(string.Empty); // Paragraph separator
         }
 
-        return (allLines, spans);
+        return (allLines, spans, spanTexts);
     }
 
     /// <summary>
@@ -322,11 +359,18 @@ internal class LineCacheManager
     /// Pre-populates the cache for testing purposes. All lines are treated as
     /// content unless <paramref name="contentLineCount"/> marks a footer start.
     /// </summary>
-    internal void SetCacheForTesting(List<string> lines, int width, int contentLineCount = -1)
+    internal void SetCacheForTesting(
+        List<string> lines,
+        int width,
+        int contentLineCount = -1,
+        List<ParagraphSpan>? paragraphSpans = null,
+        List<string>? paragraphTexts = null)
     {
         _cachedLines = lines;
         _cachedWidth = width;
         _contentLineCount = contentLineCount >= 0 ? contentLineCount : lines.Count;
+        _paragraphSpans = paragraphSpans;
+        _paragraphTexts = paragraphTexts;
     }
 
     private static string CenterLine(string text, int maxWidth, string colorAnsi, string reset)
