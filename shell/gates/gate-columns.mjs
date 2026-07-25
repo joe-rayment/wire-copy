@@ -14,8 +14,9 @@
 //            white-on-fill (selection fg) and the treatment MOVES with the selection
 //            (workspace-v654).
 //   DOCKED — with the live-page pane revealed (the "browser sidecar" that narrows the
-//            reader — the exact case that used to collapse the grid to 1 column), the
-//            story list still renders 2 columns, long titles WRAP across lines, and
+//            reader), the story list renders "Link Tree.dc.html"'s ONE wide column
+//            (workspace-h2caq — the roomier clamp(420px,40vw,700px) track), opens out
+//            to 2 when the pane is hidden, long titles WRAP across lines, and
 //            hiding/re-showing the pane (|) keeps the selection on the same story.
 // Reads the VISIBLE viewport only (baseY-relative) — the full scrollback retains the wide
 // pre-resize render and would be read as stale.
@@ -208,16 +209,33 @@ async function fgAt (term, baseY, vpRow, col) {
   })()`)
 }
 
-// Per column (left of / right of the divider), the first viewport row+col where the
-// fixture byline renders. Returns [left, right], each {row, col} or null.
-function bylinePositions (vp, dividerCol) {
-  return [[0, dividerCol], [dividerCol + 1, vp.cols]].map(([a, b]) => {
-    for (let r = 0; r < vp.lines.length; r++) {
-      const idx = (vp.lines[r] || '').slice(a, b).indexOf(AUTHOR)
-      if (idx >= 0) return { row: r, col: a + idx }
+// Every viewport position where the fixture byline renders, reading order. The
+// story grid can be one column or several (workspace-h2caq), so the meta checks
+// compare the SELECTED card's byline against the next card's wherever it sits.
+function bylineHits (vp) {
+  const hits = []
+  for (let r = 0; r < vp.lines.length; r++) {
+    const line = vp.lines[r] || ''
+    for (let idx = line.indexOf(AUTHOR); idx >= 0; idx = line.indexOf(AUTHOR, idx + 1)) {
+      hits.push({ row: r, col: idx })
     }
-    return null
-  })
+  }
+  return hits
+}
+
+// Which story wears the selection right now, by the FOREGROUND colour of its
+// headline (`selFg` = the selected card's title fg, sampled while the selection is
+// known). Reading the background instead does not survive a single-column grid: the
+// fill then covers most of the row, so it becomes the row's dominant background and
+// selectedColumn's widest-non-bg run inverts onto the gaps.
+async function selectedStory (term, vp, selFg) {
+  for (const w of WORDS) {
+    const r = vp.lines.findIndex(l => l.includes(`Dispatch ${w}`))
+    if (r < 0) continue
+    const col = vp.lines[r].indexOf(`Dispatch ${w}`)
+    if ((await fgAt(term, vp.baseY, r, col)) === selFg) return w
+  }
+  return null
 }
 
 // Waits until the story grid has SETTLED at `expCols` columns — a dock/undock
@@ -246,9 +264,10 @@ async function waitStoryCols (term, expCols, timeout = 12000) {
 
 // Asserts the story grid renders exactly `expCols` columns and titles wrap, in the
 // CURRENT viewport. Since workspace-vingi the SHELL-mode story grid follows the HTML
-// link-tree pane's responsive track count (LinkTreeRenderer.ShellPaneColumns): the
-// docked ~58% split at 1360px renders 2 columns, the full 1360px window 3. The
-// fixed-2 contract (workspace-ehon) still governs plain-terminal mode only.
+// link-tree pane's responsive track count (LinkTreeRenderer.ShellPaneColumns); since
+// workspace-h2caq that track is "Link Tree.dc.html"'s roomier clamp(420px,40vw,700px),
+// so the docked ~58% split at 1360px is ONE wide column and the full 1360px window
+// two. The fixed-2 contract (workspace-ehon) still governs plain-terminal mode only.
 async function measureStoryGrid (term, label, expCols = 2) {
   const vp = await viewport(term)
   const rowOne = vp.lines.findIndex(l => l.includes('Dispatch one'))
@@ -260,7 +279,7 @@ async function measureStoryGrid (term, label, expCols = 2) {
   const line = vp.lines[rowOne]
   const names = ['one', 'two', 'three', 'four', 'five']
   const onRow = names.slice(1, expCols).every(w => line.includes(`Dispatch ${w}`))
-  check(`${label}: Dispatches 1..${expCols} share a row (${expCols} columns)`,
+  check(`${label}: ${expCols === 1 ? 'Dispatch one holds the card row alone' : `Dispatches 1..${expCols} share a row`} (${expCols} column${expCols === 1 ? '' : 's'})`,
     onRow, `line="${line.replace(/\s+/g, ' ').trim().slice(0, 110)}"`)
   const nextName = `Dispatch ${names[expCols]}`
   check(`${label}: ${nextName} is NOT on that row (not ${expCols + 1}+ columns)`,
@@ -298,29 +317,32 @@ async function measureStoryGrid (term, label, expCols = 2) {
     let st = null
     for (let i = 0; i < 40; i++) { st = await term.eval('window.__wc.state()'); if (st?.revealed) break; await sleep(500) }
     check('story: pane auto-revealed (reader narrowed by the docked sidecar)', !!st?.revealed)
-    await waitStoryCols(term, 2)
+    await waitStoryCols(term, 1)
 
-    const vpDocked = await measureStoryGrid(term, 'docked', 2)
+    const vpDocked = await measureStoryGrid(term, 'docked', 1)
     env.shot('columns-story-docked')
 
-    // Move the selection to column 1 (Dispatch two) — the state CHANGE the doctrine
-    // demands — then toggle the pane away and back and require the selection to hold.
+    // Move the selection to the NEXT story — the state CHANGE the doctrine demands —
+    // then toggle the pane away and back and require the selection to hold.
     const rowOne = vpDocked.lines.findIndex(l => l.includes('Dispatch one'))
     const dividerCols = []
     for (let c = 0; c < (vpDocked.lines[rowOne] || '').length; c++) if (vpDocked.lines[rowOne][c] === '│') dividerCols.push(c)
-    const c0 = (await selectedColumn(term, vpDocked.baseY, rowOne, dividerCols)).col
+    check('story: the docked split is a SINGLE wide column (no card divider)',
+      dividerCols.length === 0, `dividers=${dividerCols.length}`)
+    // The tree boots with Dispatch one selected — sample its title fg once and use it
+    // as the "this card is selected" signature for the rest of the run.
+    const selTitleFg = await fgAt(term, vpDocked.baseY, rowOne, vpDocked.lines[rowOne].indexOf('Dispatch one'))
 
-    // Meta white-on-fill (workspace-v654): the byline renders under BOTH cards, the
+    // Meta white-on-fill (workspace-v654): the byline renders under EVERY card, the
     // SELECTED card's meta wears the selection foreground (same fg as its selected
-    // title — the design's white-on-fill), the unselected one stays metadata green.
-    const [metaL, metaR] = bylinePositions(vpDocked, dividerCols[0])
-    check('story-meta: author/date meta renders under both docked cards', !!metaL && !!metaR,
-      `left=${JSON.stringify(metaL)} right=${JSON.stringify(metaR)}`)
+    // title — the design's white-on-fill), the others stay metadata green.
+    const hits = bylineHits(vpDocked)
+    check('story-meta: author/date meta renders under the docked cards', hits.length >= 2,
+      `byline hits=${JSON.stringify(hits.slice(0, 3))}`)
     let selMetaFg = 'none', unselMetaFg = 'none'
-    if (metaL && metaR) {
-      const selTitleFg = await fgAt(term, vpDocked.baseY, rowOne, vpDocked.lines[rowOne].indexOf('Dispatch one'))
-      selMetaFg = await fgAt(term, vpDocked.baseY, metaL.row, metaL.col)
-      unselMetaFg = await fgAt(term, vpDocked.baseY, metaR.row, metaR.col)
+    if (hits.length >= 2) {
+      selMetaFg = await fgAt(term, vpDocked.baseY, hits[0].row, hits[0].col)
+      unselMetaFg = await fgAt(term, vpDocked.baseY, hits[1].row, hits[1].col)
       check('story-meta: selected card meta is white-on-fill (fg == selected title fg)',
         selMetaFg !== 'none' && selMetaFg === selTitleFg, `metaFg=${selMetaFg} titleFg=${selTitleFg}`)
       check('story-meta: unselected card meta does NOT wear the selection fg',
@@ -328,54 +350,63 @@ async function measureStoryGrid (term, label, expCols = 2) {
     }
     env.shot('columns-story-meta')
 
-    env.key('Right'); await sleep(700)
-    const c1 = (await selectedColumn(term, vpDocked.baseY, rowOne, dividerCols)).col
-    check('story: Right moves selection to column 1 while docked', c0 === 0 && c1 === 1, `cols=[${c0},${c1}]`)
+    env.key('Down'); await sleep(700)
+    const vpMoved = await viewport(term)
+    check('story: Down moves the selection to the next story while docked',
+      (await selectedStory(term, vpMoved, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpMoved, selTitleFg)}`)
 
-    // The state CHANGE, not just the initial state: after Right the white-on-fill
-    // must have MOVED — column 1's meta gains the selection fg, column 0's reverts.
-    if (metaL && metaR) {
-      const vpMoved = await viewport(term)
-      const [metaL2, metaR2] = bylinePositions(vpMoved, dividerCols[0])
-      const fgL2 = metaL2 ? await fgAt(term, vpMoved.baseY, metaL2.row, metaL2.col) : 'none'
-      const fgR2 = metaR2 ? await fgAt(term, vpMoved.baseY, metaR2.row, metaR2.col) : 'none'
-      check('story-meta: white-on-fill moved with the selection (col1 gained it, col0 dropped it)',
-        fgR2 === selMetaFg && fgL2 === unselMetaFg,
-        `after Right: leftFg=${fgL2} rightFg=${fgR2} (selFg=${selMetaFg} normalFg=${unselMetaFg})`)
+    // The state CHANGE, not just the initial state: after Down the white-on-fill
+    // must have MOVED — card 2's meta gains the selection fg, card 1's reverts.
+    if (hits.length >= 2) {
+      const hits2 = bylineHits(vpMoved)
+      const fg0 = hits2[0] ? await fgAt(term, vpMoved.baseY, hits2[0].row, hits2[0].col) : 'none'
+      const fg1 = hits2[1] ? await fgAt(term, vpMoved.baseY, hits2[1].row, hits2[1].col) : 'none'
+      check('story-meta: white-on-fill moved with the selection (card 2 gained it, card 1 dropped it)',
+        fg1 === selMetaFg && fg0 === unselMetaFg,
+        `after Down: card1Fg=${fg0} card2Fg=${fg1} (selFg=${selMetaFg} normalFg=${unselMetaFg})`)
       env.shot('columns-story-meta-moved')
     }
 
     // Undock (| hides the pane → reader reflows to FULL width): the responsive grid
-    // fans out to 3 columns at 1360px (workspace-vingi), selection still on
-    // Dispatch two.
+    // opens out to 2 columns at 1360px, selection still on Dispatch two.
     env.key('bar'); await sleep(500)
     let stHid = null
     for (let i = 0; i < 20; i++) { stHid = await term.eval('window.__wc.state()'); if (!stHid?.revealed) break; await sleep(400) }
     check('story: | undocks the pane', stHid?.revealed === false)
-    await waitStoryCols(term, 3)
-    const vpFull = await measureStoryGrid(term, 'undocked-full-width', 3)
+    await waitStoryCols(term, 2)
+    const vpFull = await measureStoryGrid(term, 'undocked-full-width', 2)
     const rowOneF = vpFull.lines.findIndex(l => l.includes('Dispatch one'))
     const divF = []
     for (let c = 0; c < (vpFull.lines[rowOneF] || '').length; c++) if (vpFull.lines[rowOneF][c] === '│') divF.push(c)
-    check('story: undock fanned the grid out to 3 columns (2 dividers on the card row)',
-      divF.length === 2 && dividerCols.length === 1,
+    check('story: undock opened the grid out to 2 columns (1 divider on the card row)',
+      divF.length === 1 && dividerCols.length === 0,
       `docked dividers=${dividerCols.length} undocked dividers=${divF.length}`)
+    check('story: selection survived undock on the same story',
+      (await selectedStory(term, vpFull, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpFull, selTitleFg)}`)
+    // Two columns is where the horizontal keys have something to do: Left steps back
+    // to Dispatch one, Right returns — the fill MOVES with the key both ways.
     const cFull = (await selectedColumn(term, vpFull.baseY, rowOneF, divF)).col
-    check('story: selection survived undock on the same story (column 1)', cFull === 1, `col=${cFull}`)
+    env.key('Left'); await sleep(700)
+    const vpLeft = await viewport(term)
+    const cLeft = (await selectedColumn(term, vpLeft.baseY, vpLeft.lines.findIndex(l => l.includes('Dispatch one')), divF)).col
+    check('story: Left steps the selection to the adjacent card (column 1 → 0)',
+      cFull === 1 && cLeft === 0 && (await selectedStory(term, vpLeft, selTitleFg)) === 'one',
+      `cols=[${cFull},${cLeft}] selected=${await selectedStory(term, vpLeft, selTitleFg)}`)
+    env.key('Right'); await sleep(700)
+    const vpRight = await viewport(term)
+    check('story: Right steps it back (column 0 → 1)',
+      (await selectedStory(term, vpRight, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpRight, selTitleFg)}`)
     env.shot('columns-story-undocked')
 
-    // Re-dock: back to 2 columns, selection still held.
+    // Re-dock: back to 1 column, selection still held.
     env.key('bar'); await sleep(500)
     let stBack = null
     for (let i = 0; i < 30; i++) { stBack = await term.eval('window.__wc.state()'); if (stBack?.revealed) break; await sleep(500) }
     check('story: | re-docks the pane', !!stBack?.revealed)
-    await waitStoryCols(term, 2)
-    const vpRe = await measureStoryGrid(term, 'redocked', 2)
-    const rowOneR = vpRe.lines.findIndex(l => l.includes('Dispatch one'))
-    const divR = []
-    for (let c = 0; c < (vpRe.lines[rowOneR] || '').length; c++) if (vpRe.lines[rowOneR][c] === '│') divR.push(c)
-    const cRe = (await selectedColumn(term, vpRe.baseY, rowOneR, divR)).col
-    check('story: selection survived re-dock on the same story (column 1)', cRe === 1, `col=${cRe}`)
+    await waitStoryCols(term, 1)
+    const vpRe = await measureStoryGrid(term, 'redocked', 1)
+    check('story: selection survived re-dock on the same story',
+      (await selectedStory(term, vpRe, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpRe, selTitleFg)}`)
     env.shot('columns-story-redocked')
     term.close()
   } catch (err) {

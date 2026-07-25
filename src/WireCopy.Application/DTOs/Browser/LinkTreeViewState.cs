@@ -5,8 +5,8 @@ namespace WireCopy.Application.DTOs.Browser;
 /// <summary>
 /// Serialisable view-model of the link-tree (story list) screen, exported over
 /// the shell channel (method <c>linkTreeState</c>) so the desktop shell can
-/// render the link list as an HTML pane ("Link Tree Responsive.dc.html",
-/// workspace-vingi). The items are EXACTLY the grid-row window the TUI render
+/// render the link list as an HTML pane ("Link Tree.dc.html", workspace-vingi /
+/// workspace-h2caq). The items are EXACTLY the grid-row window the TUI render
 /// admitted — same <c>LinkTreeGridMapper</c> rows, same scroll offset, same
 /// line-budget admission — so the pane can never drift from the terminal grid.
 /// <see cref="Columns"/> is the pane's responsive track count, which shell-mode

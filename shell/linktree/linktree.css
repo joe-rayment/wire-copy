@@ -1,14 +1,15 @@
 /* =============================================================================
    Wire Copy link-tree pane — display-only projection of the TUI story list.
-   Import of "Link Tree.dc.html" + "Link Tree Responsive.dc.html" (claude.ai
-   design project 153674f7): full-bleed column with clamp() padding; CRT-glow
-   page title with a status readout on the right; ONE responsive story grid
-   whose track count comes from the PUSHED STATE (LinkTreeViewState.Columns —
-   the same count the TUI uses for arrow keys); section headers span the grid;
-   story cards hold a FIXED footprint — selection is only ever a recolor
-   (sel-bg fill + glowing rail). Footer pinned to the bottom with the ▼-more
-   mark above its rule. The TUI owns all keys; every value here is painted from
-   a pushed state message. Colours come from ../launcher/tokens.css.
+   Import of "Link Tree.dc.html" (claude.ai design project 153674f7,
+   workspace-h2caq — replaces the earlier, denser "Link Tree Responsive.dc.html"
+   scale): full-bleed column with clamp() padding; CRT-glow page title with a
+   status readout on the right; ONE responsive story grid whose track count
+   comes from the PUSHED STATE (LinkTreeViewState.Columns — the same count the
+   TUI uses for arrow keys); section headers span the grid; story cards hold a
+   FIXED footprint — selection is only ever a recolor (sel-bg fill + glowing
+   rail). Footer pinned to the bottom with the ▼-more mark above its rule. The
+   TUI owns all keys; every value here is painted from a pushed state message.
+   Colours come from ../launcher/tokens.css.
    ============================================================================= */
 
 * { box-sizing: border-box; }
@@ -144,9 +145,11 @@ html, body {
 /* ── Story grid ───────────────────────────────────────────────────────────
    Track count driven by the pushed state (1..6) — LinkTreeRenderer.ShellPaneColumns
    is the px-mirror of the design's auto-fill over a FLUID minimum track,
-   minmax(min(clamp(300px,26vw,430px),100%),1fr), so a 1512pt window lands on 3
-   columns at ~450px rather than fanning out; section headers span all tracks;
-   cards keep the design's fixed 162px footprint. */
+   minmax(min(clamp(420px,40vw,700px),100%),1fr). "Link Tree.dc.html" is a
+   deliberately roomier grid than the earlier responsive sheet: a 1360pt window
+   is TWO wide columns, not three narrow ones, and a third only arrives past
+   ~2250px. Section headers span all tracks; cards keep the design's fixed
+   clamp(165px,16.2vw,242px) footprint. */
 #grid {
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
@@ -154,10 +157,10 @@ html, body {
   row-gap: 0;
   align-items: stretch;
   /* The ONLY shrinkable child of #column. The TUI budgets the pushed window in
-     21px terminal lines while these cards are a fixed 174px stride, so a tall
-     list can overrun the pane by a few px; when it does the overrun is taken
-     off the BOTTOM of the grid (dead card padding) instead of scrolling the
-     page and pushing the status bar out of view. */
+     21px terminal lines while these cards are a fixed 165–242px stride, so a
+     tall list can overrun the pane; when it does the overrun is taken off the
+     BOTTOM of the grid instead of scrolling the page and pushing the status bar
+     out of view. */
   flex: 1 1 auto;
   min-height: 0;
   align-content: start;
@@ -192,9 +195,9 @@ html, body {
   flex-direction: column;
 }
 .card {
-  height: 162px;
+  height: clamp(165px, 16.2vw, 242px);
   position: relative;
-  padding: 15px 15px 15px 22px;
+  padding: 21px 21px 21px 28px;
   overflow: hidden;
 }
 /* Selection only ever recolors: sel-bg fill + glowing 4px phosphor rail. */
@@ -211,17 +214,19 @@ html, body {
 
 .card-title {
   font-weight: 700;
-  font-size: clamp(17px, 1.52vw, 23px);
-  line-height: 1.4;
+  font-size: clamp(21px, 2.25vw, 34px);
+  line-height: 1.35;
   display: -webkit-box;
   -webkit-line-clamp: 3;
   -webkit-box-orient: vertical;
   overflow: hidden;
   text-wrap: pretty;
 }
-/* Link-type colours mirror the TUI's card palette: content headlines wear the
-   title pink; navigation the phosphor; external metadata green; footer quiet. */
-.card-title.t-content    { color: var(--tr-bright); }
+/* "Link Tree.dc.html" reads the headline in the PHOSPHOR and moves the title
+   pink onto the byline (see .card-meta below) — the opposite of the earlier
+   sheet. The three non-content link types keep their quieter ranks so the tree
+   still tells a story link from a footer link. */
+.card-title.t-content    { color: var(--tr-green); }
 .card-title.t-navigation { color: var(--tr-green); }
 .card-title.t-external   { color: var(--tr-med); }
 .card-title.t-footer     { color: var(--tr-muted); }
@@ -230,15 +235,20 @@ html, body {
 .card.selected .card-title .c-tick { color: var(--tr-white); }
 
 .card-meta {
-  color: var(--tr-med);
-  font-size: clamp(12.5px, 1.02vw, 15.5px);
+  color: var(--tr-bright);
+  font-size: clamp(14px, 1.36vw, 20px);
   line-height: 1.5;
-  margin-top: 8px;
+  margin-top: 11px;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
 }
-.card.selected .card-meta { color: var(--tr-white); }
+/* Byline: the author carries the title colour, the ' · date' tail goes quiet. */
+.card-meta .meta-lead { color: var(--tr-bright); }
+.card-meta .meta-sub  { color: var(--tr-muted); }
+.card.selected .card-meta,
+.card.selected .card-meta .meta-lead,
+.card.selected .card-meta .meta-sub { color: var(--tr-white); }
 
 .card-sep {
   display: flex;

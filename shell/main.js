@@ -199,7 +199,7 @@ function place () {
   }
   // The link-tree pane (workspace-vingi) tracks the TERMINAL region, not the full
   // window: with the browser sidecar docked it keeps the left split ("Sidecar out"
-  // case of Link Tree Responsive.dc.html), full width otherwise.
+  // case of Link Tree.dc.html), full width otherwise.
   if (state.linkView) state.linkView.setBounds(termView.getBounds())
 }
 

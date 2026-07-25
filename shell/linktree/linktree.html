@@ -4,10 +4,10 @@
      The TUI keeps ALL logic and keyboard handling; this page is STRICTLY display-only —
      no key handlers, no links, no focusable elements. It paints whatever
      `window.__renderLinkTree(msg)` is handed and nothing more. Design imported from
-     "Link Tree.dc.html" + "Link Tree Responsive.dc.html" (claude.ai design project
-     153674f7): CRT-glow page title, responsive auto-column story grid whose track
-     count RIDES THE STATE (state.columns — the same count the TUI uses for arrow
-     keys), fixed-height cards where selection only recolors. -->
+     "Link Tree.dc.html" (claude.ai design project 153674f7, workspace-h2caq):
+     CRT-glow page title, responsive auto-column story grid whose track count RIDES
+     THE STATE (state.columns — the same count the TUI uses for arrow keys),
+     fixed-height cards where selection only recolors. -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
@@ -83,6 +83,17 @@ function sectionMark (item) {
   return ''
 }
 
+// Byline two-tone ("Link Tree.dc.html"): the author wears the title colour and
+// the ' · date' tail goes quiet. The TUI composes the subtitle as
+// "Author · Date" (LinkTreeRenderer.GetMetadataSubtitle) — split on that same
+// separator; a subtitle with no separator (author-only or date-only) is all lead.
+function bylineHtml (meta) {
+  const i = String(meta).indexOf(' · ')
+  if (i < 0) return `<span class="meta-lead">${esc(meta)}</span>`
+  return `<span class="meta-lead">${esc(String(meta).slice(0, i))}</span>` +
+         `<span class="meta-sub">${esc(String(meta).slice(i))}</span>`
+}
+
 function itemHtml (item, selected) {
   if (item.kind === 'section') {
     return (
@@ -97,7 +108,7 @@ function itemHtml (item, selected) {
   // Story card: fixed footprint; selection only recolors (sel-bg + glowing rail).
   const rail = selected ? `<div class="card-rail"></div>` : ''
   const tick = item.toggled ? `<span class="c-tick">✓ </span>` : ''
-  const meta = item.meta ? `<div class="card-meta">${esc(item.meta)}</div>` : ''
+  const meta = item.meta ? `<div class="card-meta">${bylineHtml(item.meta)}</div>` : ''
   return (
     `<div class="cell">` +
       `<div class="card${selected ? ' selected' : ''}">` +
@@ -187,11 +198,11 @@ function demoMsg () {
       sectionCount: 18,
       cached: true,
       // Same formula as LinkTreeRenderer.ShellPaneColumns (the design's auto-fill
-      // over a fluid clamp(300px,26vw,430px) track) so ?demo=1 shows real geometry.
+      // over a fluid clamp(420px,40vw,700px) track) so ?demo=1 shows real geometry.
       columns: (w => {
         const pad = Math.min(36, Math.max(16, 0.024 * w))
         const gap = Math.min(40, Math.max(20, 0.026 * w))
-        const track = Math.min(430, Math.max(300, 0.26 * w))
+        const track = Math.min(700, Math.max(420, 0.40 * w))
         return Math.max(1, Math.min(6, Math.floor((w - 2 * pad + gap) / (track + gap))))
       })(window.innerWidth),
       items: [

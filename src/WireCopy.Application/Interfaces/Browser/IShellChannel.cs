@@ -52,7 +52,7 @@ public interface IShellChannel
     Task SendLauncherStateAsync(bool visible, LauncherViewState? state, CancellationToken cancellationToken = default);
     /// <summary>
     /// Pushes the link-tree (story list) view-model to the shell so it can render the
-    /// link list as an HTML pane ("Link Tree Responsive.dc.html", workspace-vingi).
+    /// link list as an HTML pane ("Link Tree.dc.html", workspace-vingi).
     /// <paramref name="visible"/> is true on every link-tree render (carrying
     /// <paramref name="state"/>), and false — with a null <paramref name="state"/> — when a
     /// non-link-tree screen replaces it. Fire-and-forget from the render path: callers do

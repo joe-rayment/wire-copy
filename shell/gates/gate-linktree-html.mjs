@@ -1,14 +1,16 @@
-// Link-tree HTML-pane gate (workspace-vingi): proves the REAL story-list WebContentsView
-// (shell/linktree/linktree.html) — driven end-to-end by the live .NET TUI over the shell
-// channel — renders the user's link list per "Link Tree Responsive.dc.html" and reacts
-// to REAL keystrokes. Every check asserts a USER-VISIBLE OUTCOME on the pane's DOM /
-// computed styles (per the project Verification Doctrine): the pane shows over the
-// DOCKED terminal split with 2 columns, undocking reflows to 3 at 1360px, the width
-// sweep hits the design's 1/2/3/4-column breakpoints over a FLUID minimum track
-// (1680px stays at 3 — it must NOT fan out — and only ~1900px+ buys a 4th) with a
-// fixed 162px card footprint and headline type at its 23px ceiling when wide, Right
-// recolors the visually adjacent card, Enter NAVIGATES the live page pane to the
-// selected story's URL and the pane hides, Tab brings it back, Ctrl+= zooms it.
+// Link-tree HTML-pane gate (workspace-vingi, rescaled workspace-h2caq): proves the REAL
+// story-list WebContentsView (shell/linktree/linktree.html) — driven end-to-end by the
+// live .NET TUI over the shell channel — renders the user's link list per
+// "Link Tree.dc.html" and reacts to REAL keystrokes. Every check asserts a USER-VISIBLE
+// OUTCOME on the pane's DOM / computed styles (per the project Verification Doctrine):
+// the pane shows over the DOCKED terminal split as ONE wide column, undocking reflows to
+// 2 at 1360px, the width sweep hits the design's 1/2/3-column breakpoints over a FLUID
+// minimum track (1680px stays at 2 — it must NOT fan out — and only ~2250px+ buys a 3rd)
+// with the design's clamp(165px,16.2vw,242px) card footprint and 21→34px headline type,
+// the design's palette (phosphor headline, title-pink byline, muted date tail, all-white
+// when selected), NO row sliced by the grid's bottom edge, Down/Right recolor the
+// visually adjacent card, Enter NAVIGATES the live page pane to the selected story's URL
+// and the pane hides, Tab brings it back, Ctrl+= zooms it.
 // Headful under Xvfb ONLY (never headless). Run from shell/: node gates/gate-linktree-html.mjs
 import http from 'node:http'
 import fs from 'node:fs'
@@ -49,9 +51,10 @@ const fixture = http.createServer((req, res) => {
 await new Promise(r => fixture.listen(FPORT, '127.0.0.1', r))
 const listUrl = `http://127.0.0.1:${FPORT}/`
 
-// Wide virtual screen for the 4-column leg; boot DIRECTLY at 1360x900 via pre-seeded
+// Wide virtual screen for the 3-column leg (the design's 700px track ceiling means a
+// third column only lands past ~2250px); boot DIRECTLY at 1360x900 via pre-seeded
 // window bounds so no pre-resize render lingers.
-const env = new Env({ display: ':83', cdpPort: 9293, screen: '2000x1200x24' })
+const env = new Env({ display: ':83', cdpPort: 9293, screen: '2600x1400x24' })
 fs.writeFileSync(path.join(env.extraEnv.WIRECOPY_SHELL_USERDATA, 'window-bounds.json'),
   JSON.stringify({ x: 0, y: 0, width: 1360, height: 900 }))
 await env.up()
@@ -59,20 +62,37 @@ const shell = env.launchShell()
 
 // ── Probes evaluated INSIDE the real pane DOM ─────────────────────────────────────
 const GEO_JS = `(function(){
-  const g=document.getElementById('grid');
+  const g=document.getElementById('grid'); const gr=g.getBoundingClientRect();
+  const cs=(el)=>el?getComputedStyle(el):null;
   const cards=[...g.querySelectorAll('.card')].map(c=>{const r=c.getBoundingClientRect();
+    const t=c.querySelector('.card-title'), m=c.querySelector('.card-meta');
+    const lead=c.querySelector('.card-meta .meta-lead'), sub=c.querySelector('.card-meta .meta-sub');
     return {x:Math.round(r.left),y:Math.round(r.top),w:Math.round(r.width),h:Math.round(r.height),
+      bottom:Math.round(r.bottom),right:Math.round(r.right),
       sel:c.classList.contains('selected'), rail:!!c.querySelector('.card-rail'),
-      bg:getComputedStyle(c).backgroundColor,
-      title:(c.querySelector('.card-title')||{}).textContent||'',
-      ts:c.querySelector('.card-title')?parseFloat(getComputedStyle(c.querySelector('.card-title')).fontSize):0,
-      ms:c.querySelector('.card-meta')?parseFloat(getComputedStyle(c.querySelector('.card-meta')).fontSize):0,
-      meta:(c.querySelector('.card-meta')||{}).textContent||''};});
+      bg:cs(c).backgroundColor,
+      title:(t||{}).textContent||'',
+      ts:t?parseFloat(cs(t).fontSize):0, tc:t?cs(t).color:'',
+      ms:m?parseFloat(cs(m).fontSize):0,
+      leadC:lead?cs(lead).color:'', subC:sub?cs(sub).color:'', subT:(sub||{}).textContent||'',
+      meta:(m||{}).textContent||''};});
   const sections=[...g.querySelectorAll('.section')].map(s=>({text:s.textContent.replace(/─+/g,'').trim().slice(0,48),
     w:Math.round(s.getBoundingClientRect().width)}));
-  return {cols:getComputedStyle(g).gridTemplateColumns.split(' ').length,
+  return {cols:cs(g).gridTemplateColumns.split(' ').length,
+    grid:{top:Math.round(gr.top),bottom:Math.round(gr.bottom),right:Math.round(gr.right)},
     cards, sections, winW:window.innerWidth, winH:window.innerHeight};
 })()`
+// The design's own clamps, in one place — every geometry check reads them.
+const expH = vw => Math.min(242, Math.max(165, 0.162 * vw))   // card footprint
+const expTs = vw => Math.min(34, Math.max(21, 0.0225 * vw))   // headline
+const expMs = vw => Math.min(20, Math.max(14, 0.0136 * vw))   // byline
+const GREEN = 'rgb(0, 215, 0)'
+const PINK = 'rgb(255, 135, 215)'
+const MUTED = 'rgb(95, 135, 95)'
+const WHITE = 'rgb(228, 228, 228)'
+// No card may be sliced by the grid's clipping edge — the whole admitted window
+// has to be visible, not merely present in the DOM.
+const unclipped = g => g.cards.filter(c => c.bottom > g.grid.bottom + 1 || c.right > g.grid.right + 1)
 const HDR_JS = `(function(){
   const t=document.getElementById('pagetitle'); const cs=getComputedStyle(t);
   return {title:t.textContent, fontSize:parseFloat(cs.fontSize), weight:cs.fontWeight,
@@ -123,12 +143,12 @@ try {
 
   const gD = await lt.eval(GEO_JS)
   const stateD = JSON.parse(await lt.eval(STATE_JS)).state
-  check('A5 DOCKED (~58% of 1360px): grid renders 2 columns == pushed state.columns',
-    gD.cols === 2 && stateD.columns === 2, `rendered=${gD.cols} state=${stateD.columns} paneW=${gD.winW}`)
+  check('A5 DOCKED (~58% of 1360px): grid renders 1 column == pushed state.columns',
+    gD.cols === 1 && stateD.columns === 1, `rendered=${gD.cols} state=${stateD.columns} paneW=${gD.winW}`)
   const cardW = gD.cards.length ? gD.cards[0].w : 0
   check('A6 section headers span the grid with real name + count',
     gD.sections.length >= 1 && /DISPATCHES/.test(gD.sections[0].text) && /\(9\)/.test(gD.sections[0].text) &&
-    gD.sections[0].w > cardW * 1.8,
+    gD.sections[0].w >= cardW - 1,
     JSON.stringify(gD.sections))
   // The tree may boot with the SECTION HEADER selected — step onto the first
   // card with Down (the real key a user presses) before asserting card selection.
@@ -138,29 +158,54 @@ try {
     gD2 = await lt.eval(GEO_JS)
   }
   const selD = gD2.cards.findIndex(c => c.sel)
-  check('A7 cards hold the fixed 162px footprint; selection is a recolor (sel-bg + glowing rail)',
-    gD2.cards.length > 0 && gD2.cards.every(c => Math.abs(c.h - 162) <= 1) && selD >= 0 &&
+  const hD = expH(gD2.winW)
+  check(`A7 cards hold the design's fixed ${hD.toFixed(0)}px footprint; selection is a recolor (sel-bg + glowing rail)`,
+    gD2.cards.length > 0 && gD2.cards.every(c => Math.abs(c.h - hD) <= 1) && selD >= 0 &&
     gD2.cards[selD].rail && gD2.cards[selD].bg === 'rgb(0, 95, 0)',
-    `heights=${[...new Set(gD2.cards.map(c => c.h))]} sel=${selD}`)
+    `heights=${[...new Set(gD2.cards.map(c => c.h))]} want=${hD.toFixed(1)} sel=${selD}`)
   check('A8 story meta line renders the real author', gD2.cards.length > 0 && gD2.cards[0].meta.includes(AUTHOR),
     `meta="${gD2.cards[0] && gD2.cards[0].meta}"`)
+  // The whole point of this import: the design's palette, on the real pane.
+  const unsel = gD2.cards.find(c => !c.sel)
+  check('A9 palette per Link Tree.dc.html — headline phosphor, byline title-pink, date tail muted',
+    !!unsel && unsel.tc === GREEN && unsel.leadC === PINK && unsel.subC === MUTED && /^ · /.test(unsel.subT),
+    unsel ? `title=${unsel.tc} lead=${unsel.leadC} sub=${unsel.subC} subText="${unsel.subT}"` : 'no unselected card')
+  check('A10 the SELECTED card reads all-white on the phosphor fill',
+    selD >= 0 && gD2.cards[selD].tc === WHITE && gD2.cards[selD].leadC === WHITE && gD2.cards[selD].subC === WHITE,
+    selD >= 0 ? `title=${gD2.cards[selD].tc} lead=${gD2.cards[selD].leadC} sub=${gD2.cards[selD].subC}` : 'none')
+  check('A11 no card is sliced by the grid edge — the admitted window is fully VISIBLE',
+    unclipped(gD2).length === 0,
+    `clipped=${JSON.stringify(unclipped(gD2).map(c => ({ y: c.y, bottom: c.bottom })))} gridBottom=${gD2.grid.bottom}`)
+  // Docked, the pane and the terminal are the SAME rectangle (A1) — so this reads
+  // the C# px-mirror's core assumption straight off the running app: the pane px
+  // LinkTreeRenderer infers from the TUI's cell dims (PaneCellPx / PaneLinePx) must
+  // UNDER-estimate the real pane, or the row budget overruns and slices a card, and
+  // must not under-estimate by much, or the pane sits half empty. Xterm's fit leaves
+  // a little container slack, which is exactly the margin this band allows for.
+  const dims = await term.eval('window.__dims()')
+  const estW = dims.cols * 11.2
+  const estH = dims.rows * 21.0
+  check('A12 the C# px-mirror under-estimates the real pane by <6% on both axes',
+    estW <= gD2.winW + 1 && estH <= gD2.winH + 1 &&
+    estW >= gD2.winW * 0.94 && estH >= gD2.winH * 0.94,
+    `${dims.cols}x${dims.rows} cells → est ${estW.toFixed(0)}x${estH.toFixed(0)}px vs real ${gD2.winW}x${gD2.winH}px`)
   env.shot('ltree-a-docked')
 
-  // ── (b) STATE CHANGE: Right recolors the visually adjacent card ──────────────────
+  // ── (b) STATE CHANGE: Down recolors the card directly BELOW (single column) ──────
   const selB = gD2.cards.findIndex(c => c.sel)
-  env.key('Right'); await sleep(900)
+  env.key('Down'); await sleep(900)
   const gB = await lt.eval(GEO_JS)
   const selR = gB.cards.findIndex(c => c.sel)
   const okB0 = selB >= 0 && selR === selB + 1 && !!gB.cards[selR] && !!gB.cards[selB] &&
-    gB.cards[selR].y === gB.cards[selB].y && gB.cards[selR].x > gB.cards[selB].x
-  check('B0 Right selected the VISUALLY adjacent card (same row, next column)', okB0,
+    gB.cards[selR].x === gB.cards[selB].x && gB.cards[selR].y > gB.cards[selB].y
+  check('B0 Down selected the VISUALLY next card (same column, next row down)', okB0,
     `sel ${selB}(${gB.cards[selB] && gB.cards[selB].x},${gB.cards[selB] && gB.cards[selB].y}) → ${selR}(${gB.cards[selR] && gB.cards[selR].x},${gB.cards[selR] && gB.cards[selR].y})`)
   check('B1 selection did NOT resize the card (fixed footprint)',
-    okB0 && Math.abs(gB.cards[selR].h - 162) <= 1 && gB.cards[selR].w === gB.cards[selB].w,
+    okB0 && Math.abs(gB.cards[selR].h - expH(gB.winW)) <= 1 && gB.cards[selR].w === gB.cards[selB].w,
     okB0 ? `${gB.cards[selR].w}x${gB.cards[selR].h} vs ${gB.cards[selB].w}x${gB.cards[selB].h}` : 'no selected card')
   env.shot('ltree-b-moved')
 
-  // ── (c) UNDOCK (|): pane grows to the full window; 2 → 3 columns at 1360px;
+  // ── (c) UNDOCK (|): pane grows to the full window; 1 → 2 columns at 1360px;
   //    the selection survives on the SAME story ────────────────────────────────────
   const selTitle = gB.cards[selR].title
   env.key('bar'); await sleep(600)
@@ -170,24 +215,38 @@ try {
   await sleep(2500)
   const g3 = await lt.eval(GEO_JS)
   const state3 = JSON.parse(await lt.eval(STATE_JS)).state
-  check('C1 full-width 1360px: grid reflows to 3 columns == pushed state',
-    g3.cols === 3 && state3.columns === 3 && Math.abs(g3.winW - 1360) <= 40,
+  check('C1 full-width 1360px: grid reflows to 2 columns == pushed state',
+    g3.cols === 2 && state3.columns === 2 && Math.abs(g3.winW - 1360) <= 40,
     `rendered=${g3.cols} state=${state3.columns} paneW=${g3.winW}`)
   const selC = g3.cards.findIndex(c => c.sel)
   check('C2 selection SURVIVED the undock on the same story',
     selC >= 0 && g3.cards[selC].title === selTitle,
     `"${selC >= 0 ? g3.cards[selC].title.slice(0, 40) : 'none'}" vs "${selTitle.slice(0, 40)}"`)
-  check('C3 first grid row now holds 3 cards',
-    g3.cards.filter(c => c.y === g3.cards[0].y).length === 3,
+  check('C3 first grid row now holds 2 cards',
+    g3.cards.filter(c => c.y === g3.cards[0].y).length === 2,
     `firstRow=${g3.cards.filter(c => c.y === g3.cards[0].y).length}`)
-  env.shot('ltree-c-undocked-3col')
+  // Two columns is the case the TUI's horizontal keys have to agree with. Aim at
+  // whichever side the selected card actually HAS a neighbour on — the undock may
+  // have left it in the last column, where Right correctly does nothing.
+  const selC0 = selC
+  const rowMates = selC0 >= 0 ? g3.cards.filter(c => c.y === g3.cards[selC0].y) : []
+  const goRight = selC0 >= 0 && rowMates.some(c => c.x > g3.cards[selC0].x)
+  env.key(goRight ? 'Right' : 'Left'); await sleep(900)
+  const g4 = await lt.eval(GEO_JS)
+  const selC1 = g4.cards.findIndex(c => c.sel)
+  const okC4 = selC0 >= 0 && selC1 === selC0 + (goRight ? 1 : -1) && !!g4.cards[selC1] && !!g4.cards[selC0] &&
+    g4.cards[selC1].y === g4.cards[selC0].y &&
+    (goRight ? g4.cards[selC1].x > g4.cards[selC0].x : g4.cards[selC1].x < g4.cards[selC0].x)
+  check(`C4 ${goRight ? 'Right' : 'Left'} selected the VISUALLY adjacent card (same row, ${goRight ? 'next' : 'previous'} column)`, okC4,
+    `sel ${selC0}(${g4.cards[selC0] && g4.cards[selC0].x},${g4.cards[selC0] && g4.cards[selC0].y}) → ${selC1}(${g4.cards[selC1] && g4.cards[selC1].x},${g4.cards[selC1] && g4.cards[selC1].y})`)
+  env.shot('ltree-c-undocked-2col')
 
   // ── (d) Width sweep (undocked): the design's breakpoints on the REAL window ──────
   const wid = env.activate()
-  // The design's own table: ≤650 → 1, 650–975 → 2, 975+ → 3, 1900+ → 4. 1680 is the
-  // regression case — a fixed 300px minimum track fanned it out to 4 narrow columns;
-  // the design's fluid clamp(300px,26vw,430px) holds it at 3 wide ones.
-  for (const [w, h, exp] of [[620, 900, 1], [900, 900, 2], [1680, 1000, 3], [1980, 1100, 4]]) {
+  // The design's table for clamp(420px,40vw,700px): ≤910 → 1, 910–2250 → 2, 2250+ → 3.
+  // 1680 is the regression case — a FIXED 420px minimum track would fan it out to 3
+  // narrow columns; the fluid 40vw track holds it at 2 wide ones.
+  for (const [w, h, exp] of [[700, 900, 1], [1000, 900, 2], [1680, 1000, 2], [2320, 1300, 3]]) {
     env.x('windowsize', wid, String(w), String(h))
     let got = null
     const t1 = Date.now()
@@ -198,29 +257,38 @@ try {
       if (Math.abs(got.winW - w) <= 20 && got.cols === exp && sc.columns === exp) break
       await sleep(300)
     }
-    check(`D${exp} at ~${w}px: ${exp} column(s), rendered == pushed state`,
+    check(`D${w} at ~${w}px: ${exp} column(s), rendered == pushed state`,
       got && got.cols === exp && got.stateCols === exp,
       `rendered=${got && got.cols} state=${got && got.stateCols} winW=${got && got.winW}`)
-    check(`D${exp}b at ~${w}px: card footprint still fixed at 162px`,
-      got && got.cards.length > 0 && got.cards.every(c => Math.abs(c.h - 162) <= 1),
-      got && `heights=${[...new Set(got.cards.map(c => c.h))]}`)
-    // The point of the fluid track: wide panes buy WIDER cards and BIGGER headline
-    // type, not more columns. Headline clamps 17→23px, byline 12.5→15.5px.
     const vw = (got && got.winW) || w
-    const expTs = Math.min(23, Math.max(17, 0.0152 * vw))
-    const expMs = Math.min(15.5, Math.max(12.5, 0.0102 * vw))
-    check(`D${exp}c at ~${w}px: headline type sits at the design's clamp (${expTs.toFixed(1)}px / byline ${expMs.toFixed(1)}px)`,
-      got && got.cards.length > 0 && Math.abs(got.cards[0].ts - expTs) <= 0.6 &&
-      Math.abs(got.cards[0].ms - expMs) <= 0.6,
+    const hW = expH(vw)
+    check(`D${w}b at ~${w}px: card footprint fixed at the design's ${hW.toFixed(0)}px`,
+      got && got.cards.length > 0 && got.cards.every(c => Math.abs(c.h - hW) <= 1),
+      got && `heights=${[...new Set(got.cards.map(c => c.h))]} want=${hW.toFixed(1)}`)
+    // The point of the fluid track: wide panes buy WIDER cards and BIGGER headline
+    // type, not more columns. Headline clamps 21→34px, byline 14→20px.
+    const ts = expTs(vw)
+    const ms = expMs(vw)
+    check(`D${w}c at ~${w}px: headline type sits at the design's clamp (${ts.toFixed(1)}px / byline ${ms.toFixed(1)}px)`,
+      got && got.cards.length > 0 && Math.abs(got.cards[0].ts - ts) <= 0.6 &&
+      Math.abs(got.cards[0].ms - ms) <= 0.6,
       got && got.cards.length ? `title=${got.cards[0].ts} meta=${got.cards[0].ms}` : 'no cards')
-    check(`D${exp}c2 at ~${w}px: every card is at least the 300px minimum track wide`,
-      got && got.cards.length > 0 && got.cards.every(c => c.w >= 300),
+    check(`D${w}c2 at ~${w}px: every card is at least the 420px minimum track wide`,
+      got && got.cards.length > 0 && got.cards.every(c => c.w >= 420),
       got && `widths=${[...new Set(got.cards.map(c => c.w))]}`)
-    env.shot(`ltree-d-${exp}col`)
+    check(`D${w}d at ~${w}px: no card sliced by the grid edge`,
+      got && got.cards.length > 0 && unclipped(got).length === 0,
+      got && `clipped=${JSON.stringify(unclipped(got).map(c => ({ y: c.y, bottom: c.bottom })))} gridBottom=${got.grid.bottom} winH=${got.winH}`)
+    env.shot(`ltree-d-${w}px-${exp}col`)
   }
 
   // ── (e) Enter OPENS the selected story: live page pane navigates to ITS url and
   //    the pane hides for the reader view ──────────────────────────────────────────
+  // Re-dock first (the sweep left the sidecar out): "Enter navigates the live page
+  // pane" is only a real claim while there IS a live page pane on screen.
+  env.key('bar'); await sleep(600)
+  for (let i = 0; i < 30; i++) { const s = await term.eval('window.__wc.state()'); if (s?.revealed === true) break; await sleep(400) }
+  await sleep(2000)
   const stateE = JSON.parse(await lt.eval(STATE_JS)).state
   const selItem = stateE.items[stateE.selectedIndex]
   check('E0 selected item is a story carrying its real href',
@@ -236,6 +304,10 @@ try {
   }
   check('E1 live page pane NAVIGATED to the selected story URL (real nav, not "command sent")',
     !!nav, nav ? nav.url : `no target at ${selItem && selItem.url}`)
+  // …and the reader actually shows THAT story — the outcome the user reads.
+  const storyPath = selItem ? new URL(selItem.url).pathname : '/none'
+  check('E1b the reader is showing the SELECTED story, not some other one',
+    (await pollTermText(term, `Story ${storyPath}`, 20000)).ok, `expected "Story ${storyPath}" in the terminal`)
   let hid = null
   for (let i = 0; i < 30; i++) { hid = await term.eval('window.__wc.state()'); if (hid && hid.linkTreeShown === false) break; await sleep(400) }
   check('E2 link pane HID when the story view took over', hid?.linkTreeShown === false,
