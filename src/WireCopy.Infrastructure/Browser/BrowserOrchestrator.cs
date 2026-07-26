@@ -429,6 +429,20 @@ public partial class BrowserOrchestrator : IBrowserService
                     t => _logger.LogError(t.Exception, "Background service faulted: PreloadService"),
                     TaskContinuationOptions.OnlyOnFaulted);
 
+            // workspace-yiary: attach to the shell's browser NOW, while the user is still
+            // reading the launcher, instead of on the input loop when they first press
+            // Enter. Measured on the real Mac, that attach cost ~1.15s of a ~1.5s freeze
+            // in which keystrokes were dead. Fire-and-forget and pane-neutral: no window
+            // appears, nothing headless is involved, and the first navigation still docks
+            // the sidecar. Outside the shell it is a no-op.
+            if (_browserSession is IBrowserSession prewarmSession)
+            {
+                _ = prewarmSession.PrewarmAsync(cancellationToken)
+                    .ContinueWith(
+                        t => _logger.LogDebug(t.Exception, "Browser prewarm faulted (non-fatal)"),
+                        TaskContinuationOptions.OnlyOnFaulted);
+            }
+
             var options = GetCurrentRenderOptions();
 
             if (!string.IsNullOrWhiteSpace(initialUrl))
@@ -1020,7 +1034,15 @@ public partial class BrowserOrchestrator : IBrowserService
             // the header's last 3 chars as a duplicated tail (e.g. "Cloudflare - Wikipedia" → "…Wikipediadia").
             // RenderHeader already cleared the line to EOL just before this, so an exact-length col:4 overdraw
             // needs no extra clear and never touches the right border.
-            DecryptRevealAnimation.Play(displayTitle, row: 0, col: 4, palette);
+            // workspace-ytdm3: abort the sweep the instant the user touches the keyboard.
+            // This plays on the input loop, so its 350ms of sleeps is 350ms of dead keys
+            // on EVERY navigation; a queued keystroke outranks the animation.
+            DecryptRevealAnimation.Play(
+                displayTitle,
+                row: 0,
+                col: 4,
+                palette,
+                shouldAbort: () => _inputHandler.IsInteractive && Console.KeyAvailable);
         }
         catch (Exception ex)
         {

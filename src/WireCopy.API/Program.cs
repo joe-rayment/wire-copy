@@ -26,8 +26,38 @@ public class Program
 {
     private const string DefaultUrl = "https://news.ycombinator.com";
 
+    /// <summary>
+    /// Boot timeline (workspace-ygzk3): stamp a startup phase against the origin ./run
+    /// exported, so the shell's marks and the TUI's share one clock and the phases add
+    /// up to the wall clock the user waits through. Off unless
+    /// WIRECOPY_BOOT_TIMELINE=1. Writes to stderr, which the shell redirects to
+    /// logs/shell-child-stderr-*.log — stdout belongs to the TUI's frame and must never
+    /// carry anything else.
+    /// </summary>
+    internal static void BootMark(string label)
+    {
+        if (Environment.GetEnvironmentVariable("WIRECOPY_BOOT_TIMELINE") != "1")
+        {
+            return;
+        }
+
+        if (!double.TryParse(
+                Environment.GetEnvironmentVariable("WIRECOPY_BOOT_T0"),
+                System.Globalization.NumberStyles.Float,
+                System.Globalization.CultureInfo.InvariantCulture,
+                out var t0))
+        {
+            return;
+        }
+
+        var now = DateTimeOffset.UtcNow.ToUnixTimeMilliseconds() / 1000.0;
+        Console.Error.WriteLine($"wirecopy: [boot] {label,-18} {now - t0,7:F3}s");
+    }
+
     public static async Task<int> Main(string[] args)
     {
+        BootMark("dotnet-main");
+
         // No arguments: launch browse mode with default URL
         if (args.Length == 0)
         {
@@ -309,20 +339,32 @@ public class Program
         var url = string.IsNullOrWhiteSpace(options.Url) ? null : options.Url;
 
         // Create a minimal host for browser services
+        BootMark("host-build");
         var host = CreateBrowseHostBuilder().Build();
 
         try
         {
+            // workspace-5wkwq: the EF first-use model build plus MigrateAsync is the single
+            // largest item in the .NET boot (358–770ms across nine real macOS boots, median
+            // ~426ms) and it ran STRICTLY AFTER host.StartAsync, so the launcher waited on a
+            // migration that is almost always a no-op. Start it FIRST and let the hosted
+            // services start alongside it. Nothing is weakened: PodcastJobLifecycleService
+            // and ScheduledRunLifecycleService already queried the database concurrently
+            // with this migration, so serialising it was never what protected them — and it
+            // is still fully awaited below, before any TUI code can touch the database.
+            var dbReady = Task.Run(async () =>
+            {
+                using var scope = host.Services.CreateScope();
+                await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
+            });
+
             // Start the host so registered IHostedService implementations
             // (cookie warmup, podcast output-folder purge) actually run.
             await host.StartAsync();
+            BootMark("host-started");
 
-            // Initialize database once at startup
-            using (var scope = host.Services.CreateScope())
-            {
-                var dbContext = scope.ServiceProvider.GetRequiredService<AppDbContext>();
-                await dbContext.InitializeDatabaseAsync();
-            }
+            await dbReady;
+            BootMark("db-ready");
 
             // No startup warmup: the browser is always headful (never-headless law), and a
             // headed warmup here would pop a visible Chrome window before the user navigates
@@ -334,6 +376,7 @@ public class Program
                 .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
 
             var browser = host.Services.GetRequiredService<IBrowserService>();
+            BootMark("tui-run");
             await browser.RunAsync(url);
             return 0;
         }

@@ -83,6 +83,22 @@ public interface IBrowserSession : IBrowserSessionControl
     /// headless (never-headless law; see BrowserSession.LaunchBrowserAsync).
     /// </summary>
     /// <returns>An active Playwright page instance.</returns>
+    /// <summary>
+    /// Warms the browser connection in the background so the FIRST navigation does not
+    /// pay for it on the input loop (workspace-yiary).
+    /// </summary>
+    /// <remarks>
+    /// Only meaningful in the desktop shell, where "launching a browser" is a pure CDP
+    /// attach to the window that is ALREADY open — no second browser, nothing headless,
+    /// and no window appears. It is not the startup warmup Program.cs bans: that was the
+    /// direct HEADED LAUNCH path, which is unreachable while a shell is attached. The
+    /// attach costs ~1.15s cold and was awaited on the TUI's input loop, which is the
+    /// ~1.5s freeze the user feels on their first Enter. Pane reveal is deliberately NOT
+    /// performed here — the first real navigation still docks the sidecar.
+    /// Idempotent, never throws, and a no-op outside the shell.
+    /// </remarks>
+    Task PrewarmAsync(CancellationToken cancellationToken = default);
+
     Task<IPage> GetOrCreatePageAsync();
 
     /// <summary>

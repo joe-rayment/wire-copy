@@ -9,6 +9,13 @@ namespace WireCopy.Infrastructure.Browser.UI;
 /// The title resolves from noise characters through random letters to the correct text,
 /// sweeping left-to-right across 8 frames at 50ms each (400ms total).
 /// </summary>
+/// <remarks>
+/// This runs SYNCHRONOUSLY on the TUI's input loop, so its 350ms of Thread.Sleep is
+/// 350ms in which keystrokes are dead — on every navigation, not just the first
+/// (workspace-ytdm3). It is therefore ABORTABLE: pass a predicate that reports pending
+/// input and the animation snaps to its final frame the moment the user touches the
+/// keyboard. Eye candy must never outrank a keypress.
+/// </remarks>
 internal static class DecryptRevealAnimation
 {
     private const int FrameCount = 8;
@@ -20,7 +27,9 @@ internal static class DecryptRevealAnimation
 
     /// <summary>
     /// Plays the decrypt-reveal animation for the given title text.
-    /// Synchronous blocking call — uses Thread.Sleep between frames.
+    /// Synchronous blocking call — uses Thread.Sleep between frames, but returns early
+    /// (after drawing the finished title) as soon as <paramref name="shouldAbort"/> says
+    /// the user is typing.
     /// </summary>
     /// <param name="title">The final title text to reveal.</param>
     /// <param name="row">Console row where the title is rendered.</param>
@@ -31,7 +40,18 @@ internal static class DecryptRevealAnimation
     /// uses <see cref="ThemePalette.HeaderTitleFg"/> (bold) — the title-load default.
     /// Pass <see cref="ThemePalette.GetAccentFg"/> for save-flash highlighting, etc.
     /// </param>
-    public static void Play(string title, int row, int col, ThemePalette palette, string? revealColor = null)
+    /// <param name="shouldAbort">
+    /// Polled between frames. When it returns true the sweep stops and jumps straight to
+    /// the final, fully-revealed frame, so the header is always left correct — an aborted
+    /// animation must never strand noise characters on screen.
+    /// </param>
+    public static void Play(
+        string title,
+        int row,
+        int col,
+        ThemePalette palette,
+        string? revealColor = null,
+        Func<bool>? shouldAbort = null)
     {
         if (string.IsNullOrEmpty(title))
         {
@@ -43,8 +63,13 @@ internal static class DecryptRevealAnimation
         var mutedFg = palette.GetMutedFg().AnsiFg;
         var titleFg = revealColor ?? $"{palette.HeaderTitleFg.AnsiFg}\x1b[1m"; // Bold, matching RenderHeader
 
-        for (var frame = 1; frame <= FrameCount; frame++)
+        for (var step = 1; step <= FrameCount; step++)
         {
+            // Jumping to the last frame both ends the sweep and guarantees the title is
+            // drawn in full before we return.
+            var aborting = step < FrameCount && Aborted(shouldAbort);
+            var frame = aborting ? FrameCount : step;
+
             // Calculate how far the "reveal sweep" has progressed (0.0 to 1.0)
             var revealProgress = (double)frame / FrameCount;
             var revealedCount = (int)(title.Length * revealProgress);
@@ -124,10 +149,33 @@ internal static class DecryptRevealAnimation
                 }
             }
 
+            if (aborting)
+            {
+                return;
+            }
+
             if (frame < FrameCount)
             {
                 Thread.Sleep(FrameDelayMs);
             }
+        }
+    }
+
+    private static bool Aborted(Func<bool>? shouldAbort)
+    {
+        if (shouldAbort is null)
+        {
+            return false;
+        }
+
+        try
+        {
+            return shouldAbort();
+        }
+        catch
+        {
+            // A predicate that throws (redirected stdin, etc.) must not kill a navigation.
+            return false;
         }
     }
 }

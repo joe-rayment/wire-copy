@@ -28,19 +28,31 @@ const DEPS = (() => {
 const pty = require(path.join(DEPS, 'node-pty'))
 
 const ROOT = path.resolve(__dirname, '..')
+
+// Boot timeline (workspace-ygzk3): stamp the shell's phases against the SAME origin
+// ../run exported, so build → electron → first frame → pty spawn → the TUI's own first
+// log line add up to the wall clock the user waits through. Off unless
+// WIRECOPY_BOOT_TIMELINE=1; the marks go to stderr, which ../run tees to a log.
+const BOOT_T0 = Number(process.env.WIRECOPY_BOOT_T0) * 1000 || Date.now()
+const BOOT_TIMELINE = process.env.WIRECOPY_BOOT_TIMELINE === '1'
+function bootMark (label) {
+  if (!BOOT_TIMELINE) return
+  process.stderr.write(`wirecopy: [boot] ${label.padEnd(18)} ${((Date.now() - BOOT_T0) / 1000).toFixed(3).padStart(7)}s\n`)
+}
+bootMark('electron-main')
+
 const CDP_PORT = process.env.WIRECOPY_SHELL_CDP_PORT || '9223'
 const PAGE_FRACTION = 0.42 // page pane is a feature, not the focus — never dominant
 
-// Drawer handle (workspace-2dmuu) — the browser sidecar's pull. Shut, it is a strip on
-// the dock edge exactly as wide as term.html's 8px right padding, so it occludes no
-// glyph column. Open, it is a small pill FLOATING over the top of the live page: the
-// page keeps its full height and the bar sits on it rather than pushing it down. The
-// painted stroke is BAR_LEN × BAR_THICK in both states — the same object, re-oriented.
-const HANDLE_W = 8
-const HANDLE_H = 16
-const HANDLE_PILL_W = 160
-const BAR_LEN = 96
-const BAR_THICK = 4
+// Drawer handle (workspace-2dmuu) — the browser sidecar's FRONT EDGE. Shut, it runs the
+// full height of the window down the dock edge; open, the full width of the browser
+// panel across its top. One rail, swung through ninety degrees. It is thick enough to
+// carry a label, so it OWNS its strip rather than floating: the terminal insets by
+// RAIL_THICK while the rail is up (a bar this wide laid over the terminal would clip
+// the rightmost glyph columns — term.html reserves only 8px of right padding). Over the
+// live page it still floats, so the page keeps its full height.
+const RAIL_THICK = 30
+const RAIL_STROKE = 2
 
 // Packaged app (workspace-mwer): the self-contained .NET API ships under resources/api
 // (its own apphost — no dotnet on the machine needed), and writable state (logs, the
@@ -208,7 +220,11 @@ function place () {
     pageView.setBounds({ x: w - pageW, y: 0, width: pageW, height: h })
     state.paneShown = true
   } else {
-    termView.setBounds({ x: 0, y: 0, width: w, height: h })
+    // The shut drawer's rail owns a strip of the dock edge, so the terminal stops
+    // short of it — laid OVER the terminal a rail this wide would clip the rightmost
+    // glyph columns (term.html reserves only 8px of right padding). With no rail up
+    // (the launcher, or before any page exists) the terminal is full width as before.
+    termView.setBounds({ x: 0, y: 0, width: w - (handleActionable() ? RAIL_THICK : 0), height: h })
     pageView.setBounds({ x: w, y: 0, width: pageW, height: h })
     state.paneShown = false
   }
@@ -234,24 +250,41 @@ function placeHandle (w, h, pageW) {
   if (!v) return
   const orient = state.revealed ? 'horizontal' : 'vertical'
   if (state.revealed) {
-    // A pill centred on the page pane's top edge, floating OVER the page — pageView
-    // keeps its full height, so the live page is never resized by the drawer's frame.
-    v.setBounds({
-      x: (w - pageW) + Math.round((pageW - HANDLE_PILL_W) / 2),
-      y: 0,
-      width: HANDLE_PILL_W,
-      height: HANDLE_H
-    })
+    // The panel's top edge, full width, floating over the live page.
+    v.setBounds({ x: w - pageW, y: 0, width: pageW, height: RAIL_THICK })
   } else {
-    // Full-height strip on the dock edge: the pointer only has to find the 8px column,
-    // and the painted stroke is a centred BAR_LEN segment inside it.
-    v.setBounds({ x: w - HANDLE_W, y: 0, width: HANDLE_W, height: h })
+    // The window's dock edge, full height. The terminal has already been inset by the
+    // same width in place(), so the rail sits beside the text, never over it.
+    v.setBounds({ x: w - RAIL_THICK, y: 0, width: RAIL_THICK, height: h })
   }
   if (orient !== state.handleOrient) {
     state.handleOrient = orient
-    if (!v.webContents.isDestroyed()) v.webContents.send('wch:state', { orient })
+    if (!v.webContents.isDestroyed()) {
+      v.webContents.send('wch:state', { orient, action: railAction(state.revealed), key: RAIL_KEY })
+    }
   }
 }
+
+// The rail's two resting states, as the overlay proxy needs them: the RECT it fills
+// plus where its label sits and which way that label runs. Both rects meet at the
+// window's top-right corner, which is the hinge the fold turns around.
+// The label names the ACTION a click performs, not the thing it acts on, and carries
+// the keyboard shortcut for the same thing — so the rail teaches '|' while being used
+// with the mouse. Worded to match the TUI's own status line ("|:hide" while docked), so
+// the two can never contradict each other.
+const RAIL_KEY = '|'
+const railAction = revealed => (revealed ? 'Hide live page' : 'Show live page')
+
+const railShut = (w, h) => ({
+  rect: { x: w - RAIL_THICK, y: 0, w: RAIL_THICK, h },
+  cx: w - (RAIL_THICK / 2), cy: h / 2, deg: 90, vertical: true,
+  action: railAction(false), key: RAIL_KEY
+})
+const railOpen = (w, pageW) => ({
+  rect: { x: w - pageW, y: 0, w: pageW, h: RAIL_THICK },
+  cx: w - (pageW / 2), cy: RAIL_THICK / 2, deg: 0, vertical: false,
+  action: railAction(true), key: RAIL_KEY
+})
 
 // The handle shows only when pulling the drawer would actually reveal something, and
 // never over the launcher screen. Two independent reasons for the launcher rule:
@@ -420,21 +453,18 @@ async function beginTransition (show) {
     cornerTo: show ? 0 : 8,
     scrimFrom: show ? 0 : 0.10,
     scrimTo: show ? 0.10 : 0,
-    // Drawer handle (workspace-2dmuu). The REAL handle view is already snapped to its
-    // destination and invisible under this opaque stage; what the user sees travel and
-    // tip over is the overlay's proxy of the same bar (same handle.css). Centres, not
-    // rects: rotating a BAR_LEN×BAR_THICK box about its centre yields the other
-    // orientation about the same point, so this is one object turning, not a crossfade.
-    // Whether to DRAW it is decided later, at wcov:go — availability is re-evaluated on
-    // every snap and this payload is built before the snap happens.
-    handleFrom: show
-      ? { cx: w - (HANDLE_W / 2), cy: h / 2, deg: 90 }
-      : { cx: dockedX + (pageW / 2), cy: HANDLE_H / 2, deg: 0 },
-    handleTo: show
-      ? { cx: dockedX + (pageW / 2), cy: HANDLE_H / 2, deg: 0 }
-      : { cx: w - (HANDLE_W / 2), cy: h / 2, deg: 90 },
-    barLen: BAR_LEN,
-    barThick: BAR_THICK
+    // Drawer handle (workspace-2dmuu). The REAL rail is already snapped to its
+    // destination and invisible under this opaque stage; what the user sees swing is
+    // the overlay's proxy of the same rail (same handle.css). Sent as CENTRE + LENGTH +
+    // ANGLE, not a rect: the rail's length changes with its orientation (the window's
+    // height shut, the panel's width open), so the proxy scales along its own long axis
+    // while the label rides the same arc unscaled. Whether to DRAW it is decided later,
+    // at wcov:go — availability is re-evaluated on every snap and this payload is built
+    // before the snap happens.
+    handleFrom: show ? railShut(w, h) : railOpen(w, pageW),
+    handleTo: show ? railOpen(w, pageW) : railShut(w, h),
+    railThick: RAIL_THICK,
+    railStroke: RAIL_STROKE
   })
   t.armedTimer = setTimeout(() => {
     // Overlay never armed (wedged renderer): bail to an instant snap.
@@ -819,6 +849,8 @@ function spawnTui () {
     spawnFile = '/bin/sh'
     spawnArgs = ['-c', 'exec "$0" "$@" 2>>"$WIRECOPY_SHELL_CHILD_STDERR"', file, ...baseArgs]
   }
+  bootMark('spawn-tui')
+  let firstPtyByte = false
   state.ptyProc = pty.spawn(spawnFile, spawnArgs, {
     name: 'xterm-256color',
     cols: cols || 80,
@@ -827,6 +859,7 @@ function spawnTui () {
     env
   })
   state.ptyProc.onData(d => {
+    if (!firstPtyByte) { firstPtyByte = true; bootMark('tui-first-paint') }
     // Transition settle heuristic (workspace-tj1z.3): the post-snap reflow is a byte
     // burst on this relay; bytes AFTER the settle capture dirty the seam (gate metric).
     if (trans) {
@@ -844,6 +877,7 @@ function spawnTui () {
 }
 
 app.whenReady().then(() => {
+  bootMark('when-ready')
   // macOS keeps a REAL app menu (About/Quit + Edit clipboard roles + Window) — without
   // an Edit menu Cmd+C/V never reach a page input, and the default menu says "Electron".
   // Linux/Windows shows no menu bar at all. Template built by a pure, in-env-tested
@@ -986,7 +1020,8 @@ app.whenReady().then(() => {
   // resting state until the next toggle.
   state.handleView.webContents.on('did-finish-load', () => {
     if (state.handleView.webContents.isDestroyed()) return
-    state.handleView.webContents.send('wch:state', { orient: state.handleOrient })
+    state.handleView.webContents.send('wch:state',
+      { orient: state.handleOrient, action: railAction(state.revealed), key: RAIL_KEY })
     state.handleReady = true
     applyHandleVisibility()
   })
@@ -1094,7 +1129,8 @@ app.whenReady().then(() => {
     // ?font= zoom contract. A window's frame does not grow when you enlarge the type
     // inside it, and the bar has to keep its exact relationship to the 8px dock strip.
     state.handleView.webContents.loadURL(
-      `http://127.0.0.1:${termSrv.address().port}/handle/handle.html?orient=${state.handleOrient}`)
+      `http://127.0.0.1:${termSrv.address().port}/handle/handle.html` +
+      `?orient=${state.handleOrient}&action=${encodeURIComponent(railAction(state.revealed))}`)
       .catch(err => console.error('[shell] handle pane load failed: ' + err))
   })
 
@@ -1144,6 +1180,7 @@ app.whenReady().then(() => {
   })
 
   ipcMain.on('term:ready', (_e, dims) => {
+    bootMark('term-ready')
     state.ptyDims = dims
     if (state.ptyProc) state.ptyProc.resize(dims.cols, dims.rows)
     else spawnTui()

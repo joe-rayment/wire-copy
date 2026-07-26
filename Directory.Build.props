@@ -26,6 +26,15 @@
   <PropertyGroup Condition="'$(Configuration)' == 'Release'">
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
     <CodeAnalysisTreatWarningsAsErrors>true</CodeAnalysisTreatWarningsAsErrors>
+
+    <!-- workspace-tc7w0: NU1900 is "could not reach the vulnerability data source" — an
+         audit-INFRASTRUCTURE failure, not an advisory. With NuGetAuditMode=all above and
+         warnings-as-errors here, an unreachable api.nuget.org turned it into build ERRORS,
+         ./run's `|| exit 1` fired, and the desktop app would not launch at all on a flaky
+         or offline network. Keep it VISIBLE as a warning so a skipped audit is never
+         silent — WarningsNotAsErrors, never NoWarn. The real advisory codes
+         (NU1901–NU1904) stay fatal. -->
+    <WarningsNotAsErrors>$(WarningsNotAsErrors);NU1900</WarningsNotAsErrors>
   </PropertyGroup>
 
   <PropertyGroup Condition="'$(Configuration)' != 'Release'">
