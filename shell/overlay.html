@@ -287,6 +287,55 @@
     }
     return { phase: anim.phase, gen: anim.gen, cardX, progress, handle: hnd }
   }
+
+  // What the reader half of the SLIDE actually shows (workspace-l8td0). The backdrop is
+  // a snapshot of whichever view is the reader face; a gate has to be able to tell which
+  // one it got, from the pixels the user is looking at rather than from a flag.
+  //
+  // The discriminator is the projected panes' CRT glow: their masthead title carries a
+  // text-shadow and their scanline overlay sits over pure black, so the image is full of
+  // pixels that are *almost* pure green — r and b near zero, g partway up. xterm renders
+  // flat text with no shadow at all, and its dim rule colour (#5f875f) has r = b = 95, so
+  // a terminal snapshot scores essentially zero on this.
+  window.__ovBack = () => {
+    const img = backA
+    if (!img || !img.naturalWidth) return null
+    const c = document.createElement('canvas')
+    c.width = Math.min(img.naturalWidth, 900)
+    c.height = Math.min(img.naturalHeight, 900)
+    const ctx = c.getContext('2d')
+    ctx.drawImage(img, 0, 0, c.width, c.height)
+    const d = ctx.getImageData(0, 0, c.width, c.height).data
+    // The MASTHEAD band is where the two surfaces differ most: a pane puts a 28-42px
+    // glowing CRT title and a scanline wash there, while the terminal has a one-line box
+    // header and mostly black. Measuring the whole image dilutes that with the body text
+    // both surfaces share, whose antialiased edges score as glow on either one.
+    const bandRows = Math.round(c.height * 0.22)
+    let glow = 0
+    let lit = 0
+    let bandGlow = 0
+    for (let i = 0; i < d.length; i += 4) {
+      const r = d[i]
+      const g = d[i + 1]
+      const b = d[i + 2]
+      if (g > 24) lit++
+      if (r < 40 && b < 40 && g >= 30 && g <= 170) {
+        glow++
+        if ((i / 4 / c.width) < bandRows) bandGlow++
+      }
+    }
+    const px = c.width * c.height
+    const bandPx = Math.max(1, bandRows * c.width)
+    return {
+      w: c.width,
+      h: c.height,
+      glow,
+      lit,
+      glowFrac: Math.round((glow / px) * 10000) / 10000,
+      bandGlow,
+      bandFrac: Math.round((bandGlow / bandPx) * 10000) / 10000
+    }
+  }
 </script>
 </body>
 </html>

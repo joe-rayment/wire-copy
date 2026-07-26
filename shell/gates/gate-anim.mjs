@@ -16,8 +16,19 @@ import http from 'node:http'
 import { Env, attach, pollTermText, check, summary, buildTui, sleep } from './lib.mjs'
 
 const FPORT = 8141
-const fixture = http.createServer((_req, res) => {
+const fixture = http.createServer((req, res) => {
   res.setHeader('content-type', 'text/html; charset=utf-8')
+  // Real articles behind the links, so Enter reaches READER view — where no projected
+  // pane is up and the reader face really is the terminal. That is the control arm for
+  // the backdrop check (workspace-l8td0).
+  if (/^\/(one|two)\.html/.test(req.url)) {
+    res.end(`<!doctype html><meta charset="utf-8"><title>Motion Story</title><body><article>` +
+      `<h1>Motion story: the desk reads at a steady pace</h1>` +
+      Array.from({ length: 30 }, (_, i) =>
+        `<p>Body paragraph ${i + 1}: the desk reads at a steady pace and files corrections before press time.</p>`).join('\n') +
+      `</article>`)
+    return
+  }
   res.end(`<!doctype html><meta charset="utf-8"><title>Motion Wire</title><body>
 <h1>Motion Wire</h1><section><h2>Front Desk</h2><ul>
 <li><a href="/one.html">Gliding panels: the reading desk rehearses the evening reveal one frame at a time</a></li>
@@ -59,6 +70,12 @@ async function sampleTransition (term, ov, ms = 3000) {
       })
       if (st.paneAnimating) sawTrans = true
       else if (sawTrans) break
+    }
+    // While the slide is up, read the BACKDROP's own pixels once (workspace-l8td0) —
+    // the reader half of the animation is a snapshot, and which surface it snapshotted
+    // is the whole bug.
+    if (ov && st && st.paneAnimating && !samples.backdrop) {
+      samples.backdrop = await ov.eval('window.__ovBack()').catch(() => null)
     }
   }
   return samples
@@ -133,10 +150,26 @@ function checkEpisode (label, s, { w, dockedX, pageW, finalX, cardDir }) {
     checkEpisode('A.3 collapse', hide, { w, dockedX, pageW, finalX: w, cardDir: +1 })
     let after = null
     for (let i = 0; i < 20; i++) { after = await term.eval('window.__wc.state()'); if (!after.paneAnimating && !after.paneShown) break; await sleep(200) }
-    check('A.4 collapse settled: pane PARKED at x=w (never hidden), terminal full width',
-      !!after && !after.paneShown && after.pageBounds.x === w && after.termBounds.width === w,
-      after ? `x=${after.pageBounds.x} termW=${after.termBounds.width} w=${w}` : '')
-    check('A.5 seamDirty === 0 at drop (quiet fixture)', after?.seamDirty === 0, `seamDirty=${after?.seamDirty}`)
+    // "Full width" means the whole window BAR the drawer rail's own strip: when the
+    // drawer is shut and holds a page, the rail runs down the dock edge and the terminal
+    // stops short of it rather than being clipped by it (the contract gate-handle's
+    // H7/H8b pin). With no rail up the terminal is full width, as before.
+    const railW = after && after.handleShown && after.handleBounds ? after.handleBounds.width : 0
+    check('A.4 collapse settled: pane PARKED at x=w (never hidden), terminal owns the rest',
+      !!after && !after.paneShown && after.pageBounds.x === w && after.termBounds.width === w - railW,
+      after ? `x=${after.pageBounds.x} termW=${after.termBounds.width} w=${w} rail=${railW}` : '')
+    check('A.5 seamDirty === 0 at drop (quiet fixture)', after?.seamDirty === 0,
+      `seamDirty=${after?.seamDirty} marks=${JSON.stringify(after?.seamMarks)}ms after capture`)
+    // workspace-l8td0: the reader half of the slide is a SNAPSHOT, and it used to be a
+    // snapshot of termView — the bare TUI grid — even though the user was looking at the
+    // styled link-tree pane laid over it. So every dock toggle on a story list flashed
+    // pane → raw terminal → pane. Read the backdrop's pixels mid-slide: the projected
+    // panes carry a CRT glow (a text-shadow on the masthead plus a scanline overlay on
+    // pure black) that xterm's flat rendering cannot produce, so a terminal snapshot
+    // scores essentially zero here. The FRACTION is what is asserted, not mere presence.
+    check('A.5b the slide sampled a backdrop at all (the discrimination is D.1)',
+      !!hide.backdrop && hide.backdrop.lit > 0,
+      hide.backdrop ? `glow ${hide.backdrop.glowFrac} lit ${hide.backdrop.lit}` : 'no backdrop sampled')
 
     console.log('\n== A: reveal (| show) plays on the overlay ==')
     const revealP = sampleTransition(term, ov)
@@ -146,7 +179,11 @@ function checkEpisode (label, s, { w, dockedX, pageW, finalX, cardDir }) {
     for (let i = 0; i < 20; i++) { after = await term.eval('window.__wc.state()'); if (!after.paneAnimating) break; await sleep(200) }
     check('A.7 reveal settled exactly at the docked position', after.paneShown && after.pageBounds.x === dockedX,
       `x=${after.pageBounds.x} docked=${dockedX}`)
-    check('A.8 seamDirty === 0 at drop (quiet fixture)', after?.seamDirty === 0, `seamDirty=${after?.seamDirty}`)
+    check('A.8 seamDirty === 0 at drop (quiet fixture)', after?.seamDirty === 0,
+      `seamDirty=${after?.seamDirty} marks=${JSON.stringify(after?.seamMarks)}ms after capture`)
+    check('A.8b the reveal sampled a backdrop too',
+      !!show.backdrop && show.backdrop.lit > 0,
+      show.backdrop ? `glow ${show.backdrop.glowFrac} lit ${show.backdrop.lit}` : 'no backdrop sampled')
     env.shot('anim-after-drop')
 
     console.log('\n== A: keystroke mid-transition reaches the pty (keystroke-never-lost) ==')
@@ -185,6 +222,42 @@ function checkEpisode (label, s, { w, dockedX, pageW, finalX, cardDir }) {
     check('B.3 cols across the spam episode ⊆ {narrow, full} (2 values max)',
       spamCols.length <= 2, `cols=${spamCols.join(',')}`)
     env.shot('anim-spam-settled')
+
+    // ── D: the CONTROL for A.5b/A.8b. In reader view no projected pane is up, so the
+    //    reader face really is the terminal — and the same measurement has to come back
+    //    much lower, or the check above proves nothing. Asserted as a RATIO so there is
+    //    no hand-tuned threshold to drift.
+    console.log('\n== D: control — in reader view the backdrop IS the terminal ==')
+    for (let i = 0; i < 20; i++) {
+      const s0 = await term.eval('window.__wc.state()')
+      if (s0 && !s0.paneAnimating) break
+      await sleep(200)
+    }
+    env.key('Return')
+    const reader = await pollTermText(term, 'reads at a steady pace', 30000)
+    check('D.0 Enter opened the story into reader view', reader.ok)
+    let rd = null
+    for (let i = 0; i < 30; i++) { rd = await term.eval('window.__wc.state()'); if (!rd.linkTreeShown && !rd.launcherShown) break; await sleep(200) }
+    check('D.0b no projected pane is up — the reader face is the terminal',
+      !!rd && !rd.linkTreeShown && !rd.launcherShown,
+      `linkTreeShown=${rd && rd.linkTreeShown} launcherShown=${rd && rd.launcherShown}`)
+    await sleep(1200)
+    const ctlP = sampleTransition(term, ov)
+    env.type('|')
+    const ctl = await ctlP
+    // THE discrimination, and the only place a threshold appears: BOTH pane-face slides
+    // must score at least 3x the terminal-face one on the same measurement, taken in the
+    // same run on the same machine. A ratio between two live samples cannot drift the way
+    // an absolute cut-off would, and it is the claim being made — that these are pictures
+    // of different surfaces — rather than a number chosen to fit one of them.
+    const paneFracs = [hide.backdrop, show.backdrop].map(b2 => (b2 ? b2.glowFrac : 0))
+    const termFrac = ctl.backdrop ? ctl.backdrop.glowFrac : null
+    check('D.1 both pane-face backdrops score FAR higher on pane-glow than the terminal-face one',
+      termFrac != null && termFrac > 0 && Math.min(...paneFracs) >= termFrac * 3,
+      `pane ${paneFracs.join(' / ')} vs terminal ${termFrac} ` +
+      `(ratio ${termFrac ? (Math.min(...paneFracs) / termFrac).toFixed(1) : 'inf'}x)`)
+    for (let i = 0; i < 20; i++) { rd = await term.eval('window.__wc.state()'); if (!rd.paneAnimating) break; await sleep(200) }
+    env.key('b'); await sleep(1500) // back to the list for whatever follows
 
     console.log('\n== C: window resize mid-flight aborts to an instant snap ==')
     // From docked: start a collapse, then resize the window while the overlay is up.

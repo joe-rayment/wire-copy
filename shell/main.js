@@ -351,12 +351,25 @@ const COLLAPSE_EASE = 'cubic-bezier(0.5, 0, 0.75, 0.4)'
 // poll + a ~300ms full-width render — as ONE atomic DEC-2026-framed burst.
 const SETTLE_BURST_MS = 550 // reflow frame must start within this after the PTY RESIZE
 const SETTLE_FALLBACK_QUIET_MS = 250 // ack-less fallback: long byte-quiet = reflow done
+// Quiet required on the reader face's own update stream after the TUI's rewrap ack
+// (workspace-l8td0). The terminal's stream is BYTES — a frame arrives as one burst, so
+// 50ms of silence means the frame is complete. A pane's is discrete STATE PUSHES, and a
+// reveal produces two: the re-page for the new width, then the one carrying the "⇉ docked"
+// badge, far enough apart that 50ms captures between them and leaves the crossfade one
+// push stale (gate-anim A.8 read seamDirty=1). 200ms covers the pair and still lands
+// inside the 300-340ms slide, so nothing waits on it.
 const SETTLE_CAP_MS = 800 // ...never wait longer than this after the snap
 const SETTLE_NO_RESIZE_MS = 300 // no pty resize at all (cols unchanged): settle early
 const PAINT_GRACE_MS = 40 // xterm paint catches up before the settle capture
+// If the reader face changes AFTER the settle capture, re-snapshot it this soon and
+// crossfade the newer frame. Bounded so a pane that keeps pushing cannot loop
+// (workspace-l8td0).
+const RECAPTURE_DELAY_MS = 60
+const MAX_RECAPTURES = 2
 let trans = null // live transition; null = idle
 let transGen = 0
 let lastSeamDirty = 0 // pty bytes between the settle capture and the drop (gate seam)
+let lastSeamMarks = []
 
 function overlayWc () {
   const v = state.overlayView
@@ -384,6 +397,7 @@ function clearTransTimers (t) {
   clearTimeout(t.armedTimer)
   clearInterval(t.settlePoll)
   clearTimeout(t.settleTimer)
+  clearTimeout(t.recapTimer)
   clearTimeout(t.dropCap)
 }
 
@@ -395,6 +409,67 @@ function abortTransition () {
   hideOverlay()
   const wc = overlayWc()
   if (wc) wc.send('wcov:abort', { gen: t.gen })
+}
+
+// Which view IS the reader half right now (workspace-l8td0). The launcher and
+// link-tree panes are SIBLING views laid OVER termView, so on a story list or at the
+// launcher the thing the user is looking at is the styled pane, not the terminal
+// underneath it. capturePage is per-view, so snapshotting termView animated the bare TUI
+// grid for the whole 300-340ms slide and then popped back to the pane — a flash on every
+// dock toggle. Both the backdrop and the settle capture take the FACE, and the settle
+// heuristic below is anchored on that same surface's own freshness.
+function readerFaceView () {
+  if (state.linkTreeShown && state.linkView && !state.linkView.webContents.isDestroyed()) {
+    return { view: state.linkView, kind: 'linktree' }
+  }
+  if (state.launcherShown && state.launcherView && !state.launcherView.webContents.isDestroyed()) {
+    return { view: state.launcherView, kind: 'launcher' }
+  }
+  return { view: state.termView, kind: 'term' }
+}
+
+// A surface the transition is animating has changed. For the terminal that signal is pty
+// bytes; for a projected pane it is a state push from the TUI — the pane is painted from
+// pushed state and does not read the pty at all, so pty quiet says nothing about whether
+// the pane is up to date. Feeding the SAME slots from whichever surface is in play is
+// what lets one settle heuristic serve both (workspace-l8td0).
+function noteFaceUpdate (kind, bytes) {
+  if (!trans || trans.faceKind !== kind) return
+  const now = Date.now()
+  trans.faceLast = now
+  if (trans.resizeSeen) trans.postResizeBurst = true
+  if (trans.captured) {
+    trans.seamBytes += bytes
+    // When, relative to the settle capture, the face changed under us. A seam metric
+    // that only says "dirty" cannot tell a 20ms straggler from a second render, and
+    // those need opposite fixes.
+    if (trans.seamMarks.length < 8) trans.seamMarks.push(now - trans.captureAt)
+    // …and if the face DID change, snapshot it again rather than crossfading a stale
+    // image (workspace-l8td0). Waiting longer before the first capture cannot fix this:
+    // a reveal produces a SECOND render ~330ms after the first (the "⇉ docked" badge
+    // arriving once the pane is actually docked), measured at 87ms past a capture that
+    // already waited 240ms. Any quiet window long enough to span it would push the
+    // crossfade past the end of the slide. Re-capturing costs one more capturePage and
+    // is payload-agnostic — the shell never has to know WHY the surface changed.
+    const t = trans
+    if (t.recaptures < MAX_RECAPTURES && !t.recapTimer) {
+      t.recaptures++
+      t.recapTimer = setTimeout(async () => {
+        if (trans !== t) return
+        // Hold the drop across the WHOLE re-capture, not just the wait for it: clearing
+        // the timer first and awaiting afterwards let the crossfade finish mid-capture,
+        // drop, and freeze the stale seam count on a coin-toss.
+        t.recapturing = true
+        t.recapTimer = null
+        try {
+          await settleCapture(t)
+        } finally {
+          t.recapturing = false
+        }
+        if (trans === t) maybeDrop(t)
+      }, RECAPTURE_DELAY_MS)
+    }
+  }
 }
 
 async function beginTransition (show) {
@@ -416,12 +491,18 @@ async function beginTransition (show) {
     xfadeDone: false,
     xfadeSkipped: false,
     captured: false,
+    captureAt: 0,
+    recaptures: 0,
+    recapTimer: null,
+    recapturing: false,
+    faceKind: readerFaceView().kind,
     seamBytes: 0,
+    seamMarks: [],
     resizeSeen: false,
     resizeAt: 0,
     postResizeBurst: false,
     reflowRendered: false,
-    ptyLast: 0,
+    faceLast: 0,
     armedTimer: null,
     settlePoll: null,
     settleTimer: null,
@@ -434,7 +515,7 @@ async function beginTransition (show) {
   let pageImg = null
   try {
     ;[termImg, pageImg] = await Promise.all([
-      termView.webContents.capturePage(),
+      readerFaceView().view.webContents.capturePage(),
       pageView.webContents.capturePage()
     ])
   } catch {}
@@ -517,7 +598,7 @@ function startSettle (t) {
   t.resizeAt = 0
   t.postResizeBurst = false
   t.reflowRendered = false
-  t.ptyLast = 0
+  t.faceLast = 0
   clearInterval(t.settlePoll)
   clearTimeout(t.settleTimer)
   t.settlePoll = setInterval(() => {
@@ -526,11 +607,11 @@ function startSettle (t) {
     const elapsed = now - t.settleStart
     // Primary: the TUI's deterministic 'resized' ack + a short byte-quiet (the ack can
     // outrun the tail of the frame through the pty relay).
-    const rendered = t.reflowRendered && now - t.ptyLast >= 50
+    const rendered = t.reflowRendered && now - t.faceLast >= (t.faceKind === 'term' ? 50 : 200)
     // Fallbacks for a TUI without the ack: a LONG quiet after the first post-resize
     // burst (an unrelated repaint mid-transition would otherwise be mistaken for the
     // rewrap — observed empirically with the dock-toggle's own render).
-    const quietDone = !t.reflowRendered && t.postResizeBurst && now - t.ptyLast >= SETTLE_FALLBACK_QUIET_MS
+    const quietDone = !t.reflowRendered && t.postResizeBurst && now - t.faceLast >= SETTLE_FALLBACK_QUIET_MS
     const noBurst = t.resizeSeen && !t.postResizeBurst && now - t.resizeAt >= SETTLE_BURST_MS
     const noResize = !t.resizeSeen && elapsed >= SETTLE_NO_RESIZE_MS
     if (rendered || quietDone || noBurst || noResize || elapsed >= SETTLE_CAP_MS) {
@@ -543,8 +624,15 @@ function startSettle (t) {
 
 // (6) Capture the post-reflow reader and crossfade it in over the stale backdrop.
 async function settleCapture (t) {
+  // The seam is measured against the image we are about to SHOW, so a re-capture resets
+  // it: what matters is whether the face changed after the frame the user is looking at.
+  // Reset BEFORE the capture, or a change that lands while capturePage is still running
+  // would be counted and then wiped by a reset that happens after it.
+  t.captureAt = Date.now()
+  t.seamBytes = 0
+  t.seamMarks = []
   let img = null
-  try { img = await state.termView.webContents.capturePage() } catch {}
+  try { img = await readerFaceView().view.webContents.capturePage() } catch {}
   if (trans !== t) return
   t.captured = true
   const wc = overlayWc()
@@ -565,6 +653,10 @@ async function settleCapture (t) {
 }
 
 function maybeDrop (t) {
+  // A pending re-capture means we KNOW the crossfaded frame is stale (workspace-l8td0);
+  // dropping now would uncover the correct views but would also freeze the stale frame
+  // into the seam metric on a coin-toss. dropCap still bounds the whole episode.
+  if (t.recapTimer || t.recapturing) return
   if (t.slideDone && (t.xfadeDone || t.xfadeSkipped)) finishDrop(t)
 }
 
@@ -572,6 +664,7 @@ function maybeDrop (t) {
 function finishDrop (t) {
   clearTransTimers(t)
   lastSeamDirty = t.seamBytes
+  lastSeamMarks = t.seamMarks.slice()
   trans = null
   hideOverlay()
   const wc = overlayWc()
@@ -881,11 +974,7 @@ function spawnTui () {
     if (!state.termReady) { state.ptyBacklog.push(d); return }
     // Transition settle heuristic (workspace-tj1z.3): the post-snap reflow is a byte
     // burst on this relay; bytes AFTER the settle capture dirty the seam (gate metric).
-    if (trans) {
-      trans.ptyLast = Date.now()
-      if (trans.resizeSeen) trans.postResizeBurst = true
-      if (trans.captured) trans.seamBytes += d.length
-    }
+    noteFaceUpdate('term', d.length)
     if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('pty:data', d)
   })
   state.ptyProc.onExit(({ exitCode }) => {
@@ -1086,6 +1175,12 @@ app.whenReady().then(() => {
       // these dims. Only the CURRENT pty size counts — an ack for the pre-snap size
       // is not the reflow the transition is waiting for.
       resized: p => {
+        // The 'resized' ack says the TERMINAL rewrapped — which is also when the TUI
+        // pushes the panes their post-resize state, so it is a valid readiness signal for
+        // any face. What differs per face is the SECOND half of the rule: `rendered`
+        // additionally requires 50ms of quiet on the face's OWN update stream (pty bytes
+        // for the terminal, state pushes for a pane), and that is what faceLast carries
+        // (workspace-l8td0).
         if (trans && Number(p.cols) === state.ptyDims.cols) trans.reflowRendered = true
         return {}
       },
@@ -1096,6 +1191,7 @@ app.whenReady().then(() => {
       // interprets `state`.
       launcherState: p => {
         state.launcherMsg = p
+        noteFaceUpdate('launcher', 1)
         applyLauncherVisibility()
         applyHandleVisibility() // the drawer's pull hides while the launcher is up
         if (state.launcherView && !state.launcherView.webContents.isDestroyed()) {
@@ -1108,6 +1204,7 @@ app.whenReady().then(() => {
       // the payload verbatim without interpreting `state`.
       linkTreeState: p => {
         state.linkTreeMsg = p
+        noteFaceUpdate('linktree', 1)
         applyLinkTreeVisibility()
         if (state.linkView && !state.linkView.webContents.isDestroyed()) {
           state.linkView.webContents.send('wc:linktree', p)
@@ -1266,6 +1363,7 @@ app.whenReady().then(() => {
     transTarget: trans ? trans.target : null,
     transGen,
     seamDirty: lastSeamDirty,
+    seamMarks: lastSeamMarks,
     paneShown: state.paneShown,
     launcherShown: !!state.launcherShown,
     launcherBounds: state.launcherView ? state.launcherView.getBounds() : null,
