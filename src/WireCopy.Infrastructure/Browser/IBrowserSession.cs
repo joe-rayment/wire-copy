@@ -151,6 +151,28 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<BrowserWindowState?> ToggleWindowDockAsync();
 
     /// <summary>
+    /// Parks the docked pane because there is nothing to show — the terminal moved to the
+    /// launcher, a collection, or anything else with no live page behind it. The user's
+    /// sticky <see cref="WantsSidecar"/> intent is preserved, so the next selection that
+    /// DOES have a page brings the pane straight back via <see cref="UnparkPaneAsync"/>.
+    /// </summary>
+    /// <remarks>
+    /// workspace-shojj. Before this the pane simply kept whatever it had last loaded: on
+    /// returning from a story list to the launcher it was still revealed with the previous
+    /// site's page in it, and only LOOKED collapsed because the launcher pane spans the
+    /// whole window and hid it. The moment the user opened anything that did not cover the
+    /// full window, the stale page was back on screen.
+    /// </remarks>
+    Task ParkPaneAsync();
+
+    /// <summary>
+    /// Re-reveals a pane parked by <see cref="ParkPaneAsync"/>. No-op — returning false —
+    /// unless the pane really is parked and the user still wants the sidecar.
+    /// </summary>
+    /// <returns>True when the pane is docked and visible after the call.</returns>
+    Task<bool> UnparkPaneAsync();
+
+    /// <summary>
     /// Lens-on-demand: ensures a headed browser window showing <paramref name="url"/>
     /// and docks it to the right half of the screen. Unlike
     /// <see cref="ToggleWindowDockAsync"/> — which only toggles an EXISTING headed

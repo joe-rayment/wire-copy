@@ -91,6 +91,12 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     private readonly List<string> _ownedLensUrls = new();
     private string? _divergedFromTarget;
 
+    // workspace-shojj: WE parked the pane because there was nothing to show. Only a park
+    // we made may be undone here — the flag is what keeps this feature from reaching into
+    // the dock state machine generally (a pane the user un-docked, or one that has simply
+    // not been revealed yet, is none of the spotlight's business).
+    private bool _parkedForNoContent;
+
     // workspace-yx03: background settle passes for the current follow-navigation,
     // cancelled and replaced by the next one.
     private CancellationTokenSource? _expandSettleCts;
@@ -180,7 +186,10 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     /// </summary>
     public void RequestSync(SpotlightTarget target)
     {
-        if (_disposed || !_session.IsDocked || !_session.HasActiveBrowser)
+        // …or when WE parked the pane for want of content: this request is the content
+        // arriving, and the sync is what brings the pane back (workspace-shojj).
+        if (_disposed || !_session.HasActiveBrowser ||
+            (!_session.IsDocked && !_parkedForNoContent))
         {
             return;
         }
@@ -425,11 +434,23 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 
     private async Task SyncAsync(SpotlightTarget target)
     {
-        if (!_session.IsDocked || !_session.HasActiveBrowser)
+        if (!_session.HasActiveBrowser)
         {
             _applied = null;
             return;
         }
+
+        // Nothing to do while the pane is down, UNLESS we parked it for want of content —
+        // in which case this target is the content arriving, so bring it back
+        // (workspace-shojj).
+        if (!_session.IsDocked &&
+            (!_parkedForNoContent || !await _session.UnparkPaneAsync().ConfigureAwait(false)))
+        {
+            _applied = null;
+            return;
+        }
+
+        _parkedForNoContent = false;
 
         try
         {
@@ -728,6 +749,13 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             return;
         }
 
+        // workspace-shojj: a clear means the terminal moved somewhere with no live page —
+        // the launcher, a collection. Removing the highlight is not enough; the pane kept
+        // whatever it last loaded, and only LOOKED collapsed because the launcher pane
+        // covers the window. Blank it and collapse it, keeping the user's sidecar intent
+        // so the next page with something to show brings it straight back.
+        var wasDocked = _session.IsDocked;
+
         try
         {
             var page = await _session.GetLensPageAsync().ConfigureAwait(false);
@@ -751,6 +779,21 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             lock (_gate)
             {
                 _lastFailedTarget = null; // selection gone — nothing to self-heal
+            }
+        }
+
+        if (wasDocked && _session.WantsSidecar)
+        {
+            try
+            {
+                await _session.ParkPaneAsync().ConfigureAwait(false);
+                _parkedForNoContent = true;
+                _ownedLensUrls.Clear();   // the lens is blank; nothing we own is on it
+                _divergedFromTarget = null;
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Dock spotlight: parking the pane failed (non-fatal)");
             }
         }
     }

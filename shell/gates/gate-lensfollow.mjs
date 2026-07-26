@@ -10,7 +10,7 @@
 // (wc.lensEval runs in state.pageView): where the spotlight box actually SITS, which
 // anchor it sits ON, what the pane's URL actually IS. Presence is never the assertion.
 //
-// Four arms:
+// Five arms:
 //   R  REDIRECTING site (/storyN.html 302s to /articles/N — i.e. every real news site:
 //      trailing slash, https, m., /amp/, consent hop). This is the arm that failed
 //      before the fix: after Back the pane stayed on the article forever.
@@ -21,6 +21,9 @@
 //   T  A GENUINE user takeover: the lens is driven to an unrelated URL from inside the
 //      page. Follow-navigation must SUSPEND (the workspace-mctt behaviour), which is the
 //      thing the redirect bug was a false positive of.
+//   S  Nothing to show (workspace-shojj): at the launcher the pane must COLLAPSE and go
+//      blank rather than keep the last article, and come back on its own for the next
+//      thing that has a page.
 //
 // Headful under Xvfb ONLY (never headless). Run from shell/: node gates/gate-lensfollow.mjs
 import http from 'node:http'
@@ -226,18 +229,24 @@ try {
   //    redirect bug existed at all — so a fix that simply deletes it must fail here. ───
   console.log('\n──── arm T (genuine user takeover) ────')
   await term.eval(`wc.lensEval("location.href='http://127.0.0.1:${PORT_X}/'; 1")`)
-  await sleep(3500)
+  // Move the selection straight away and poll from THAT moment. Two things make the
+  // timing here load-bearing: the app only notices the takeover on its next spotlight
+  // sync (which a selection move guarantees), and it offers adoption ONCE per divergence
+  // with a status line that lives 3 seconds. Sleeping before looking, or looking without
+  // moving, each fail for a reason that has nothing to do with the behaviour — both were
+  // tried, and both are why this reads the way it does.
+  env.key('Down')
+  const tookOver = await pollTermText(term, 'Browser page changed', 10000)
+  check('T2 the app OFFERS to adopt the page the "user" drove to, rather than doing nothing',
+    tookOver.ok, 'status line: "Browser page changed · y: read it here"')
   const lT0 = await lens()
   check('T0 the lens really is on the unrelated page the "user" drove it to',
     !!(lT0 && /USER TAKEOVER/.test(lT0.title)), `pane "${lT0 && lT0.title}" (${lT0 && lT0.url})`)
-  await key('Down', 3500)
+  await sleep(3000)
   const lT1 = await lens()
   check('T1 follow-navigation SUSPENDS — the user\'s page is not yanked away',
     !!(lT1 && /USER TAKEOVER/.test(lT1.title) && lT1.url.startsWith(`http://127.0.0.1:${PORT_X}/`)),
     `pane "${lT1 && lT1.title}" (${lT1 && lT1.url})`)
-  const tookOver = await pollTermText(term, 'Browser page changed', 8000)
-  check('T2 …and the app OFFERS to adopt it rather than silently doing nothing',
-    tookOver.ok, 'status line: "Browser page changed · y: read it here"')
   env.shotWindow('lf-T-takeover', wid)
 
   // Leaving the site and coming back must break the suspension — the app moving on wins.
@@ -251,6 +260,46 @@ try {
   check('T4 …and the live pane really followed to the new site',
     !!(lT2 && /PLAIN Front/.test(lT2.title)), `pane "${lT2 && lT2.title}" (${lT2 && lT2.url})`)
   env.shotWindow('lf-T-recovered', wid)
+
+  // ── S: the pane must COLLAPSE and go blank when there is nothing to show, and come
+  //    straight back when there is. Before workspace-shojj it kept whatever it had last
+  //    loaded and only LOOKED collapsed at the launcher, because the launcher pane spans
+  //    the whole window and hid it — the stale article was still there, still revealed. ──
+  console.log('\n──── arm S (collapse when there is nothing to show) ────')
+  const shellState = () => term.eval('window.__wc.state()')
+  const onSite = await shellState()
+  check('S0 the pane is up while a story list is on screen',
+    onSite.revealed === true && onSite.pageBounds.x < onSite.contentSize[0],
+    `revealed=${onSite.revealed} page.x=${onSite.pageBounds.x} content.w=${onSite.contentSize[0]}`)
+
+  await key('Escape', 4500) // back to the launcher — nothing to show
+  const atLauncher = await shellState()
+  const blank = await lens()
+  check('S1 at the launcher the pane is COLLAPSED — not merely hidden behind another view',
+    atLauncher.revealed === false && atLauncher.paneShown === false &&
+    atLauncher.pageBounds.x >= atLauncher.contentSize[0],
+    `revealed=${atLauncher.revealed} paneShown=${atLauncher.paneShown} page.x=${atLauncher.pageBounds.x} content.w=${atLauncher.contentSize[0]}`)
+  check('S2 …and it is showing NOTHING — the previous site\'s page is gone, not just covered',
+    !!blank && /^about:blank/.test(blank.url) && !/Front|Story/i.test(blank.title || ''),
+    `pane "${blank && blank.title}" (${blank && blank.url})`)
+  env.shotWindow('lf-S-launcher', wid)
+
+  // …and it comes back on its own for the next thing that HAS a page.
+  await key('1', 1200)
+  await key('Return', 500)
+  check('S3 re-entering a site reopened its list', (await pollTermText(term, 'STORY 1', 45000)).ok)
+  await sleep(5000)
+  const backUp = await shellState()
+  const selS = await selectedStory()
+  const lS = await lens()
+  check('S4 the pane came BACK on its own — no dock keystroke',
+    backUp.revealed === true && backUp.pageBounds.x < backUp.contentSize[0],
+    `revealed=${backUp.revealed} page.x=${backUp.pageBounds.x} content.w=${backUp.contentSize[0]}`)
+  check('S5 …showing that site\'s page, with the box on the selected story',
+    !!(lS && /REDIR Front/.test(lS.title) && lS.rect && selS &&
+       pathOf(lS.onAnchor) === pathOf(selS.url)),
+    `pane "${lS && lS.title}" (${lS && lS.url}) on=${lS && lS.onAnchor} selected=${selS && selS.url}`)
+  env.shotWindow('lf-S-reopened', wid)
 
   const crashed = /A JavaScript error occurred in the main process/.test(shell.stderrText)
   check('Z0 no main-process crash in stderr', !crashed)

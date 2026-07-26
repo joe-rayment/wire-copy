@@ -105,6 +105,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // that reappears (e.g. after a crash recovery) re-docks itself when the user wanted a dock.
     private bool _userWantsDock;
 
+    // workspace-shojj: the pane is hidden because there is nothing to show, NOT because
+    // the user un-docked. Distinct from both flags above: _userWantsDock stays true (the
+    // user still wants a sidecar) and _isDocked is false (it is not on screen). Held so
+    // the reconcile in MinimizeWindowAsync does not helpfully put a blank pane back.
+    private bool _paneParked;
+
     private bool _disposed;
     private bool _browsersInstalled;
 
@@ -410,7 +416,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             // interaction-cleanup call. Background prefetch calls stay pane-neutral.
             var shellHandBack = weJustActivatedBrowser
                 || Interlocked.Exchange(ref _pendingInteractionHandback, 0) == 1;
-            if (_userWantsDock && !_isDocked)
+            if (_userWantsDock && !_isDocked && !_paneParked)
             {
                 _isDocked = await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false);
             }
@@ -434,6 +440,61 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
+    public async Task ParkPaneAsync()
+    {
+        if (_disposed || !_shell.IsConnected)
+        {
+            return;
+        }
+
+        // Blank the lens BEFORE hiding, so a pane that comes back for any reason cannot
+        // flash the previous site's article. about:blank is also not a summonable URL, so
+        // the spotlight's takeover heuristic reads it as ours, not as the user's.
+        try
+        {
+            var lens = _lensPage;
+            if (lens != null && !lens.IsClosed)
+            {
+                await lens.GotoAsync("about:blank", new PageGotoOptions
+                {
+                    WaitUntil = WaitUntilState.Commit,
+                    Timeout = 5000,
+                }).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Park pane: blanking the lens failed (advisory)");
+        }
+
+        _paneParked = true;
+        if (_isDocked)
+        {
+            await _shell.SetPaneVisibleAsync(false).ConfigureAwait(false);
+            _isDocked = false;
+            _logger.LogDebug("Pane parked: nothing to show");
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<bool> UnparkPaneAsync()
+    {
+        if (_disposed || !_shell.IsConnected || !_paneParked || !_userWantsDock)
+        {
+            return false;
+        }
+
+        _paneParked = false;
+        if (!_isDocked)
+        {
+            _isDocked = await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false);
+            _logger.LogDebug("Pane unparked: there is a page to show again (docked={Docked})", _isDocked);
+        }
+
+        return _isDocked;
+    }
+
+    /// <inheritdoc />
     public async Task<BrowserWindowState?> ToggleWindowDockAsync()
     {
         if (_disposed || _page == null)
@@ -447,6 +508,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
             {
                 // Explicit un-dock: drop the sticky intent, hide the pane, reader keeps keys.
                 _userWantsDock = false;
+                _paneParked = false;
                 await _shell.SetPaneVisibleAsync(false).ConfigureAwait(false);
                 _isDocked = false;
                 await _shell.SetModeAsync("reader").ConfigureAwait(false);
@@ -1349,6 +1411,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
             _isDocked = true;
             _userWantsDock = true;
+            _paneParked = false; // an explicit dock outranks a park (workspace-shojj)
             return BrowserWindowState.Docked;
         }
 
