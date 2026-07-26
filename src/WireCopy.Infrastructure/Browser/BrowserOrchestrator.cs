@@ -429,6 +429,21 @@ public partial class BrowserOrchestrator : IBrowserService
                     t => _logger.LogError(t.Exception, "Background service faulted: PreloadService"),
                     TaskContinuationOptions.OnlyOnFaulted);
 
+            // workspace-yiary: get the CDP attach off the first navigation's critical path.
+            // It costs ~570ms here (1.15s cold on the user's Mac) and used to be awaited ON
+            // this input loop the first time anything was opened. Pane-neutral: the
+            // sidecar's reveal moved to GetOrCreatePageAsync and is suppressed while the
+            // prewarm holds the flag, so nothing appears until a real navigation. No-op
+            // outside the shell, where "get a page" would launch a browser and open a
+            // window — that IS the warmup Program.cs bans.
+            if (_browserSession is IBrowserSession prewarmSession)
+            {
+                _ = prewarmSession.PrewarmAsync(cancellationToken)
+                    .ContinueWith(
+                        t => _logger.LogDebug(t.Exception, "Browser prewarm faulted (non-fatal)"),
+                        TaskContinuationOptions.OnlyOnFaulted);
+            }
+
             var options = GetCurrentRenderOptions();
 
             if (!string.IsNullOrWhiteSpace(initialUrl))

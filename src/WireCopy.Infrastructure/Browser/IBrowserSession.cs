@@ -151,6 +151,20 @@ public interface IBrowserSession : IBrowserSessionControl
     Task<BrowserWindowState?> ToggleWindowDockAsync();
 
     /// <summary>
+    /// Attaches to the shell's browser AHEAD of the first navigation, so that navigation
+    /// does not pay for it on the input loop. No-op outside the shell, where getting a
+    /// page really would launch a browser and open a window.
+    /// </summary>
+    /// <remarks>
+    /// workspace-yiary: the CDP attach costs ~570ms measured in this container (1.15s cold
+    /// on the user's Mac) and was awaited ON the TUI input loop during the first
+    /// navigation. It is pane-neutral by construction — the sidecar's reveal now lives in
+    /// GetOrCreatePageAsync rather than on the back of the attach, and is suppressed while
+    /// a prewarm is in flight.
+    /// </remarks>
+    Task PrewarmAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Parks the docked pane because there is nothing to show — the terminal moved to the
     /// launcher, a collection, or anything else with no live page behind it. The user's
     /// sticky <see cref="WantsSidecar"/> intent is preserved, so the next selection that

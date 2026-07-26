@@ -111,6 +111,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // the reconcile in MinimizeWindowAsync does not helpfully put a blank pane back.
     private bool _paneParked;
 
+    // True only while PrewarmAsync is driving the attach. The attach costs ~570ms measured
+    // here; during a prewarm nothing has been navigated to yet, so the sidecar must stay
+    // down (workspace-yiary).
+    private volatile bool _prewarming;
+
     private bool _disposed;
     private bool _browsersInstalled;
 
@@ -279,6 +284,35 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <inheritdoc />
+    public async Task PrewarmAsync(CancellationToken cancellationToken = default)
+    {
+        // Only under the shell. Outside it "getting a page" really does LAUNCH a browser
+        // and open a window, which IS the warmup Program.cs bans — there the first
+        // navigation must remain the thing that opens it.
+        if (_disposed || !_shell.IsConnected)
+        {
+            return;
+        }
+
+        _prewarming = true;
+        try
+        {
+            await GetOrCreatePageAsync().ConfigureAwait(false);
+            _logger.LogInformation(
+                "Browser prewarmed: the first navigation will not wait on the CDP attach");
+        }
+        catch (Exception ex)
+        {
+            // Best effort by design: if this fails the first navigation attaches as before.
+            _logger.LogDebug(ex, "Browser prewarm failed (non-fatal — the first navigation will attach)");
+        }
+        finally
+        {
+            _prewarming = false;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<IPage> GetOrCreatePageAsync()
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
@@ -294,6 +328,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 {
                     _ = _page.Url;
                     _logger.LogDebug("Reusing existing Playwright page");
+                    await RevealSidecarIfWantedAsync().ConfigureAwait(false);
                     return _page;
                 }
                 catch (PlaywrightException ex)
@@ -326,6 +361,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                     ex);
             }
 
+            await RevealSidecarIfWantedAsync().ConfigureAwait(false);
             return _page!;
         }
         finally
@@ -1125,6 +1161,28 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     }
 
     /// <summary>
+    /// Brings the sidecar out when the app has taken the browser for a real page and the
+    /// user wants it there. Idempotent, and silent during a prewarm.
+    /// </summary>
+    /// <remarks>
+    /// workspace-yiary: this is the auto-dock, moved off the back of AttachToShellAsync so
+    /// that WHEN the attach happens stops deciding WHETHER the sidecar appears. Every guard
+    /// is load-bearing: _prewarming, or the boot attach reveals a pane over a page the user
+    /// has not asked for; _paneParked, or a pane the spotlight collapsed for want of
+    /// content comes back blank (workspace-shojj); _userWantsDock, or an explicit un-dock
+    /// is undone by the next fetch.
+    /// </remarks>
+    private async Task RevealSidecarIfWantedAsync()
+    {
+        if (_disposed || _prewarming || _paneParked || !_userWantsDock || _isDocked || !_shell.IsConnected)
+        {
+            return;
+        }
+
+        _isDocked = await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false);
+    }
+
+    /// <summary>
     /// Desktop-shell attach path: connects Patchright to the shell's embedded Chromium
     /// (ConnectOverCDPAsync) and adopts a fresh hidden shell page as the fetch tab.
     /// Replaces LaunchPersistentContextAsync entirely — one browser, one window, no
@@ -1180,10 +1238,15 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         _logger.LogInformation(
             "Attached to the desktop shell browser at {Endpoint} (single-window, headful)", endpoint);
 
-        if (_userWantsDock)
-        {
-            _isDocked = await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false);
-        }
+        // The sidecar's auto-reveal deliberately does NOT live here any more
+        // (workspace-yiary). It used to, which made it a side effect of ATTACHING — fine
+        // while the attach happened lazily on the first navigation, fatal the moment
+        // anything attached earlier. A first attempt at prewarming the attach at boot
+        // silently killed the auto-dock for exactly that reason, and deferring the reveal
+        // did not restore it because nothing else ever performed it (gate-columns caught
+        // it at 46/55). The reveal now belongs to GetOrCreatePageAsync — "the app has
+        // taken the browser for a page" — which is true on the first navigation whether or
+        // not the attach already happened.
     }
 
     /// <summary>
