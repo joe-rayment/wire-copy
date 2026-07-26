@@ -64,17 +64,30 @@ internal class LauncherRenderer
     // sat jammed against the bar's bottom border.
     private const int UrlBarLines = 5;
 
-    // "Launcher Responsive.dc.html": the HTML pane's grid flows 1..5 columns
-    // with the window (CSS spec: minmax(min(340px,100%),1fr) + 40px gap at the
-    // 18px design scale). ShellPaneColumns is the C#-side mirror of that
-    // auto-fill count in terminal-cell units, and it is the SINGLE source of
-    // truth for the pane: BuildViewState exports it (LauncherViewState.Columns)
-    // AND arrow-key navigation uses it in shell mode (LauncherCommandHandler.
-    // GetLayoutColumns), so keyboard geometry always matches the visible grid.
-    // The TERMINAL grid stays fixed at 2 columns (workspace-ehon) — this count
-    // exists only for the HTML projection. The pane pages in windows of
-    // Columns × PaneRowsPerPage tiles.
-    private const int PaneRowsPerPage = 3;
+    // Terminal cell → design px for the HTML pane at the 18px scale. Measured on
+    // the live pane (the link-tree gate's px-mirror check: 69×41 cells over a real
+    // 789×900px pane ⇒ ~11.4px/cell, ~21.9px/line). Deliberately a shade under so
+    // the width estimate stays conservative.
+    private const double PaneCellPx = 11.2;
+    private const double PaneLinePx = 21.6;
+
+    // One tile row's vertical footprint in the pane, in design px. The launcher
+    // card is content-sized rather than clamped, but it varies little with width
+    // (measured on the live pane: 115px at 620/900, 120px at 1280, 122px at
+    // 1680). Take the LARGEST so the estimate under-admits rather than over-.
+    private const double PaneCardStridePx = 122;
+
+    // Tile grids are ALWAYS exactly 2 columns — the user's standing contract
+    // (workspace-21uy / workspace-1ogw), the same one ResponsiveGrid.FixedColumns
+    // holds for terminal mode. The "Launcher Responsive.dc.html" import briefly
+    // reintroduced a responsive 1..5 auto-fill count here (workspace-9hh1); on a
+    // 15" MacBook that rendered THREE columns, which the user rejected. Do not
+    // reintroduce a width-dependent count: 2 is the contract on both surfaces.
+    // ShellPaneColumns stays as the SINGLE source of truth for the pane —
+    // BuildViewState exports it (LauncherViewState.Columns) AND arrow-key
+    // navigation reads it in shell mode (LauncherCommandHandler.GetLayoutColumns),
+    // so keyboard geometry always matches the visible grid. The pane pages in
+    // windows of Columns × PaneRowsPerPage tiles.
 
     // The setup-hint copy, shared between the masthead render (SetupHintBoxLine)
     // and the exported view-model (workspace-0jxo) so both read the same string.
@@ -451,16 +464,64 @@ internal class LauncherRenderer
     }
 
     /// <summary>
-    /// The HTML pane's responsive column count for a given terminal width —
-    /// the cell-unit mirror of the design's
-    /// <c>repeat(auto-fill, minmax(min(340px,100%),1fr))</c> with a 40px gap:
-    /// at the 18px design scale a tile floor is ~32 cells and the gap ~4, so
-    /// a column fits per full 36 cells of inner width (floor semantics, like
-    /// auto-fill), clamped to 1..5. ~620px → 1, ~900px → 2, ~1280px → 3,
-    /// ~1680px → 4. Terminal-mode rendering never calls this.
+    /// The HTML pane's column count: ALWAYS 2, at every window width, matching
+    /// the terminal grid's fixed 2-column contract
+    /// (<see cref="ResponsiveGrid.FixedColumns"/>, workspace-21uy). The pane's
+    /// CSS lays out exactly <c>var(--cols)</c> tracks from this number, so the
+    /// grid never fans out into a third column on a wide display. The parameter
+    /// is retained so the pane's geometry keeps ONE call shape with the link
+    /// tree's and callers need no conditional. Terminal-mode rendering never
+    /// calls this.
     /// </summary>
-    internal static int ShellPaneColumns(int terminalWidth)
-        => Math.Clamp((terminalWidth - 4) / 36, 1, 5);
+    internal static int ShellPaneColumns(int terminalWidth) => ResponsiveGrid.FixedColumns;
+
+    /// <summary>
+    /// Everything the HTML launcher pane spends above and below the tile grid, in
+    /// design px: column padding, the masthead (eyebrow, CRT title, tagline), the
+    /// URL bar, the optional setup hint, and the footer block (pager + key hints).
+    /// </summary>
+    /// <remarks>
+    /// MEASURED, not derived from the stylesheet. A first cut summed launcher.css's
+    /// clamp()s and came out ~55px light, which admitted a row too many. These
+    /// numbers are <c>#column.scrollHeight − #grid.height</c> off the live pane
+    /// (gates/probe-launcher-rows.mjs, 2026-07-26, setup hint showing): 480px at
+    /// 1280px wide, 485px at 1360px, 494px at 1680px — a shallow ramp that flattens
+    /// once the column's <c>clamp(30px,4vw,64px)</c> padding tops out near 1600px.
+    /// The hint itself is ~27px of that. Re-measure with the probe if the pane's
+    /// chrome changes.
+    /// </remarks>
+    internal static double ShellPaneChromePx(double w, bool showSetupHint)
+    {
+        var baseChrome = Math.Clamp(408 + (0.035 * w), 453, 467);
+        return baseChrome + (showSetupHint ? 27 : 0);
+    }
+
+    /// <summary>
+    /// How many tile ROWS one pane page carries: as many as the pane's own px
+    /// budget fits, so the grid FILLS the pane's height instead of stopping at a
+    /// hard-coded three rows and leaving a dead band below it. This is the user's
+    /// sizing rule (workspace-1ogw) applied to the pane: with the grid alone on
+    /// screen 2×4 = 8 tiles fill it; chrome reduces how many are VISIBLE, never
+    /// how big each tile is. The terminal layout's row count is deliberately NOT
+    /// reused — its card is a quarter of the screen tall
+    /// (<see cref="ResponsiveGrid.CellHeightFor"/>) while the pane's is a roughly
+    /// constant 122px, so mirroring it would UNDER-fill the pane.
+    /// Under-estimating costs a little dead space; over-estimating is safe too,
+    /// because the pane's stage scrolls rather than clipping (unlike the link
+    /// tree's grid).
+    /// </summary>
+    internal static int PaneRowsPerPage(RenderOptions options)
+    {
+        var w = options.TerminalWidth * PaneCellPx;
+
+        // The terminal reports whole LINES, so the pane's true pixel height is
+        // somewhere in [rows, rows+1) lines. Add half a line back: rounding the
+        // estimate down instead loses a row exactly at the common window sizes
+        // (a 982px-tall 15" MacBook lands 4px short of its fourth row).
+        var paneHeightPx = (options.TerminalHeight + 0.5) * PaneLinePx;
+        var gridPx = paneHeightPx - ShellPaneChromePx(w, options.ShowSetupHint);
+        return Math.Max(1, (int)(gridPx / PaneCardStridePx));
+    }
 
     /// <summary>
     /// Projects the launcher's current bookmarks/selection/options into the
@@ -511,7 +572,7 @@ internal class LauncherRenderer
             };
         }
 
-        var pageSize = columns * PaneRowsPerPage;
+        var pageSize = columns * PaneRowsPerPage(options);
         var total = bookmarks.Count + 1; // bookmarks + the Reading List virtual slot
         var offset = selectedIndex >= 0
             ? (selectedIndex / pageSize) * pageSize

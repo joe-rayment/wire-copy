@@ -86,19 +86,21 @@ public class LauncherViewStateTests
     }
 
     [Fact]
-    public void MoreThanSixBookmarks_PagesToSelectedTilesPage_WithEmptyPadding()
+    public void PagesToSelectedTilesPage_WithEmptyPadding()
     {
-        // 8 bookmarks + Reading List = 9 tiles. Selecting virtual slot 7 lands on page 1 (offset 6).
-        var state = LauncherRenderer.BuildViewState(CreateBookmarks(8), selectedIndex: 7, Options());
+        // Options() is a SHORT window (35 lines): the pane's px budget fits 2 rows,
+        // so a page is 2 columns × 2 rows = 4 tiles. 8 bookmarks + Reading List = 9
+        // tiles → pages [0-3] [4-7] [8]. Selecting virtual slot 8 lands on the last
+        // page, whose single real tile pads out to a whole 2-column row.
+        var state = LauncherRenderer.BuildViewState(CreateBookmarks(8), selectedIndex: 8, Options());
 
-        state.Paging.Should().Be(new LauncherPaging { Offset = 6, Visible = 3, Total = 9 },
-            "page 1 shows the 3 remaining real tiles out of 9 total");
-        state.SelectedIndex.Should().Be(1, "virtual slot 7 is window index 7 - offset 6 = 1");
-        state.Slots.Should().HaveCount(4, "the last page pads to a whole 2-column row");
-        state.Slots[0].Index.Should().Be(6);
-        state.Slots[2].Index.Should().Be(8);
-        state.Slots[3].Kind.Should().Be("empty", "the trailing grid cell past the last tile is an empty pad");
-        state.Slots[3].Badge.Should().BeNull();
+        state.Paging.Should().Be(new LauncherPaging { Offset = 8, Visible = 1, Total = 9 },
+            "the last page shows the 1 remaining real tile out of 9 total");
+        state.SelectedIndex.Should().Be(0, "virtual slot 8 is window index 8 - offset 8 = 0");
+        state.Slots.Should().HaveCount(2, "the last page pads to a whole 2-column row");
+        state.Slots[0].Index.Should().Be(8);
+        state.Slots[1].Kind.Should().Be("empty", "the trailing grid cell past the last tile is an empty pad");
+        state.Slots[1].Badge.Should().BeNull();
     }
 
     [Fact]
@@ -166,37 +168,47 @@ public class LauncherViewStateTests
         json.Should().Contain("\"star\":true");
     }
 
-    // ── Responsive pane geometry ("Launcher Responsive.dc.html") ──────────────
+    // ── Pane grid geometry: ALWAYS 2 columns (the tile-grid contract) ─────────
 
     [Theory]
-    [InlineData(60, 1)]    // ~620px window — single column
-    [InlineData(100, 2)]   // ~1000px — two columns (the legacy 2×3 shape)
-    [InlineData(130, 3)]   // ~1280px — three columns
-    [InlineData(171, 4)]   // ~1680px — four columns
-    [InlineData(400, 5)]   // absurd width clamps at five
-    public void ShellPaneColumns_FlowsWithTerminalWidth(int width, int expectedColumns)
+    [InlineData(60)]    // ~620px window
+    [InlineData(100)]   // ~1000px
+    [InlineData(130)]   // ~1280px
+    [InlineData(171)]   // ~1680px — a 15" MacBook; the user rejected 3 columns here
+    [InlineData(400)]   // absurd width
+    public void ShellPaneColumns_IsAlwaysTwo(int width)
     {
-        LauncherRenderer.ShellPaneColumns(width).Should().Be(expectedColumns);
+        LauncherRenderer.ShellPaneColumns(width).Should().Be(
+            2,
+            "tile grids are always exactly 2 columns at every width — a width-dependent count is the regression");
     }
 
     [Fact]
-    public void BuildViewState_WideWindow_ExportsColumnsAndPagesByColumnsTimesThreeRows()
+    public void BuildViewState_WideWindow_StaysTwoColumnsAtEveryWidth()
     {
-        // 130 cells → 3 columns → 9-tile pages. 11 bookmarks + Reading List = 12
-        // total: page 0 carries 9 tiles, and selecting virtual 10 lands on page 1
-        // with the remaining 3 tiles (padded to a full 3-column row exactly).
+        // A wide (1280px-class) window is still 2 columns — the whole point of the
+        // contract. Paging follows the pane's HEIGHT budget, not the width.
         var options = Options() with { TerminalWidth = 130 };
 
         var page0 = LauncherRenderer.BuildViewState(CreateBookmarks(11), selectedIndex: 0, options);
-        page0.Columns.Should().Be(3);
-        page0.Slots.Should().HaveCount(9);
-        page0.Paging.Should().Be(new LauncherPaging { Offset = 0, Visible = 9, Total = 12 });
+        page0.Columns.Should().Be(2);
+        page0.Slots.Should().HaveCount(4, "35 lines fits 2 rows → a 2 × 2 page");
+        page0.Paging.Should().Be(new LauncherPaging { Offset = 0, Visible = 4, Total = 12 });
+    }
 
-        var page1 = LauncherRenderer.BuildViewState(CreateBookmarks(11), selectedIndex: 10, options);
-        page1.Columns.Should().Be(3);
-        page1.Paging.Should().Be(new LauncherPaging { Offset = 9, Visible = 3, Total = 12 });
-        page1.Slots.Should().HaveCount(3, "3 remaining tiles already fill one 3-column row — no pads");
-        page1.SelectedIndex.Should().Be(1, "virtual 10 maps into the page-1 window at 10 − 9");
+    [Theory]
+    [InlineData(35, 2)]    // short window — 2 rows fit under the pane's chrome
+    [InlineData(46, 4)]    // ~1000px tall: the user's 2 × 4 = 8 tiles fill the pane
+    [InlineData(60, 6)]    // a tall external display
+    public void PaneRowsPerPage_GrowsWithWindowHeight(int terminalHeight, int expectedRows)
+    {
+        // The pane's rows follow its OWN px budget, so the grid fills the pane's
+        // height instead of stopping at a hard-coded three rows. Mirroring the
+        // terminal's row count would under-fill: its card is a quarter of the
+        // screen tall, the pane's is a roughly constant 122px.
+        var options = Options() with { TerminalWidth = 152, TerminalHeight = terminalHeight };
+
+        LauncherRenderer.PaneRowsPerPage(options).Should().Be(expectedRows);
     }
 
     private static RenderOptions Options(int? readingListCount = null) => new()

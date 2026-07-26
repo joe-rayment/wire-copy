@@ -26,8 +26,9 @@ await new Promise(r => fixture.listen(FIX_PORT, '127.0.0.1', r))
 
 buildTui('Release')
 
-// Wide virtual screen: the responsive section drives the REAL window up to
-// ~1680px (4 grid columns), past the default 1600px Xvfb.
+// Wide virtual screen: the column section drives the REAL window up to ~1680px
+// (a 15" MacBook), past the default 1600px Xvfb — the width that must STILL be
+// 2 columns.
 const env = new Env({ display: ':81', cdpPort: 9291, screen: '2000x1200x24' })
 
 // ── Pre-seed bookmarks.json BEFORE launch so card 1 = our fixture. The reconciler treats
@@ -304,11 +305,12 @@ try {
   const zoomReset = await la.eval(ZOOM_JS)
   check('F3 Ctrl+0 reset the pane zoom to 1', Math.abs(parseFloat(zoomReset) - 1) < 0.002, `zoom=${zoomReset}`)
 
-  // ── (h) Responsive columns (Launcher Responsive.dc.html): drive the REAL window
-  //    through the design's four widths; the RENDERED grid must flow 1→2→3→4 columns,
-  //    match the pushed state.columns at every width, and keep a fixed card footprint.
-  //    At 4 columns, arrows must land on the VISUALLY adjacent card — the geometry the
-  //    user's fingers feel. ────────────────────────────────────────────────────────────
+  // ── (h) TWO COLUMNS AT EVERY WIDTH (the tile-grid contract, workspace-21uy):
+  //    drive the REAL window through four widths — including 1680px, the 15" MacBook
+  //    where the old responsive count rendered THREE columns and the user rejected it.
+  //    The RENDERED grid must be 2 tracks at every width, match the pushed
+  //    state.columns, and keep a fixed card footprint. Arrows must land on the
+  //    VISUALLY adjacent card — the geometry the user's fingers feel. ─────────────────
   const widH = env.activate()
   // Wait until the WINDOW itself reaches the target width (a stale state can
   // coincidentally carry the expected column count), then until the rendered
@@ -323,23 +325,24 @@ try {
     }
     return last
   }
-  for (const [w, h, expCols] of [[620, 900, 1], [900, 900, 2], [1280, 900, 3], [1680, 1000, 4]]) {
+  const EXPECT_COLS = 2 // the contract, at EVERY width — never width-dependent
+  for (const [w, h] of [[620, 900], [900, 900], [1280, 900], [1680, 1000]]) {
     env.x('windowsize', widH, String(w), String(h))
-    const got = await waitCols(w, expCols)
-    check(`H${expCols}a at ~${w}px the grid renders ${expCols} column(s), matching pushed state.columns`,
-      got && got.cols === expCols && got.stateCols === expCols,
+    const got = await waitCols(w, EXPECT_COLS)
+    check(`H${w}a at ~${w}px the grid renders exactly ${EXPECT_COLS} columns, matching pushed state.columns`,
+      got && got.cols === EXPECT_COLS && got.stateCols === EXPECT_COLS,
       `rendered=${got && got.cols} state=${got && got.stateCols} winW=${got && got.winW}`)
     const cardsH = (await la.eval(CARDS_JS)).filter(c => !c.empty)
     const rowY = [...new Set(cardsH.map(c => c.y))]
     const perRow = rowY.map(y => cardsH.filter(c => c.y === y).length)
-    check(`H${expCols}b cards actually flow ${expCols} per visual row (fixed equal footprints)`,
-      perRow.length > 0 && perRow[0] === Math.min(expCols, cardsH.length) &&
+    check(`H${w}b cards actually flow ${EXPECT_COLS} per visual row (fixed equal footprints)`,
+      perRow.length > 0 && perRow[0] === Math.min(EXPECT_COLS, cardsH.length) &&
       Math.max(...cardsH.map(c => c.h)) - Math.min(...cardsH.map(c => c.h)) <= 1,
       `perRow=[${perRow}] heights=${[...new Set(cardsH.map(c => c.h))]}`)
-    env.shot(`lhtml-h-${expCols}col`)
+    env.shot(`lhtml-h-${w}px`)
   }
-  // Keyboard geometry at 4 columns: from card 1, Right must select the card
-  // physically beside it (same row, next track); Down the card physically
+  // Keyboard geometry at the widest window: from card 1, Right must select the
+  // card physically beside it (same row, next track); Down the card physically
   // below it (same track, next row).
   await sleep(800) // let the 1680px layout fully settle before measuring geometry
   let stH = JSON.parse(await la.eval('JSON.stringify(window.__launcherState())')).state
@@ -349,14 +352,14 @@ try {
   env.key('Right'); await sleep(700)
   const afterR = (await la.eval(CARDS_JS)).filter(c => !c.empty)
   const selR = afterR.findIndex(c => c.selected)
-  check('H4c Right selected the VISUALLY adjacent card (same row, next column)',
+  check('H-arrows-c Right selected the VISUALLY adjacent card (same row, next column)',
     selB === 0 && selR >= 0 && afterR[selR].y === before[selB].y && afterR[selR].x > before[selB].x &&
     selR === selB + 1,
     `sel ${selB}(${before[selB] && before[selB].x},${before[selB] && before[selB].y}) → ${selR}(${afterR[selR] && afterR[selR].x},${afterR[selR] && afterR[selR].y})`)
   env.key('Down'); await sleep(700)
   const afterD = (await la.eval(CARDS_JS)).filter(c => !c.empty)
   const selD = afterD.findIndex(c => c.selected)
-  check('H4d Down selected the card DIRECTLY BELOW (same column, next row)',
+  check('H-arrows-d Down selected the card DIRECTLY BELOW (same column, next row)',
     selD >= 0 && afterD[selD].x === afterR[selR].x && afterD[selD].y > afterR[selR].y,
     `sel ${selR}(${afterR[selR] && afterR[selR].x},${afterR[selR] && afterR[selR].y}) → ${selD}(${afterD[selD] && afterD[selD].x},${afterD[selD] && afterD[selD].y})`)
   env.shot('lhtml-h-arrows')
