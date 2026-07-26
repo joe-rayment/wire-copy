@@ -6,8 +6,15 @@
   /* Bundled brand font (workspace-vcpf): identical cell metrics + glyph coverage on
      every platform — braille spinners U+28xx, box drawing, ▌★⇒ all ship with the app;
      color emoji (🎧) intentionally falls through to the platform emoji font. */
-  @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono.ttf') format('truetype'); font-weight: normal; font-style: normal; }
-  @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono-Bold.ttf') format('truetype'); font-weight: bold; font-style: normal; }
+  /* WOFF2, not TTF (workspace-o8wex): the explicit document.fonts.load gate below holds
+     term:ready — and therefore the corrective pty resize and the first correct frame —
+     until both faces have downloaded, so their size is on the boot path. 677KB of raw
+     TrueType becomes 292KB of WOFF2. The conversion is lossless and was verified as such
+     rather than assumed: identical cmap (3322/3261 entries), identical glyph order,
+     identical advance widths and head/hhea metrics, and ZERO differing glyph outlines,
+     so the cell box xterm measures cannot move. */
+  @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono.woff2') format('woff2'); font-weight: normal; font-style: normal; }
+  @font-face { font-family: 'WireCopy Mono'; src: url('fonts/DejaVuSansMono-Bold.woff2') format('woff2'); font-weight: bold; font-style: normal; }
   html, body { margin: 0; height: 100%; background: #000000; overflow: hidden; }
   #pad  { height: 100%; box-sizing: border-box; padding: 16px 8px 8px 16px; }
   #term { height: 100%; }
