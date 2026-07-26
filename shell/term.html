@@ -19,8 +19,56 @@
   #pad  { height: 100%; box-sizing: border-box; padding: 16px 8px 8px 16px; }
   #term { height: 100%; }
   .xterm .xterm-viewport { background: transparent !important; }
+
+  /* Boot chrome (workspace-e9bje). The window is created immediately but the shell
+     painted nothing of its own, so the first thing a launch showed was a solid black
+     rectangle until the TUI's first frame — measured at about 190ms on the boot
+     timeline, which is short but reads as "did it launch?" rather than as the app.
+     This is deliberately dependency-free: no bundled font (the fonts are exactly what
+     the gate below is WAITING for), no image, no script — plain markup that paints on
+     the first frame the compositor produces. It sits over everything, takes no pointer
+     events, and is removed the moment the TUI writes its first byte. */
+  #boot {
+    position: fixed;
+    inset: 0;
+    z-index: 5;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 18px;
+    background: #000;
+    font-family: ui-monospace, 'DejaVu Sans Mono', monospace;
+    pointer-events: none;
+    transition: opacity 140ms linear;
+  }
+  #boot.gone { opacity: 0; }
+  #boot .wordmark {
+    color: #00d700;
+    font-size: 44px;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+    text-shadow: 0 0 9px rgba(0, 215, 0, 0.5), 0 0 24px rgba(0, 215, 0, 0.26),
+                 0 0 48px rgba(0, 215, 0, 0.12);
+  }
+  #boot .tag { color: #ff87d7; font-size: 15px; letter-spacing: 0.06em; }
+  #boot .rule { color: #005f00; font-size: 13px; letter-spacing: 0.5em; }
 </style>
 <link rel="stylesheet" href="node_modules/@xterm/xterm/css/xterm.css">
+<div id="boot">
+  <div class="wordmark">Wire Copy</div>
+  <div class="tag">All copy, no nonsense</div>
+  <div class="rule">────────</div>
+</div>
+<script>
+  // Boot-paint timeline (workspace-e9bje), in ms since this page started loading. A probe
+  // reads these to say how long the window is blank; both are recorded from the frame
+  // callback that actually PAINTS, not from when the markup was parsed.
+  window.__bootMarks = { chromePainted: null, firstPty: null }
+  requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (window.__bootMarks.chromePainted == null) window.__bootMarks.chromePainted = Math.round(performance.now())
+  }))
+</script>
 <div id="pad"><div id="term"></div></div>
 <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
 <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
@@ -93,7 +141,21 @@
   term.focus()
 
   term.onData(d => wc.input(d))
-  wc.onPtyData(d => term.write(d))
+  // The TUI's first byte IS the app arriving; drop the boot chrome on it (workspace-e9bje).
+  // Tied to real output rather than a timer, so a slow start shows the chrome for longer
+  // instead of flashing back to black.
+  let bootShown = true
+  wc.onPtyData(d => {
+    if (bootShown) {
+      bootShown = false
+      if (window.__bootMarks && window.__bootMarks.firstPty == null) {
+        window.__bootMarks.firstPty = Math.round(performance.now())
+      }
+      const b = document.getElementById('boot')
+      if (b) { b.classList.add('gone'); setTimeout(() => b.remove(), 200) }
+    }
+    term.write(d)
+  })
   wc.ready({ cols: term.cols, rows: term.rows })
 
   // Live zoom (Cmd/Ctrl +/-/0 handled shell-side): a font change resizes CELLS, not the
