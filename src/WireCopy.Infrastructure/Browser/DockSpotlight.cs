@@ -34,6 +34,10 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 public sealed class DockSpotlight : IDisposable, IAsyncDisposable
 {
+    // Keeps _ownedLensUrls from growing without bound over a long session while still
+    // covering a redirect chain plus a few recent navigations.
+    private const int MaxOwnedLensUrls = 16;
+
     private static readonly TimeSpan FollowNavigationTimeout = TimeSpan.FromSeconds(15);
 
     // workspace-yx03: settle schedule for re-running the expander after a
@@ -70,10 +74,21 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
     // Throttle: at most one not-found hint per page URL.
     private string? _lastHintPageUrl;
 
-    // workspace-mctt: the last URL the SPOTLIGHT navigated the lens to. A lens
-    // URL matching neither this nor the current target means the USER drove the
-    // lens somewhere — never fight them; offer adoption instead.
-    private string? _lastLensNav;
+    // workspace-mctt: the URLs the SPOTLIGHT put on the lens. A lens URL matching
+    // none of these nor the current target means the USER drove the lens somewhere —
+    // never fight them; offer adoption instead.
+    //
+    // workspace-ox6sj: this must be a SET, not the single requested URL. It was the
+    // latter, so a plain 302 canonicalisation (/story4.html → /articles/4 — i.e. every
+    // real news site: trailing slash, https, m., /amp/, consent hop) landed the lens on
+    // a URL that differed from the one we asked for, the app's own navigation was
+    // misread as user takeover, and the divergence latched: the pane froze on a stale
+    // article and never followed the link list again. Both the URL we REQUESTED and the
+    // one we LANDED on are ours.
+    // A bounded FIFO, oldest first. A list rather than a set: at 16 entries Contains is
+    // free, and eviction has to be oldest-first or a long redirect chain could evict the
+    // very URL it is being recorded alongside.
+    private readonly List<string> _ownedLensUrls = new();
     private string? _divergedFromTarget;
 
     // workspace-yx03: background settle passes for the current follow-navigation,
@@ -278,6 +293,70 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             StringComparison.Ordinal);
     }
 
+    /// <summary>
+    /// Records a URL as one the spotlight put on the lens, so a later sync cannot mistake
+    /// it for the user having driven the lens somewhere (workspace-ox6sj). Called with the
+    /// requested URL and with the URL the navigation actually landed on.
+    /// </summary>
+    private void OwnLensUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            return;
+        }
+
+        var normalized = UrlNormalizer.Normalize(url);
+        if (string.IsNullOrEmpty(normalized))
+        {
+            return;
+        }
+
+        lock (_ownedLensUrls)
+        {
+            if (_ownedLensUrls.Contains(normalized, StringComparer.Ordinal))
+            {
+                return;
+            }
+
+            _ownedLensUrls.Add(normalized);
+            while (_ownedLensUrls.Count > MaxOwnedLensUrls)
+            {
+                // The only cost of forgetting the oldest URL is that a user takeover to
+                // it would be offered for adoption again.
+                _ownedLensUrls.RemoveAt(0);
+            }
+        }
+    }
+
+    /// <summary>
+    /// Claims every hop of a server-side redirect chain we initiated. Playwright threads
+    /// the chain through <c>IRequest.RedirectedFrom</c>, so an intermediate hop the lens
+    /// may report as its URL is recognised as ours (workspace-ox6sj).
+    /// </summary>
+    private void OwnRedirectChain(IResponse? response)
+    {
+        var request = response?.Request;
+        for (var hops = 0; request != null && hops < MaxOwnedLensUrls; hops++)
+        {
+            OwnLensUrl(request.Url);
+            request = request.RedirectedFrom;
+        }
+    }
+
+    private bool OwnsLensUrl(string? url)
+    {
+        if (string.IsNullOrEmpty(url))
+        {
+            return false;
+        }
+
+        var normalized = UrlNormalizer.Normalize(url);
+        lock (_ownedLensUrls)
+        {
+            return _ownedLensUrls.Contains(normalized, StringComparer.Ordinal);
+        }
+    }
+
     private void Wake()
     {
         try
@@ -374,8 +453,13 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                 // adoption once; keep honoring their choice while the app stays on
                 // the same page. The moment the app moves on, the NEW page wins
                 // and following resumes.
-                var userDroveLens = _lastLensNav != null
-                    && !UrlsMatch(page.Url, _lastLensNav)
+                //
+                // workspace-ox6sj: "we did not navigate to" means it matches NONE of the
+                // URLs we own — every URL we asked for AND every URL those requests
+                // actually landed on. Testing a single requested URL made a redirect
+                // indistinguishable from the user taking the wheel.
+                var userDroveLens = _ownedLensUrls.Count > 0
+                    && !OwnsLensUrl(page.Url)
                     && CommandHandlers.BrowserDockCommandHandler.IsSummonableUrl(page.Url);
                 if (userDroveLens)
                 {
@@ -397,12 +481,19 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                     "Dock spotlight: live page {LiveUrl} != TUI page {PageUrl}, follow-navigating",
                     page.Url,
                     target.PageUrl);
-                await page.GotoAsync(target.PageUrl, new PageGotoOptions
+                var followResponse = await page.GotoAsync(target.PageUrl, new PageGotoOptions
                 {
                     WaitUntil = WaitUntilState.DOMContentLoaded,
                     Timeout = (float)FollowNavigationTimeout.TotalMilliseconds,
                 }).ConfigureAwait(false);
-                _lastLensNav = target.PageUrl;
+
+                // Claim the WHOLE navigation, not just its head: the URL we asked for, the
+                // URL the lens settled on, and every hop the server redirected through in
+                // between. Any of them can be what page.Url reads back as on a later sync,
+                // and each one is ours, not the user's (workspace-ox6sj).
+                OwnLensUrl(target.PageUrl);
+                OwnLensUrl(page.Url);
+                OwnRedirectChain(followResponse);
                 _expandRescuePageUrl = null; // fresh DOM — re-arm the once-per-page rescue
 
                 // workspace-2cz4: mobile-viewport sites tuck content behind
@@ -429,8 +520,11 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
             }
             else
             {
+                // The lens is already where the TUI is. That page is ours whether we
+                // navigated to it or the pipeline opened it — record it, so the next
+                // target's redirect cannot look like a takeover.
                 _divergedFromTarget = null;
-                _lastLensNav ??= target.PageUrl;
+                OwnLensUrl(page.Url);
             }
 
             // Reader view (workspace-nqqs): there is no anchor to light up — the page is
