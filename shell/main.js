@@ -915,7 +915,17 @@ app.whenReady().then(() => {
   // there; the default session (and any other partition) stays strict.
   wcSession.setCertificateVerifyProc((_req, cb) => cb(0))
   state.termView = new WebContentsView({
-    webPreferences: { preload: path.join(__dirname, 'preload.js') }
+    // backgroundThrottling:false (workspace-1ytix): the launcher and link-tree panes are
+    // SIBLING views laid OVER this one, so while either is up Chromium reports
+    // visibilityState 'hidden' here and suspends ResizeObserver delivery. term.html's
+    // observer is the ONLY thing that tells the pty the window changed size, so a
+    // throttled termView froze the pty at its boot dims for as long as a pane was
+    // showing: the launcher kept drawing 5 card rows in a 760px window with its footer
+    // scrolled off screen, and no amount of resizing ever re-paged it. Measured: with
+    // this off, main pushed termBounds 1600x900/1300x760 while the renderer still read
+    // inner 1600x1200 and the pty stayed 147x51. This was the only view in the shell
+    // without the flag; every other one already sets it.
+    webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false }
   })
   state.pageView = new WebContentsView({
     // backgroundThrottling:false (workspace-tj1z.1): the PARKED pane must keep painting

@@ -68,6 +68,19 @@ const CARDS_JS = `(function(){
       title:(c.querySelector('.card-title')||{}).textContent||''};
   });
 })()`
+// Height re-paging probe (workspace-1ytix): how many card rows the pane actually DREW,
+// what the TUI admitted, and whether the column still fits the window. `rows` counts
+// distinct card tops, so it is the visual row count, not a slot arithmetic restatement.
+const ROWS_JS = `(function(){
+  const cards=[...document.querySelectorAll('#grid .card')].filter(c=>!c.classList.contains('empty'));
+  const f=document.getElementById('footer').getBoundingClientRect();
+  const st=(window.__launcherState()||{}).state||{};
+  return {winH:window.innerHeight, winW:window.innerWidth,
+    rows:new Set(cards.map(c=>Math.round(c.getBoundingClientRect().top))).size,
+    visible:(st.paging&&st.paging.visible)||0, slots:(st.slots||[]).length,
+    footerBottom:Math.round(f.bottom),
+    colH:Math.round(document.getElementById('column').getBoundingClientRect().height)};
+})()`
 // Rendered grid geometry: the computed track count must equal the pushed
 // state.columns (the count the TUI also uses for arrow keys).
 const COLS_JS = `(function(){
@@ -363,6 +376,48 @@ try {
     selD >= 0 && afterD[selD].x === afterR[selR].x && afterD[selD].y > afterR[selR].y,
     `sel ${selR}(${afterR[selR] && afterR[selR].x},${afterR[selR] && afterR[selR].y}) → ${selD}(${afterD[selD] && afterD[selD].x},${afterD[selD] && afterD[selD].y})`)
   env.shot('lhtml-h-arrows')
+
+  // ── (i) HEIGHT re-paging (workspace-1ytix): the H sweep above only varies WIDTH, and
+  //    width is a number the pane can compute for itself. The ROW count comes from the
+  //    TUI, which only learns the window changed when the pty is resized — and while the
+  //    launcher pane covers termView, term.html's ResizeObserver is the ONLY thing that
+  //    reports it. Chromium suspends observers in a hidden view, so before
+  //    backgroundThrottling:false the pty stayed frozen at its boot size FOREVER: the
+  //    launcher drew 5 rows in a 760px window with the footer scrolled off screen, and
+  //    no gate noticed because none of them ever changed the HEIGHT with the pane up.
+  //    So: drive the real window through four heights and assert the OUTCOME — the
+  //    rendered row count actually tracks the height, and the footer stays on screen.
+  const widI = env.activate()
+  const HEIGHTS = [700, 850, 1000, 1150] // inside the 1200px virtual screen, decorations included
+  const paged = []
+  for (const h of HEIGHTS) {
+    env.x('windowsize', widI, '1600', String(h))
+    // Wait for the PANE to reach the new height, then settle a fixed 3s for the full
+    // round-trip (window → term.html's observer → pty → TUI re-page → pushed state →
+    // pane) before reading. Deliberately NOT a poll-until-it-looks-right loop: the
+    // broken state is self-consistent (a stale paging still matches its own stale row
+    // count), so any "wait until consistent" condition would break instantly on it and
+    // read the same frozen frame the fix is supposed to eliminate.
+    let m = null
+    const t0 = Date.now()
+    do { m = await la.eval(ROWS_JS); if (Math.abs(m.winH - h) <= 20) break; await sleep(300) }
+    while (Date.now() - t0 < 8000)
+    await sleep(3000)
+    m = await la.eval(ROWS_JS)
+    paged.push({ h, ...m })
+    env.shot(`lhtml-i-${h}h`)
+  }
+  const rowsByH = paged.map(p => p.rows)
+  check('I0 the rendered row count TRACKS the window height (the pty really re-sized)',
+    new Set(rowsByH).size >= 3 && rowsByH.every((r, i) => i === 0 || r >= rowsByH[i - 1]) &&
+    rowsByH[rowsByH.length - 1] > rowsByH[0],
+    HEIGHTS.map((h, i) => `${h}px→${rowsByH[i]} rows`).join('  '))
+  check('I1 the pane draws exactly the rows the TUI admitted, at every height',
+    paged.every(p => p.rows === Math.ceil(p.visible / 2) && p.visible > 0),
+    paged.map(p => `${p.h}px: rendered=${p.rows} admitted=${p.visible}`).join('  '))
+  check('I2 the footer stays INSIDE the window at every height — content never outgrows it',
+    paged.every(p => p.footerBottom <= p.winH + 1 && p.colH <= p.winH + 1),
+    paged.map(p => `${p.h}px: footerBottom=${p.footerBottom} colH=${p.colH}`).join('  '))
 
   // ── (g) Short window (the user's regression, 2026-07-24): shrink the REAL window so
   //    the column cannot fit; the tagline must stay fully visible above the URL bar and
