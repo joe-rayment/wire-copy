@@ -10,7 +10,7 @@
 // (wc.lensEval runs in state.pageView): where the spotlight box actually SITS, which
 // anchor it sits ON, what the pane's URL actually IS. Presence is never the assertion.
 //
-// Five arms:
+// Six arms:
 //   R  REDIRECTING site (/storyN.html 302s to /articles/N — i.e. every real news site:
 //      trailing slash, https, m., /amp/, consent hop). This is the arm that failed
 //      before the fix: after Back the pane stayed on the article forever.
@@ -24,6 +24,9 @@
 //   S  Nothing to show (workspace-shojj): at the launcher the pane must COLLAPSE and go
 //      blank rather than keep the last article, and come back on its own for the next
 //      thing that has a page.
+//   J  READER scroll-along (workspace-rcvsi): in reader view there is no anchor to light
+//      up, so following means the live page scrolls to keep the paragraph under the
+//      reader's cursor CENTRED — driven with the real } and { keys, both directions.
 //
 // Headful under Xvfb ONLY (never headless). Run from shell/: node gates/gate-lensfollow.mjs
 import http from 'node:http'
@@ -34,8 +37,11 @@ import { Env, attach, pollTermText, check, summary, sleep, buildTui, Cdp, findTa
 const PORT_R = 8271 // redirecting
 const PORT_P = 8272 // plain (control)
 const PORT_X = 8273 // the unrelated site a user takeover lands on
-const FILLER = Array.from({ length: 12 }, (_, i) =>
-  `<p>Body paragraph ${i + 1}: the desk kept careful notes on the day's dispatches.</p>`).join('\n')
+// Long, and every paragraph uniquely identifiable: the reader scroll-along arm has to
+// name WHICH paragraph the live page centred, not just that it moved.
+const FILLER = Array.from({ length: 40 }, (_, i) =>
+  `<p>Body paragraph ${i + 1}: the desk kept careful notes on dispatch number ${i + 1} ` +
+  `and filed corrections before press time, twice over, at length.</p>`).join('\n')
 const STORIES = n => Array.from({ length: n }, (_, i) =>
   `<li><a href="/story${i + 1}.html">STORY ${i + 1} — a headline long enough to wrap in a card</a></li>`).join('\n')
 
@@ -228,15 +234,19 @@ try {
   //    user's page must survive. This is workspace-mctt's behaviour, and the reason the
   //    redirect bug existed at all — so a fix that simply deletes it must fail here. ───
   console.log('\n──── arm T (genuine user takeover) ────')
+  // Start watching the status line BEFORE driving the lens away. The app notices the
+  // takeover on its next spotlight sync and offers adoption ONCE per divergence, on a
+  // status line that lives 3 seconds — and that sync is whichever comes first: a
+  // background expand-settle pass already in flight, or the user's next keypress. Polling
+  // only after the keypress makes the check depend on which of those won, and it duly
+  // passed and failed at random. Watching from before the takeover catches it either way;
+  // the Down below is there so a sync is guaranteed even when no settle pass is due.
+  // (CDP calls are id-multiplexed, so this poll runs alongside the evals that follow.)
+  const takeoverWatch = pollTermText(term, 'Browser page changed', 20000)
   await term.eval(`wc.lensEval("location.href='http://127.0.0.1:${PORT_X}/'; 1")`)
-  // Move the selection straight away and poll from THAT moment. Two things make the
-  // timing here load-bearing: the app only notices the takeover on its next spotlight
-  // sync (which a selection move guarantees), and it offers adoption ONCE per divergence
-  // with a status line that lives 3 seconds. Sleeping before looking, or looking without
-  // moving, each fail for a reason that has nothing to do with the behaviour — both were
-  // tried, and both are why this reads the way it does.
+  await sleep(1500)
   env.key('Down')
-  const tookOver = await pollTermText(term, 'Browser page changed', 10000)
+  const tookOver = await takeoverWatch
   check('T2 the app OFFERS to adopt the page the "user" drove to, rather than doing nothing',
     tookOver.ok, 'status line: "Browser page changed · y: read it here"')
   const lT0 = await lens()
@@ -300,6 +310,66 @@ try {
        pathOf(lS.onAnchor) === pathOf(selS.url)),
     `pane "${lS && lS.title}" (${lS && lS.url}) on=${lS && lS.onAnchor} selected=${selS && selS.url}`)
   env.shotWindow('lf-S-reopened', wid)
+
+  // ── J: READER scroll-along (workspace-rcvsi). In reader view there is no anchor to
+  //    light up — the page IS the content — so "following" means the docked live page
+  //    scrolls to keep the paragraph under the reader's cursor CENTRED. The mechanism was
+  //    unit-proven on a real headful Chromium but never driven through the docked app,
+  //    which is what this does: open a story, press } to walk paragraphs, and read back
+  //    which paragraph the live page actually centred. ────────────────────────────────
+  console.log('\n──── arm J (reader scroll-along, docked) ────')
+  // What the live page has CENTRED: the block whose midpoint is nearest the viewport's,
+  // plus its own scroll position. The fixture numbers every paragraph, so the answer is
+  // a number the terminal can be checked against.
+  const CENTRE_JS = `(function(){
+    const mid=window.innerHeight/2; let best=null, bd=1e9;
+    for(const el of document.querySelectorAll('p')){
+      const r=el.getBoundingClientRect();
+      if(r.height<=0) continue;
+      const d=Math.abs((r.top+r.bottom)/2-mid);
+      if(d<bd){bd=d;best=el;}
+    }
+    const m=best?(best.textContent.match(/Body paragraph (\\d+)/)||[])[1]:null;
+    return {para:m?parseInt(m,10):null, offset:Math.round(bd), scrollY:Math.round(window.scrollY),
+      maxScroll:Math.round(document.documentElement.scrollHeight-window.innerHeight),
+      url:location.href};
+  })()`
+  const centred = () => term.eval(`wc.lensEval(${JSON.stringify(CENTRE_JS)})`)
+
+  await key('Return', 800)            // open the selected story into the reader
+  await pollTermText(term, 'headline', 30000)
+  await sleep(4500)
+  const j0 = await centred()
+  check('J0 the reader opened with the live page on that story, scrolled to the top',
+    !!(j0 && j0.para != null && j0.scrollY <= 40 && j0.maxScroll > 400),
+    `centred=para ${j0 && j0.para} scrollY=${j0 && j0.scrollY} max=${j0 && j0.maxScroll} url=${j0 && j0.url}`)
+
+  // Walk the reader down twelve paragraphs with the real key.
+  for (let i = 0; i < 12; i++) { env.key('braceright'); await sleep(320) }
+  await sleep(4000)
+  const j1 = await centred()
+  check('J1 the docked page SCROLLED as the reader moved — it did not sit at the top',
+    !!(j1 && j0 && j1.scrollY > j0.scrollY + 100),
+    `scrollY ${j0 && j0.scrollY} → ${j1 && j1.scrollY} (max ${j1 && j1.maxScroll})`)
+  check('J2 …and it CENTRED a later paragraph, not merely scrolled somewhere',
+    !!(j1 && j0 && j1.para != null && j1.para > j0.para && j1.offset <= 120),
+    `centred para ${j0 && j0.para} → ${j1 && j1.para}, ${j1 && j1.offset}px off centre`)
+  // The paragraph the live page centred has to be one the READER is actually showing.
+  const termNow = await term.eval('window.__termText ? window.__termText() : ""')
+  check('J3 the centred paragraph is one the terminal is showing — the two halves agree',
+    !!(j1 && j1.para != null && termNow.includes(`dispatch number ${j1.para}`)),
+    `live page centred paragraph ${j1 && j1.para}; terminal ${termNow.includes(`dispatch number ${j1 && j1.para}`) ? 'shows' : 'does NOT show'} it`)
+  env.shotWindow('lf-J-scrolled', wid)
+
+  // Back up: the follow has to work in both directions, not just forward.
+  for (let i = 0; i < 6; i++) { env.key('braceleft'); await sleep(320) }
+  await sleep(4000)
+  const j2 = await centred()
+  check('J4 moving the reader BACK re-centres an earlier paragraph and scrolls up',
+    !!(j2 && j1 && j2.para != null && j2.para < j1.para && j2.scrollY < j1.scrollY && j2.offset <= 120),
+    `centred para ${j1 && j1.para} → ${j2 && j2.para}, scrollY ${j1 && j1.scrollY} → ${j2 && j2.scrollY}`)
+  env.shotWindow('lf-J-back', wid)
+  await key('Escape', 3000)
 
   const crashed = /A JavaScript error occurred in the main process/.test(shell.stderrText)
   check('Z0 no main-process crash in stderr', !crashed)
