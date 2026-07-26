@@ -35,8 +35,22 @@ echo "build-desktop: staging in $STAGE (RID $RID)"
 echo "build-desktop: publishing self-contained WireCopy.API ($RID)..."
 # Folder publish, UNTRIMMED, non-AOT: the Playwright node driver (.playwright/) is loose
 # content resolved via AppContext.BaseDirectory and cannot live inside a single file.
+#
+# PublishReadyToRun (workspace-u1is6): MEASURED, not assumed. Twelve boots of the real
+# shell against two publishes of the same tree, INTERLEAVED so neither variant got the
+# warmer machine, reading the boot marks the app already emits:
+#   dotnet-main -> tui-run   base 471.5ms   R2R 303.5ms   median -168ms
+#   spawn-tui   -> tui-run   base 532.5ms   R2R 361.5ms   median -171ms
+# Every R2R boot's tui-run (633-715ms) came in under every base boot's (804-1140ms). The
+# gain is concentrated in host-started -> db-ready — EF's first-use model build, which is
+# JIT-heavy — and first PAINT is unchanged (+3ms), because that happens before any of it.
+# Costs ~3x the size of the app's own assemblies (Infrastructure.dll 2.1MB -> 5.9MB) in a
+# folder publish that is already hundreds of MB, and nothing else: R2R code is verified
+# against the runtime and falls back to JIT if it does not match.
+# Re-measure with gates/probe-r2r.mjs if this ever looks doubtful; the numbers above are
+# from an arm64 Linux container, and the Mac's are the ones that decide whether it stays.
 "$ROOT/dotnet" publish "$ROOT/src/WireCopy.API/WireCopy.API.csproj" -c Release -r "$RID" \
-  --self-contained true -o "$STAGE/app/stage-api" --nologo -v q
+  --self-contained true -p:PublishReadyToRun=true -o "$STAGE/app/stage-api" --nologo -v q
 
 echo "build-desktop: staging shell sources..."
 mkdir -p "$STAGE/app/fonts"
