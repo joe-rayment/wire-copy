@@ -20,11 +20,16 @@ internal sealed class ScheduledRunLifecycleService : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<ScheduledRunLifecycleService> _logger;
+    private readonly DatabaseReadySignal? _databaseReady;
 
-    public ScheduledRunLifecycleService(IServiceScopeFactory scopeFactory, ILogger<ScheduledRunLifecycleService> logger)
+    public ScheduledRunLifecycleService(
+        IServiceScopeFactory scopeFactory,
+        ILogger<ScheduledRunLifecycleService> logger,
+        DatabaseReadySignal? databaseReady = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _databaseReady = databaseReady;
     }
 
     public Task StartAsync(CancellationToken cancellationToken)
@@ -54,6 +59,16 @@ internal sealed class ScheduledRunLifecycleService : IHostedService
 
     private async Task SweepOrphanedRunsAsync(CancellationToken cancellationToken)
     {
+        // workspace-xpr5t: the migration runs concurrently with host start, so on a first
+        // run the ScheduledRuns table does not exist yet. Querying it anyway made EF log
+        // the failed command at Error with a full stack trace before the launcher had
+        // painted — a clean install that looks broken. Wait for the schema instead.
+        if (_databaseReady != null &&
+            !await _databaseReady.WaitAsync(cancellationToken).ConfigureAwait(false))
+        {
+            _logger.LogDebug("Scheduled-run orphan sweep: database-ready signal never arrived; sweeping anyway");
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var repo = scope.ServiceProvider.GetRequiredService<IScheduledRunRepository>();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();

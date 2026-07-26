@@ -68,6 +68,54 @@ public class PodcastJobLifecycleServiceTests
         return await ctx.PodcastJobs.FirstOrDefaultAsync(j => j.Id == id);
     }
 
+    /// <summary>
+    /// workspace-xpr5t: the sweep must not touch the database until the migration has
+    /// created the schema. On a first run it used to query PodcastJobs while the
+    /// migration was still running, and EF logged the failed command at Error with a
+    /// stack trace — a clean install that reads as broken. The sweep now waits for
+    /// <see cref="DatabaseReadySignal"/>.
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_WaitsForTheDatabaseReadySignalBeforeTouchingTheTable()
+    {
+        var running = PodcastJob.Start(Guid.NewGuid(), "Test", "/tmp/t.m4a", "https://x/feed.xml");
+        await SeedAsync(running);
+
+        var provider = BuildProvider();
+        var signal = new DatabaseReadySignal();
+        var sut = new PodcastJobLifecycleService(
+            provider.GetRequiredService<IServiceScopeFactory>(),
+            NullLogger<PodcastJobLifecycleService>.Instance,
+            signal);
+
+        await sut.StartAsync(CancellationToken.None);
+
+        // Nothing may happen while the schema is still being created.
+        var finished = await Task.WhenAny(sut.SweepTask!, Task.Delay(300));
+        finished.Should().NotBeSameAs(sut.SweepTask, "the sweep must wait, not race the migration");
+        (await LoadAsync(running.Id))!.Status.Should().Be(
+            PodcastJobStatus.Running, "the row must be untouched while the signal is pending");
+
+        signal.MarkReady();
+        await sut.SweepTask!;
+
+        (await LoadAsync(running.Id))!.Status.Should().Be(
+            PodcastJobStatus.Interrupted, "…and the sweep must still do its job once released");
+    }
+
+    /// <summary>
+    /// The wait is bounded: a host that never signals must degrade to sweeping anyway,
+    /// not leave the task parked forever.
+    /// </summary>
+    [Fact]
+    public async Task StartAsync_UnsignalledHost_SweepsAnywayAfterTheTimeout()
+    {
+        var signal = new DatabaseReadySignal();
+        var waited = await signal.WaitAsync(CancellationToken.None, TimeSpan.FromMilliseconds(50));
+        waited.Should().BeFalse("nothing signalled, so the wait must report that it gave up");
+        signal.Ready.IsCompleted.Should().BeFalse("giving up must not fake the signal for other waiters");
+    }
+
     [Fact]
     public async Task StartAsync_EmptyTable_NoOp()
     {

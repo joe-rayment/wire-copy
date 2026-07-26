@@ -26,6 +26,12 @@ public static class PersistenceDependencyInjection
         services.AddDbContext<AppDbContext>(options =>
             options.UseSqlite(connectionString));
 
+        // workspace-xpr5t: one signal per host, so the orphan sweeps can wait for the
+        // migration instead of racing it and logging SQLite "no such table" errors on a
+        // first run. Registered here because it belongs to the same lifetime as the
+        // DbContext it describes.
+        services.AddSingleton<DatabaseReadySignal>();
+
         services.AddSingleton<ICollectionPreferences, PersistentCollectionPreferences>();
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         services.AddScoped<ISiteCredentialRepository, SiteCredentialRepository>();

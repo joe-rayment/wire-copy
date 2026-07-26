@@ -128,6 +128,9 @@ public class Program
                 await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
             }
 
+            // Release the orphan sweeps now the schema exists (workspace-xpr5t).
+            host.Services.GetRequiredService<DatabaseReadySignal>().MarkReady();
+
             host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 .CreateLogger("BrowserVisibility")
                 .LogInformation("{Resolution}", host.Services.GetRequiredService<IOptions<BrowserConfiguration>>().Value.DescribeVisibilityResolution());
@@ -227,6 +230,9 @@ public class Program
             {
                 await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
             }
+
+            // Release the orphan sweeps now the schema exists (workspace-xpr5t).
+            host.Services.GetRequiredService<DatabaseReadySignal>().MarkReady();
 
             host.Services.GetRequiredService<Microsoft.Extensions.Logging.ILoggerFactory>()
                 .CreateLogger("BrowserVisibility")
@@ -354,8 +360,20 @@ public class Program
             // is still fully awaited below, before any TUI code can touch the database.
             var dbReady = Task.Run(async () =>
             {
-                using var scope = host.Services.CreateScope();
-                await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
+                try
+                {
+                    using var scope = host.Services.CreateScope();
+                    await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
+                }
+                finally
+                {
+                    // Release the orphan sweeps, whether the migration succeeded or threw
+                    // (workspace-xpr5t). They wait for this so a first run does not log
+                    // SQLite "no such table" errors against a schema that is still being
+                    // created; on failure they proceed and report it themselves, which is
+                    // exactly the behaviour that existed before the wait.
+                    host.Services.GetRequiredService<DatabaseReadySignal>().MarkReady();
+                }
             });
 
             // Start the host so registered IHostedService implementations

@@ -61,20 +61,20 @@ public class AppDbContext : DbContext
 
     private async Task StampLegacyDatabaseIfNeeded(CancellationToken cancellationToken)
     {
-        // Check if Collections table exists (indicator of a pre-existing database)
-        var hasExistingTables = false;
-        try
-        {
-            await Database.ExecuteSqlRawAsync(
-                "SELECT 1 FROM Collections LIMIT 1", cancellationToken);
-            hasExistingTables = true;
-        }
-        catch
-        {
-            // Table doesn't exist — fresh database, MigrateAsync will handle it
-        }
+        // Does a Collections table exist? (indicator of a pre-existing database)
+        //
+        // Asked of sqlite_master rather than by SELECTing from Collections and catching
+        // the failure (workspace-xpr5t). On a first run that SELECT is EXPECTED to throw,
+        // and EF logs every failed command at Error with the SQL — so a clean install's
+        // very first log lines were an [ERR] and a stack trace, which is what a broken
+        // app looks like. sqlite_master always exists, so the question has an answer
+        // instead of an exception. Behaviour is otherwise identical: 1 row means the
+        // table is there.
+        var existingTables = await Database
+            .SqlQuery<string>($"SELECT name AS Value FROM sqlite_master WHERE type = 'table' AND name = 'Collections'")
+            .ToListAsync(cancellationToken);
 
-        if (!hasExistingTables)
+        if (existingTables.Count == 0)
         {
             return;
         }

@@ -34,13 +34,16 @@ internal sealed class PodcastJobLifecycleService : IHostedService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly ILogger<PodcastJobLifecycleService> _logger;
+    private readonly DatabaseReadySignal? _databaseReady;
 
     public PodcastJobLifecycleService(
         IServiceScopeFactory scopeFactory,
-        ILogger<PodcastJobLifecycleService> logger)
+        ILogger<PodcastJobLifecycleService> logger,
+        DatabaseReadySignal? databaseReady = null)
     {
         _scopeFactory = scopeFactory;
         _logger = logger;
+        _databaseReady = databaseReady;
     }
 
     /// <summary>
@@ -79,6 +82,16 @@ internal sealed class PodcastJobLifecycleService : IHostedService
 
     private async Task SweepOrphanedJobsAsync(CancellationToken cancellationToken)
     {
+        // workspace-xpr5t: the migration runs concurrently with host start, so on a first
+        // run the PodcastJobs table does not exist yet. Querying it anyway made EF log the
+        // failed command at Error with a full stack trace before the launcher had painted
+        // — a clean install that looks broken. Wait for the schema instead.
+        if (_databaseReady != null &&
+            !await _databaseReady.WaitAsync(cancellationToken).ConfigureAwait(false))
+        {
+            _logger.LogDebug("Podcast job orphan sweep: database-ready signal never arrived; sweeping anyway");
+        }
+
         using var scope = _scopeFactory.CreateScope();
         var repo = scope.ServiceProvider.GetRequiredService<IPodcastJobRepository>();
         var unitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
