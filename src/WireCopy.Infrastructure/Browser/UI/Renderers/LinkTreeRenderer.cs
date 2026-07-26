@@ -861,6 +861,31 @@ internal class LinkTreeRenderer
         return cardHeight >= 3 ? 1 : -1;
     }
 
+    /// <summary>
+    /// Counts the STORIES held by grid rows <c>[start, end)</c>, which is what the ▲/▼
+    /// pager must report.
+    /// </summary>
+    /// <remarks>
+    /// workspace-u4p2z: the pager reads "N more below", and every neighbouring number —
+    /// the header's "6 of 15 shown", the footer's 6/15 — counts stories, so N counting
+    /// grid ROWS made the figure read as simply wrong: 15 stories at 2 columns is 8 grid
+    /// rows, so "6 of 15 shown" sat beside "5 more below" when 9 were. Group headers own
+    /// a full-width row and are not stories, so they never count.
+    /// </remarks>
+    private static int CountStories(IReadOnlyList<GridRow> rows, int start, int end)
+    {
+        var stories = 0;
+        for (var i = Math.Max(0, start); i < Math.Min(rows.Count, end); i++)
+        {
+            if (!rows[i].IsGroupHeader)
+            {
+                stories += rows[i].Cells.Count(n => !n.IsGroupHeader);
+            }
+        }
+
+        return stories;
+    }
+
     private static int GetLinesForNode(LinkNode node, int cardHeight)
     {
         if (!node.IsGroupHeader)
@@ -891,10 +916,10 @@ internal class LinkTreeRenderer
         // the ▲/▼ counts never disagree (workspace-h2caq).
         var budget = Math.Min(maxLines, layout.PaneBudgetLines);
 
-        // Scroll-up indicator
+        // Scroll-up indicator. The count is STORIES, not grid rows (workspace-u4p2z).
         if (startRow > 0)
         {
-            RenderScrollIndicator(layout.Width, p, true, startRow);
+            RenderScrollIndicator(layout.Width, p, true, CountStories(gridRows, 0, startRow));
             linesUsed++;
         }
 
@@ -949,11 +974,12 @@ internal class LinkTreeRenderer
             rowsRendered++;
         }
 
-        // Scroll-down indicator
-        var totalRemaining = Math.Max(0, gridRows.Count - startRow - rowsRendered);
-        if (totalRemaining > 0)
+        // Scroll-down indicator. Rows decide WHETHER there is more; the number shown is
+        // the STORIES in them (workspace-u4p2z).
+        if (startRow + rowsRendered < gridRows.Count)
         {
-            RenderScrollIndicator(layout.Width, p, false, totalRemaining);
+            RenderScrollIndicator(
+                layout.Width, p, false, CountStories(gridRows, startRow + rowsRendered, gridRows.Count));
         }
     }
 
@@ -1073,8 +1099,11 @@ internal class LinkTreeRenderer
             Columns = layout.Columns,
             Items = items,
             SelectedIndex = selectedIndex,
-            MoreAbove = startRow,
-            MoreBelow = Math.Max(0, gridRows.Count - startRow - rowsRendered),
+
+            // The pane renders these as "▲ N more above" / "▼ N more below", so N is
+            // STORIES — the unit every other number in that chrome uses (workspace-u4p2z).
+            MoreAbove = CountStories(gridRows, 0, startRow),
+            MoreBelow = CountStories(gridRows, startRow + rowsRendered, gridRows.Count),
             ShownStories = shownStories,
             TotalStories = visibleNodes.Count(n => !n.IsGroupHeader),
             SelectedCount = tree.SelectionCount,

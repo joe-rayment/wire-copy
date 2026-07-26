@@ -104,6 +104,17 @@ const HDR_JS = `(function(){
     docked:(document.querySelector('#footer-right .docked')||{}).textContent||''};
 })()`
 const STATE_JS = `JSON.stringify(window.__linkTreeState())`
+// The pager marks as the user READS them — the rendered strings, not the pushed
+// numbers behind them (workspace-u4p2z).
+const PAGER_JS = `(function(){
+  const txt=id=>{const e=document.getElementById(id);return e?e.textContent.trim():''};
+  const n=s=>{const m=s.match(/(\\d+)/);return m?parseInt(m[1],10):0};
+  const shown=(document.querySelector('#header-right .hr-shown')||{}).textContent||'';
+  const sm=shown.match(/(\\d+) of (\\d+)/);
+  return {above:txt('moreabove'), below:txt('morebelow'),
+    aboveN:n(txt('moreabove')), belowN:n(txt('morebelow')),
+    shownN:sm?parseInt(sm[1],10):0, totalN:sm?parseInt(sm[2],10):0, shownText:shown};
+})()`
 
 let lt = null
 try {
@@ -147,6 +158,14 @@ try {
   check('A4 footer wears the ⇉ docked marker while the sidecar is out',
     /docked/.test(hdr.docked), `docked="${hdr.docked}"`)
   check('A4b header readout counts shown stories', /\d+ of \d+ shown/.test(hdr.shown), hdr.shown)
+  // workspace-u4p2z: the pager sits inches from "N of M shown" and says "N more
+  // below", so its N is read as stories. It counted grid ROWS, which put "6 of 15
+  // shown" beside "5 more below" when 9 were below. Read both strings off the pane
+  // the user is looking at and require them to account for every story.
+  const pg = await lt.eval(PAGER_JS)
+  check('A4c the pager and the header agree, in STORIES: above + shown + below == total',
+    pg.totalN > 0 && pg.shownN < pg.totalN && pg.aboveN + pg.shownN + pg.belowN === pg.totalN,
+    `"${pg.shownText}" · above="${pg.above}" below="${pg.below}"`)
 
   const gD = await lt.eval(GEO_JS)
   const stateD = JSON.parse(await lt.eval(STATE_JS)).state

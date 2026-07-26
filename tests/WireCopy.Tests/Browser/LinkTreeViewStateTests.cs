@@ -156,6 +156,51 @@ public class LinkTreeViewStateTests
         state.ShownStories.Should().Be(state.Items.Count(i => i.Kind == "story"));
     }
 
+    /// <summary>
+    /// workspace-u4p2z: the pager's "▼ N more below" is rendered beside "N of M shown"
+    /// and a N/M footer, both of which count STORIES — so N has to as well. It counted
+    /// grid ROWS, which put "6 of 15 shown" next to "5 more below" when 9 were below.
+    /// The arithmetic that must hold is shown + below == total, with no group header
+    /// ever counted as a story.
+    /// </summary>
+    [Fact]
+    public void BuildViewState_MoreBelowCountsSTORIESNotGridRows()
+    {
+        var page = CreatePage(sectionTwoStories: 2);
+        var options = Options(terminalWidth: 121, terminalHeight: 40);
+
+        var state = LinkTreeRenderer.BuildViewState(
+            page, new NavigationContext(), options, maxLines: 16, linkCount: 6, sectionCount: 2);
+
+        state.ShownStories.Should().BeGreaterThan(0).And.BeLessThan(state.TotalStories,
+            "this budget must window the tree — otherwise the check proves nothing");
+        (state.ShownStories + state.MoreBelow).Should().Be(
+            state.TotalStories,
+            "with nothing scrolled above, what is shown plus what is below IS the total — "
+            + "the number beside '6 of 15 shown' has to be 9, not the 5 grid rows holding them");
+        state.MoreAbove.Should().Be(0);
+    }
+
+    /// <summary>
+    /// The same identity with the window scrolled: above + shown + below == total.
+    /// A row-counting pager cannot satisfy this at 2 columns.
+    /// </summary>
+    [Fact]
+    public void BuildViewState_ScrolledWindow_AboveShownAndBelowAreStoriesThatSumToTheTotal()
+    {
+        var page = CreatePage(sectionTwoStories: 2);
+        var options = Options(terminalWidth: 121, terminalHeight: 40);
+        var context = new NavigationContext { ScrollOffset = 2 };
+
+        var state = LinkTreeRenderer.BuildViewState(
+            page, context, options, maxLines: 16, linkCount: 6, sectionCount: 2);
+
+        state.MoreAbove.Should().BeGreaterThan(0, "the window starts below the first grid row");
+        (state.MoreAbove + state.ShownStories + state.MoreBelow).Should().Be(
+            state.TotalStories,
+            "every number the pane's chrome shows is stories, so they must account for all of them");
+    }
+
     private static RenderOptions Options(int terminalWidth, int terminalHeight) => new()
     {
         TerminalWidth = terminalWidth,
