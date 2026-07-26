@@ -44,6 +44,15 @@ public class TerminalInputHandler : IInputHandler
     public bool IsInteractive { get; }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// Reads the unbounded channel's own count — the queue the key-reader thread writes
+    /// into — plus a key already pulled into the pending read. Both are thread-safe reads
+    /// of state this class owns, and neither touches Console (workspace-ytdm3).
+    /// </remarks>
+    public bool HasPendingKey =>
+        _keyChannel.Reader.Count > 0 || _pendingKeyTask is { IsCompletedSuccessfully: true };
+
+    /// <inheritdoc />
     public IAnimationController AnimationController => _animationController;
 
     public async Task<NavigationCommand> WaitForInputAsync(CancellationToken cancellationToken = default)

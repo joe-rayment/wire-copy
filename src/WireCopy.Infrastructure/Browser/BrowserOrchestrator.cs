@@ -1021,16 +1021,23 @@ public partial class BrowserOrchestrator : IBrowserService
             // RenderHeader already cleared the line to EOL just before this, so an exact-length col:4 overdraw
             // needs no extra clear and never touches the right border.
             // workspace-ytdm3: this plays ON the input loop, so its 350ms of Thread.Sleep
-            // is 350ms of dead keys on EVERY navigation. Play() therefore accepts a
-            // shouldAbort predicate — but NOT Console.KeyAvailable. Console's Unix
-            // implementation is not thread-safe, and this loop runs concurrently with the
-            // input handler's own Console.ReadKey on another thread: probing KeyAvailable
-            // from here STEALS keystrokes. Measured 2026-07-26 — gate-columns went from
-            // 55/55 to 46/55 with arrow keys no longer moving the selection, and back to
-            // 55/55 the moment the predicate was removed. A safe signal has to be owned by
-            // the input handler and published from its own thread. Until that exists the
-            // animation runs uninterrupted.
-            DecryptRevealAnimation.Play(displayTitle, row: 0, col: 4, palette);
+            // is 350ms of dead keys on EVERY navigation. Play() takes a shouldAbort
+            // predicate and jumps straight to the finished title when it fires.
+            //
+            // The predicate is IInputHandler.HasPendingKey, NOT Console.KeyAvailable. An
+            // earlier attempt used the latter and had to be backed out: Console's Unix
+            // implementation is not thread-safe and this loop runs concurrently with the
+            // input handler's own Console.ReadKey on another thread, so probing it STOLE
+            // keystrokes — gate-columns fell from 55/55 to 46/55, arrow keys no longer
+            // moving the selection. HasPendingKey is the safe signal that attempt asked
+            // for: the count of the handler's own key queue, owned and published by the
+            // thread that already reads the keys, touching Console not at all.
+            DecryptRevealAnimation.Play(
+                displayTitle,
+                row: 0,
+                col: 4,
+                palette,
+                shouldAbort: () => _inputHandler.IsInteractive && _inputHandler.HasPendingKey);
         }
         catch (Exception ex)
         {

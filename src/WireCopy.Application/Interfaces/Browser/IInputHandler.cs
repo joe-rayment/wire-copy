@@ -16,6 +16,22 @@ public interface IInputHandler
     bool IsInteractive { get; }
 
     /// <summary>
+    /// Whether a keystroke is already sitting in the input handler's own queue, waiting
+    /// for the loop to come back for it.
+    /// </summary>
+    /// <remarks>
+    /// workspace-ytdm3: the reveal animation blocks the input loop for ~350ms on EVERY
+    /// navigation, and wants to cut that short the moment the user types. The obvious
+    /// signal, <c>Console.KeyAvailable</c>, cannot be used: Console's Unix implementation
+    /// is not thread-safe and the animation runs concurrently with the handler's own
+    /// <c>Console.ReadKey</c> on another thread, so probing it STEALS keystrokes —
+    /// measured, gate-columns fell from 55/55 to 46/55 with arrow keys no longer moving
+    /// the selection. This is the safe signal the attempt asked for: owned by the input
+    /// handler, published from the thread that already reads the keys, and read-only.
+    /// </remarks>
+    bool HasPendingKey { get; }
+
+    /// <summary>
     /// Gets the animation controller for managing timer-tick behavior.
     /// When an animation is active, WaitForInputAsync races keyboard input against
     /// a periodic timer, returning AnimationTick commands between keypresses.
