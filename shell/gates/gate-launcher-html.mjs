@@ -74,11 +74,18 @@ const CARDS_JS = `(function(){
 const ROWS_JS = `(function(){
   const cards=[...document.querySelectorAll('#grid .card')].filter(c=>!c.classList.contains('empty'));
   const f=document.getElementById('footer').getBoundingClientRect();
+  const g=document.getElementById('grid').getBoundingClientRect();
   const st=(window.__launcherState()||{}).state||{};
+  const tops=[...new Set(cards.map(c=>Math.round(c.getBoundingClientRect().top)))];
+  const lastBottom=cards.length?Math.max(...cards.map(c=>c.getBoundingClientRect().bottom)):g.top;
   return {winH:window.innerHeight, winW:window.innerWidth,
-    rows:new Set(cards.map(c=>Math.round(c.getBoundingClientRect().top))).size,
+    rows:tops.length,
     visible:(st.paging&&st.paging.visible)||0, slots:(st.slots||[]).length,
     footerBottom:Math.round(f.bottom),
+    // The gap the user sees between the last tile and the footer, and the height each
+    // tile row was actually given (workspace-wp16o).
+    bandPx:Math.round(f.top-lastBottom),
+    trackPx:tops.length?Math.round((g.bottom-g.top)/tops.length):0,
     colH:Math.round(document.getElementById('column').getBoundingClientRect().height)};
 })()`
 // Rendered grid geometry: the computed track count must equal the pushed
@@ -418,6 +425,14 @@ try {
   check('I2 the footer stays INSIDE the window at every height — content never outgrows it',
     paged.every(p => p.footerBottom <= p.winH + 1 && p.colH <= p.winH + 1),
     paged.map(p => `${p.h}px: footerBottom=${p.footerBottom} colH=${p.colH}`).join('  '))
+  // workspace-wp16o: #grid was content-height and #footer's margin-top:auto collected
+  // the whole remainder into ONE gap above the footer — 16-96px of blank space, and the
+  // reason the user asked about it. The rows now share the grid, so what may sit between
+  // the last card and the footer is the footer's own 26px padding plus whatever the
+  // card's 170px ceiling refused to absorb. Nothing here measured it before.
+  check('I3 no blank band between the last card and the footer — the rows SPEND the grid',
+    paged.every(p => p.bandPx <= 26 + Math.max(0, p.trackPx - 170) + 4),
+    paged.map(p => `${p.h}px: band=${p.bandPx} track=${p.trackPx} rows=${p.rows}`).join('  '))
 
   // ── (g) Short window (the user's regression, 2026-07-24): shrink the REAL window so
   //    the column cannot fit; the tagline must stay fully visible above the URL bar and

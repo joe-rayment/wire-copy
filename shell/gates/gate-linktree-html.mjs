@@ -6,7 +6,9 @@
 // the grid is EXACTLY 2 COLUMNS at every width, docked or not (workspace-21uy — the
 // docked collapse to 1 and the wide fan-out to 3 are both regressions the user rejected,
 // 2026-07-26), wide panes buying WIDER cards and BIGGER type instead of more columns,
-// with the design's clamp(165px,16.2vw,242px) card footprint and 21→34px headline type,
+// with one card height per page inside the design's 165-242px bounds (workspace-wp16o:
+// the rows SHARE the grid's height, so the remainder is spent on the cards instead of
+// left as a dead band) and 21→34px headline type,
 // the design's palette (phosphor headline, title-pink byline, muted date tail, all-white
 // when selected), NO row sliced by the grid's bottom edge AND no dead band a further row
 // would fill (A13/D…e — the check whose absence let "3 of 15 shown" ship green),
@@ -77,14 +79,29 @@ const GEO_JS = `(function(){
       ms:m?parseFloat(cs(m).fontSize):0,
       leadC:lead?cs(lead).color:'', subC:sub?cs(sub).color:'', subT:(sub||{}).textContent||'',
       meta:(m||{}).textContent||''};});
-  const sections=[...g.querySelectorAll('.section')].map(s=>({text:s.textContent.replace(/─+/g,'').trim().slice(0,48),
-    w:Math.round(s.getBoundingClientRect().width)}));
+  const sections=[...g.querySelectorAll('.section')].map(s=>{const sr=s.getBoundingClientRect();
+    const sc=getComputedStyle(s);
+    return {text:s.textContent.replace(/─+/g,'').trim().slice(0,48),
+      w:Math.round(sr.width),
+      // outer height: a section's margins are part of the row it occupies
+      h:Math.round(sr.height+parseFloat(sc.marginTop)+parseFloat(sc.marginBottom))};});
   return {cols:cs(g).gridTemplateColumns.split(' ').length,
     grid:{top:Math.round(gr.top),bottom:Math.round(gr.bottom),right:Math.round(gr.right)},
     cards, sections, winW:window.innerWidth, winH:window.innerHeight};
 })()`
 // The design's own clamps, in one place — every geometry check reads them.
-const expH = vw => Math.min(242, Math.max(165, 0.162 * vw))   // card footprint
+// The card's design BOUNDS. Since workspace-wp16o the card no longer has one fixed
+// height at a given width: C# admits the row count whose share of the grid lands inside
+// these bounds and the rows share the grid's height, so the remainder is spent on the
+// cards instead of left as blank space. What still has to hold is that every card on a
+// page is the SAME height and that height is one the design's card can be.
+const CARD_MIN = 165
+const CARD_MAX = 242
+const CARD_SEP = 12
+const sameHeight = cards => cards.length > 0 &&
+  Math.max(...cards.map(c => c.h)) - Math.min(...cards.map(c => c.h)) <= 1
+const inBounds = cards => cards.length > 0 &&
+  cards.every(c => c.h >= CARD_MIN - 1 && c.h <= CARD_MAX + 1)
 const expTs = vw => Math.min(34, Math.max(21, 0.0225 * vw))   // headline
 const expMs = vw => Math.min(20, Math.max(14, 0.0136 * vw))   // byline
 const GREEN = 'rgb(0, 215, 0)'
@@ -184,11 +201,10 @@ try {
     gD2 = await lt.eval(GEO_JS)
   }
   const selD = gD2.cards.findIndex(c => c.sel)
-  const hD = expH(gD2.winW)
-  check(`A7 cards hold the design's fixed ${hD.toFixed(0)}px footprint; selection is a recolor (sel-bg + glowing rail)`,
-    gD2.cards.length > 0 && gD2.cards.every(c => Math.abs(c.h - hD) <= 1) && selD >= 0 &&
+  check(`A7 every card is the same height, inside the design's ${CARD_MIN}-${CARD_MAX}px bounds; selection is a recolor (sel-bg + glowing rail)`,
+    sameHeight(gD2.cards) && inBounds(gD2.cards) && selD >= 0 &&
     gD2.cards[selD].rail && gD2.cards[selD].bg === 'rgb(0, 95, 0)',
-    `heights=${[...new Set(gD2.cards.map(c => c.h))]} want=${hD.toFixed(1)} sel=${selD}`)
+    `heights=${[...new Set(gD2.cards.map(c => c.h))]} bounds=${CARD_MIN}-${CARD_MAX} sel=${selD}`)
   check('A8 story meta line renders the real author', gD2.cards.length > 0 && gD2.cards[0].meta.includes(AUTHOR),
     `meta="${gD2.cards[0] && gD2.cards[0].meta}"`)
   // The whole point of this import: the design's palette, on the real pane.
@@ -219,15 +235,25 @@ try {
   //    every row it has room to draw. Under-filling is as much a bug as clipping —
   //    it is what the user sees as links vanishing below the fold. Allow the last
   //    partial row (a fixed card stride can never divide an arbitrary pane height).
+  // Since workspace-wp16o this is no longer "the leftover is under one stride" — the
+  // rows SHARE the grid, so the only thing that may sit below the last card is its own
+  // 12px separator, plus whatever the card's 242px ceiling refused to absorb in the
+  // narrow regime where the grid is too tall for N rows and too short for N+1. Anything
+  // more is the dead band this replaced. "used" measures to the last card's BOTTOM, so
+  // the separator is always part of the leftover.
   const fillCheck = (g, label) => {
-    const rows = [...new Set(g.cards.map(c => c.y))].sort((a, b) => a - b)
-    const stride = rows.length > 1 ? rows[1] - rows[0] : expH(g.winW) + 12
+    const rowTops = [...new Set(g.cards.map(c => c.y))].sort((a, b) => a - b)
     const gridH = g.grid.bottom - g.grid.top
     const used = g.cards.length ? Math.max(...g.cards.map(c => c.bottom)) - g.grid.top : 0
     const room = gridH - used
-    check(`${label} the pane admits every row it can DRAW — no dead band a further row would fill`,
-      room < stride,
-      `gridH=${gridH} used=${used} spare=${room.toFixed(0)} stride=${stride.toFixed(0)} rows=${rows.length} cards=${g.cards.length}`)
+    // Section headers take their own rows; the card rows share what is left of the grid.
+    const headersPx = g.sections.reduce((sum, s) => sum + (s.h || 0), 0)
+    const track = rowTops.length ? (gridH - headersPx) / rowTops.length : gridH
+    const allowed = CARD_SEP + Math.max(0, track - (CARD_MAX + CARD_SEP)) + 4
+    check(`${label} the rows SPEND the grid — nothing left below the last card but its rule`,
+      room <= allowed,
+      `gridH=${gridH} used=${used} spare=${room.toFixed(0)} allowed=${allowed.toFixed(0)} ` +
+      `track=${track.toFixed(0)} rows=${rowTops.length} cards=${g.cards.length} headers=${headersPx}`)
   }
   fillCheck(gD2, 'A13 DOCKED:')
   env.shot('ltree-a-docked')
@@ -243,9 +269,9 @@ try {
     gB.cards[selR].x === gB.cards[selB].x && gB.cards[selR].y > gB.cards[selB].y
   check('B0 Down selected the VISUALLY next card (same column, next row down)', okB0,
     `sel ${selB}(${gB.cards[selB] && gB.cards[selB].x},${gB.cards[selB] && gB.cards[selB].y}) → ${selR}(${gB.cards[selR] && gB.cards[selR].x},${gB.cards[selR] && gB.cards[selR].y})`)
-  check('B1 selection did NOT resize the card (fixed footprint)',
-    okB0 && Math.abs(gB.cards[selR].h - expH(gB.winW)) <= 1 && gB.cards[selR].w === gB.cards[selB].w,
-    okB0 ? `${gB.cards[selR].w}x${gB.cards[selR].h} vs ${gB.cards[selB].w}x${gB.cards[selB].h}` : 'no selected card')
+  check('B1 selection did NOT resize the card — the newly selected one matches every other',
+    okB0 && sameHeight(gB.cards) && inBounds(gB.cards) && gB.cards[selR].w === gB.cards[selB].w,
+    okB0 ? `${gB.cards[selR].w}x${gB.cards[selR].h} vs ${gB.cards[selB].w}x${gB.cards[selB].h} all=${[...new Set(gB.cards.map(c => c.h))]}` : 'no selected card')
   env.shot('ltree-b-moved')
 
   // ── (c) UNDOCK (|): pane grows to the full window; still 2 columns, now WIDER
@@ -307,10 +333,9 @@ try {
       got && got.cols === exp && got.stateCols === exp,
       `rendered=${got && got.cols} state=${got && got.stateCols} winW=${got && got.winW}`)
     const vw = (got && got.winW) || w
-    const hW = expH(vw)
-    check(`D${w}b at ~${w}px: card footprint fixed at the design's ${hW.toFixed(0)}px`,
-      got && got.cards.length > 0 && got.cards.every(c => Math.abs(c.h - hW) <= 1),
-      got && `heights=${[...new Set(got.cards.map(c => c.h))]} want=${hW.toFixed(1)}`)
+    check(`D${w}b at ~${w}px: one card height for the whole page, inside ${CARD_MIN}-${CARD_MAX}px`,
+      got && sameHeight(got.cards) && inBounds(got.cards),
+      got && `heights=${[...new Set(got.cards.map(c => c.h))]} bounds=${CARD_MIN}-${CARD_MAX}`)
     // The point of the fluid track: wide panes buy WIDER cards and BIGGER headline
     // type, not more columns. Headline clamps 21→34px, byline 14→20px.
     const ts = expTs(vw)

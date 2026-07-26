@@ -200,9 +200,26 @@ html, body {
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
   column-gap: 40px;
   row-gap: 0;
+  /* The grid takes the column's slack and its ROWS share it (workspace-wp16o).
+     Before, #grid was content-height and #footer's margin-top:auto collected the
+     whole remainder into one gap above the footer — the "large blank space" the user
+     reported, measured at 16-96px and resolving to exactly 39.89px in the case that
+     was filed. C# admits the row count whose share lands inside the card's bounds
+     (LauncherRenderer.PaneRowsPerPage); these tracks spend it. */
+  flex: 1 1 auto;
+  min-height: 0;
+  grid-auto-rows: minmax(0, 1fr);
 }
 .card {
   min-width: 0;
+  height: 100%;
+  /* The card's own content sets the floor; the ceiling stops a lone row on a tall
+     grid from inflating a name-and-URL tile into something that reads as a bug. Both
+     mirror LauncherRenderer.PaneMinRowPx / PaneMaxRowPx. */
+  min-height: 122px;
+  max-height: 170px;
+  display: flex;
+  flex-direction: column;
   position: relative;
   padding: 16px 12px 18px;
   overflow: hidden;
@@ -251,6 +268,7 @@ html, body {
 
 .card-url {
   margin-top: 8px;
+  margin-bottom: 16px;
   font-size: 15px;
   color: var(--tr-med);
   white-space: nowrap;
@@ -262,13 +280,17 @@ html, body {
 .card-url.hint { color: var(--tr-muted); }
 .card.selected .card-url.hint { color: var(--tr-white); }
 
-/* Terminal-rule separator under each card's content. */
+/* Terminal-rule separator under each card's content. margin-top:auto rather than a
+   fixed 16px so a stretched row puts its extra height BETWEEN the URL and the rule,
+   where it reads as a taller card, instead of below the rule inside the padding, where
+   it reads as the rule having come loose (workspace-wp16o). The 16px minimum gap moves
+   to .card-url's margin-bottom, so an unstretched card is pixel-identical. */
 .card-sep {
   display: flex;
   color: var(--tr-dim);
   font-size: 14px;
   line-height: 1;
-  margin-top: 16px;
+  margin-top: auto;
 }
 .card-sep span {
   flex: 1;

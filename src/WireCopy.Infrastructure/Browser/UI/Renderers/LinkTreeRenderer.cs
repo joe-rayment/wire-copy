@@ -16,6 +16,24 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 /// </summary>
 internal class LinkTreeRenderer
 {
+    /// <summary>
+    /// The shortest and tallest a story row may be drawn, in design px: the design's own
+    /// <c>clamp(165px, 16.2vw, 242px)</c> card bounds plus the 12px separator.
+    /// </summary>
+    /// <remarks>
+    /// workspace-wp16o. <see cref="ShellPaneCardStridePx"/> is the row height the design
+    /// PREFERS at a given pane width; these are the bounds it is willing to live between
+    /// at any width. A fixed stride can never divide an arbitrary grid height, so the
+    /// remainder was thrown away as blank space at the bottom of the pane — measured
+    /// median 124px, p90 219px, max 274px over 3663 window sizes, and up to 255px
+    /// (a whole row's worth) on the undocked pane. Letting the admitted rows share the
+    /// grid's real height, inside these bounds, spends the remainder instead of
+    /// discarding it — and sometimes buys a row: a 600px grid at the design's 254px
+    /// stride floors to 2 rows and wastes 92px, but fits 3 rows of 200px.
+    /// </remarks>
+    internal const double ShellPaneMinRowPx = 165 + 12;
+    internal const double ShellPaneMaxRowPx = 242 + 12;
+
     private const string Reset = "\x1b[0m";
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
@@ -235,8 +253,15 @@ internal class LinkTreeRenderer
     {
         var w = terminalWidth * PaneCellPx;
         var gridPx = ((terminalHeight + 0.5) * PaneLinePx) - ShellPaneChromePx(w);
-        return Math.Max(1, (int)(gridPx / ShellPaneCardStridePx(w)));
+        return RowsForGridPx(gridPx, ShellPaneCardStridePx(w));
     }
+
+    /// <summary>
+    /// How many story rows to admit into <paramref name="gridPx"/> of grid: the shared
+    /// pane model, bounded by the design's own card clamp (workspace-wp16o).
+    /// </summary>
+    internal static int RowsForGridPx(double gridPx, double preferredStridePx)
+        => PanePxModel.RowsForGridPx(gridPx, preferredStridePx, ShellPaneMinRowPx, ShellPaneMaxRowPx);
 
     /// <summary>
     /// The line budget the admission loop honours
@@ -257,8 +282,23 @@ internal class LinkTreeRenderer
         var w = terminalWidth * PaneCellPx;
         var gridPx = ((terminalHeight + 0.5) * PaneLinePx) - ShellPaneChromePx(w);
         var cellHeight = ShellPaneCellHeight(terminalWidth);
-        var pxPerLine = ShellPaneCardStridePx(w) / cellHeight;
-        return Math.Max(cellHeight, (int)(gridPx / pxPerLine));
+        var rows = RowsForGridPx(gridPx, ShellPaneCardStridePx(w));
+
+        // The budget has to do two things at once: never let a card row past
+        // ShellPaneRows, and never let a SECTION HEADER cost one. Headers are priced in
+        // whole terminal lines (~3) but take only ~46px of pane — a fraction of a row —
+        // so a budget of exactly rows × cellHeight spends a quarter of a row on every
+        // header and drops the last one. Measured: 1650×1000 undocked has grid for 3
+        // rows and drew 2, with 85px standing empty, because one header ate 3 of the 36
+        // lines (workspace-wp16o).
+        //
+        // (rows + 1) × cellHeight − 1 is the LARGEST budget that still caps card rows at
+        // `rows`: one more row would need (rows + 1) × cellHeight, which is one line more
+        // than there is. So headers get every line that cannot buy a row, and not one
+        // that can. If they take so much PANE height that the rows fall under the design
+        // minimum, linktree.css's min-height makes the grid scroll — the failure
+        // direction the project already chose (workspace-z559n).
+        return Math.Max(cellHeight, ((rows + 1) * cellHeight) - 1);
     }
 
     /// <summary>
@@ -929,9 +969,16 @@ internal class LinkTreeRenderer
             var groupCardHeight = layout.CellHeight >= 5 ? 3 : layout.CellHeight;
             var linesNeeded = gr.IsGroupHeader ? GetLinesForNode(gr.Left, groupCardHeight) : layout.CellHeight;
 
-            // Reserve 1 line for scroll-down indicator if more rows follow
+            // Reserve 1 line for scroll-down indicator if more rows follow — in the
+            // TERMINAL, where that indicator is a line of the grid's own budget. In
+            // shell mode it is not: the pane draws "▼ N more below" in its footer,
+            // which lives OUTSIDE #grid and is already inside ShellPaneChromePx. So
+            // charging it there docked a line off a budget priced in card rows, and
+            // whenever the budget came out an exact multiple of the cell height that
+            // one line cost a WHOLE card row — 10.6% of window sizes, every one of
+            // terminal height 35/43/51/59 (workspace-wm1kd).
             var hasMoreAfter = row + 1 < gridRows.Count;
-            var available = hasMoreAfter ? budget - 1 : budget;
+            var available = hasMoreAfter && !options.ShellPane ? budget - 1 : budget;
 
             if (linesUsed + linesNeeded > available)
             {
@@ -1020,8 +1067,12 @@ internal class LinkTreeRenderer
         {
             var gr = gridRows[row];
             var linesNeeded = gr.IsGroupHeader ? GetLinesForNode(gr.Left, groupCardHeight) : layout.CellHeight;
+
+            // Mirrors RenderLinkList's reserve exactly, including the shell-mode
+            // exemption (workspace-wm1kd) — the two loops must admit the same window or
+            // the pane and the terminal grid disagree about what the user selected.
             var hasMoreAfter = row + 1 < gridRows.Count;
-            var available = hasMoreAfter ? budget - 1 : budget;
+            var available = hasMoreAfter && !options.ShellPane ? budget - 1 : budget;
             if (linesUsed + linesNeeded > available)
             {
                 break;

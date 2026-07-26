@@ -124,11 +124,33 @@ function itemHtml (item, selected) {
 function paintGrid (state) {
   // EXACTLY state.columns tracks — the same count the TUI uses for arrow-key
   // movement, so keys always match the screen (launcher-pane precedent).
-  $('grid').style.setProperty('--cols', String(state.columns || 2))
+  const cols = state.columns || 2
+  $('grid').style.setProperty('--cols', String(cols))
   const items = state.items || []
   $('grid').innerHTML = items
     .map((item, i) => itemHtml(item, i === state.selectedIndex))
     .join('')
+  // Write the ROW tracks explicitly (workspace-wp16o). Section headers take their own
+  // full-width row at content height; every card row is a 1fr track, so the admitted
+  // rows SHARE the grid's height and the leftover that used to sit under the last row
+  // as blank space is spent on the cards instead. C# owns how many rows there are — it
+  // picked a count whose share lands inside the card's design bounds; this only says
+  // WHERE the height goes, which is the stylesheet's half of the px-mirror contract.
+  // The pattern must match LinkTreeGridMapper's chunking exactly: a header ends the
+  // current run, and a run never spans a section boundary.
+  const tracks = []
+  let inRow = 0
+  for (const item of items) {
+    if (item.kind === 'section') {
+      if (inRow) { tracks.push('minmax(0, 1fr)'); inRow = 0 }
+      tracks.push('min-content')
+      continue
+    }
+    if (inRow === 0) { inRow = 1 } else { inRow++ }
+    if (inRow === cols) { tracks.push('minmax(0, 1fr)'); inRow = 0 }
+  }
+  if (inRow) tracks.push('minmax(0, 1fr)')
+  $('grid').style.gridTemplateRows = tracks.join(' ')
 }
 
 function paintScrollMarks (state) {

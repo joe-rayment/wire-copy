@@ -5,9 +5,9 @@
    scale): full-bleed column with clamp() padding; CRT-glow page title with a
    status readout on the right; ONE responsive story grid whose track count
    comes from the PUSHED STATE (LinkTreeViewState.Columns — the same count the
-   TUI uses for arrow keys); section headers span the grid; story cards hold a
-   FIXED footprint — selection is only ever a recolor (sel-bg fill + glowing
-   rail). Footer pinned to the bottom with the ▼-more mark above its rule. The
+   TUI uses for arrow keys); section headers span the grid; story cards fill their
+   row inside the design's 165–242px bounds — selection is only ever a recolor
+   (sel-bg fill + glowing rail). Footer pinned to the bottom with the ▼-more mark above its rule. The
    TUI owns all keys; every value here is painted from a pushed state message.
    Colours come from ../launcher/tokens.css.
    ============================================================================= */
@@ -148,8 +148,9 @@ html, body {
    minmax(min(clamp(420px,40vw,700px),100%),1fr). "Link Tree.dc.html" is a
    deliberately roomier grid than the earlier responsive sheet: a 1360pt window
    is TWO wide columns, not three narrow ones, and a third only arrives past
-   ~2250px. Section headers span all tracks; cards keep the design's fixed
-   clamp(165px,16.2vw,242px) footprint. */
+   ~2250px. Section headers span all tracks at content height; card rows are 1fr
+   tracks that share the grid's height inside the design's 165–242px card bounds
+   (workspace-wp16o). */
 #grid {
   display: grid;
   grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr));
@@ -167,6 +168,10 @@ html, body {
      scrollbar. `hidden` here is what turned a budget error into disappeared links. */
   flex: 1 1 auto;
   min-height: 0;
+  /* Row tracks are written by paintGrid: `min-content` for each section header, a
+     `minmax(0,1fr)` for each card row, so the remainder lands on the CARDS and never on
+     a header (workspace-wp16o). align-content is irrelevant once the tracks fill the
+     box; `start` remains as the fallback for the frame before the tracks are set. */
   align-content: start;
   overflow-x: hidden;
   overflow-y: auto;
@@ -198,11 +203,27 @@ html, body {
 
 .cell {
   min-width: 0;
+  min-height: 0;
+  height: 100%;
   display: flex;
   flex-direction: column;
 }
+/* The card FILLS its row, between the design's own bounds.
+   workspace-wp16o: this was a fixed clamp(165px,16.2vw,242px), and a fixed stride can
+   never divide an arbitrary grid height — the remainder became blank space under the
+   last row (measured median 124px, p90 219px, max 274px across 3663 window sizes; the
+   user's own case was the median). C# now admits the row COUNT whose share of the grid
+   lands inside these bounds (LinkTreeRenderer.RowsForGridPx) and the card rows are 1fr
+   tracks, so the rows spend the remainder instead of the pane discarding it.
+   The bounds are the design's own 165/242 card clamp, and they are load-bearing in both
+   directions: max-height stops a lone row on a tall grid from inflating into a 300px
+   card holding two lines of text, and min-height lets the grid scroll (it is
+   overflow-y:auto) rather than crushing a card when section headers eat more of the
+   grid than the row estimate allowed. */
 .card {
-  height: clamp(165px, 16.2vw, 242px);
+  flex: 1 1 auto;
+  min-height: 165px;
+  max-height: 242px;
   position: relative;
   padding: 21px 21px 21px 28px;
   overflow: hidden;
@@ -258,6 +279,7 @@ html, body {
 .card.selected .card-meta .meta-sub { color: var(--tr-white); }
 
 .card-sep {
+  flex: 0 0 auto;   /* the 12px rule is part of the row's stride — never squeezed */
   display: flex;
   color: var(--tr-dim);
   font-size: 12px;

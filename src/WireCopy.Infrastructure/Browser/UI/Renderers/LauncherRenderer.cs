@@ -77,6 +77,17 @@ internal class LauncherRenderer
     // 1680). Take the LARGEST so the estimate under-admits rather than over-.
     private const double PaneCardStridePx = 122;
 
+    // The bounds a tile row may be drawn between, in design px (workspace-wp16o).
+    // The floor is the card's own content height — a launcher card cannot be shorter
+    // than the title row, the URL line and the rule under them, so squashing is not an
+    // option the way it is on the link tree's clamped card. The ceiling is a judgement:
+    // rounding to the nearest row count leaves at most half a stride to absorb, which
+    // at one row would inflate a card to 183px, and a lone 183px card holding a name and
+    // a URL reads as a layout bug. 170px keeps the stretch under +40%, and anything past
+    // it stays as a band of at most 13px rather than being poured into the card.
+    private const double PaneMinRowPx = PaneCardStridePx;
+    private const double PaneMaxRowPx = 170;
+
     // Tile grids are ALWAYS exactly 2 columns — the user's standing contract
     // (workspace-21uy / workspace-1ogw), the same one ResponsiveGrid.FixedColumns
     // holds for terminal mode. The "Launcher Responsive.dc.html" import briefly
@@ -510,6 +521,14 @@ internal class LauncherRenderer
     /// because the pane's stage scrolls rather than clipping (unlike the link
     /// tree's grid).
     /// </summary>
+    /// <remarks>
+    /// workspace-wp16o: the count comes from <see cref="PanePxModel.RowsForGridPx"/>
+    /// rather than <c>floor(gridPx / stride)</c>. The rows share the grid's height
+    /// (launcher.css sizes them <c>1fr</c>), so flooring left the remainder — measured
+    /// 16–96px, up to a whole 122px stride short of another row — as blank space above
+    /// the footer, which launcher.css's <c>#footer { margin-top: auto }</c> collected
+    /// into one visible gap.
+    /// </remarks>
     internal static int PaneRowsPerPage(RenderOptions options)
     {
         var w = options.TerminalWidth * PaneCellPx;
@@ -520,7 +539,7 @@ internal class LauncherRenderer
         // (a 982px-tall 15" MacBook lands 4px short of its fourth row).
         var paneHeightPx = (options.TerminalHeight + 0.5) * PaneLinePx;
         var gridPx = paneHeightPx - ShellPaneChromePx(w, options.ShowSetupHint);
-        return Math.Max(1, (int)(gridPx / PaneCardStridePx));
+        return PanePxModel.RowsForGridPx(gridPx, PaneCardStridePx, PaneMinRowPx, PaneMaxRowPx);
     }
 
     /// <summary>
