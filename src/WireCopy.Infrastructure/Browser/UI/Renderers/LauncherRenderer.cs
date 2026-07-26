@@ -64,10 +64,22 @@ internal class LauncherRenderer
     // sat jammed against the bar's bottom border.
     private const int UrlBarLines = 5;
 
-    // Terminal cell → design px for the HTML pane at the 18px scale. Measured on
-    // the live pane (the link-tree gate's px-mirror check: 69×41 cells over a real
-    // 789×900px pane ⇒ ~11.4px/cell, ~21.9px/line). Deliberately a shade under so
-    // the width estimate stays conservative.
+    // Terminal cell to design px for the HTML pane at the 18px scale.
+    //
+    // workspace-vt6o7: these deliberately do NOT come from PanePxModel, and the attempt to
+    // share them is recorded here so it is not repeated blind. Pointing both panes at the
+    // link tree's measured 11.43/21.9 made the launcher over-admit: at a 850px-tall window
+    // the column came out 10px TALLER than the window (gate-launcher-html I2), because the
+    // pane-height model (rows + 0.5) x LinePx over-reads at large row counts — 55 rows
+    // predicts 1215px of pane where the real one is 1180px.
+    //
+    // The probe says why. Solving floor((paneH - 24px of term.html padding) / c) = rows
+    // over four launcher sizes pins the TRUE cell height at c in (20.86, 21.02] — neither
+    // 21.6 nor 21.9. Both panes' pairs are absorbing that padding and the sub-row remainder
+    // into the cell size, over different regions, which is why one number cannot serve both
+    // until the pane-height model itself is re-derived. Until then each pane keeps the pair
+    // its own gates are calibrated against, and gates/probe-pane-px.mjs re-measures both in
+    // one run so the drift is visible rather than assumed.
     private const double PaneCellPx = 11.2;
     private const double PaneLinePx = 21.6;
 

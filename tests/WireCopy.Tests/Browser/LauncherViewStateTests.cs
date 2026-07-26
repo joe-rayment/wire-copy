@@ -211,6 +211,33 @@ public class LauncherViewStateTests
         LauncherRenderer.PaneRowsPerPage(options).Should().Be(expectedRows);
     }
 
+    /// <summary>
+    /// workspace-wp16o/vt6o7: the row count is only right if the height each row ends up
+    /// with is one the tile can actually be. The rows share the grid, so this is what
+    /// stops "more rows" from turning into "crushed tiles" — and what stops the count
+    /// being read off a table nobody can re-derive.
+    /// </summary>
+    [Theory]
+    [InlineData(35)]
+    [InlineData(46)]
+    [InlineData(60)]
+    [InlineData(72)]
+    public void PaneRowsPerPage_RowsLandInsideTheTilesOwnBounds(int terminalHeight)
+    {
+        var options = Options() with { TerminalWidth = 152, TerminalHeight = terminalHeight };
+        var rows = LauncherRenderer.PaneRowsPerPage(options);
+        // The launcher's own pair, not the shared one — see LauncherRenderer's constants
+        // for why they are still separate (workspace-vt6o7).
+        var gridPx = ((terminalHeight + 0.5) * 21.6)
+            - LauncherRenderer.ShellPaneChromePx(152 * 11.2, false);
+        var rowPx = gridPx / rows;
+
+        rowPx.Should().BeGreaterThanOrEqualTo(
+            122, "a tile cannot be shorter than the title, URL and rule it holds");
+        (rows * Math.Max(0, rowPx - 170)).Should().BeLessThan(
+            122, "wasting a whole tile row's height IS the dead band this replaced");
+    }
+
     private static RenderOptions Options(int? readingListCount = null) => new()
     {
         TerminalWidth = 100,

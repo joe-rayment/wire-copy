@@ -38,17 +38,11 @@ internal class LinkTreeRenderer
     private const string Bold = "\x1b[1m";
     private const string Dim = "\x1b[2m";
 
-    /// <summary>
-    /// One terminal cell in HTML-pane design px, MEASURED on the live pane
-    /// (gates/probe-linktree-budget.mjs, 2026-07-26: 69 cols × 41 rows over a real
-    /// 789 × 900px pane). CSS zoom cancels out of both ratios, which is why the
-    /// pane's clamp()s can be mirrored in cell units at all. The earlier 11.2/21.0
-    /// pair under-read the pane by ~2% on width and ~4% on height, which cost a row
-    /// at the sizes where the budget lands near a boundary.
-    /// Pinned end-to-end by gate-linktree-html.mjs check A12.
-    /// </summary>
-    private const double PaneCellPx = 11.43;
-    private const double PaneLinePx = 21.9;
+    // The pane's cell/line px come from the shared model (workspace-vt6o7); the ratios
+    // are a property of the terminal font at the pane's 18px scale, not of either pane.
+    // Pinned end-to-end by gate-linktree-html.mjs check A12.
+    private const double PaneCellPx = PanePxModel.CellPx;
+    private const double PaneLinePx = PanePxModel.LinePx;
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -225,6 +219,14 @@ internal class LinkTreeRenderer
     /// happened to land close here, but the same approach measured ~55px light on the
     /// launcher pane, so it is not a method to trust. Re-run the probe if the pane's
     /// chrome changes.
+    ///
+    /// Re-measured 2026-07-26 with the shared gates/probe-pane-px.mjs across both panes,
+    /// twelve window sizes, docked and undocked: mean error 5.3px, max 27px. The 27px is
+    /// the ONE outlier and it is at the narrow end — a 638px pane, where the clamp floor
+    /// of 233 under-reads a real 260. It costs nothing at that size (the row count still
+    /// matched what the pane drew, and the residual band was 2px) because the rows share
+    /// the grid and absorb it, but the floor is the least-measured part of this model and
+    /// the first thing to re-fit if a narrow pane ever clips.
     /// </remarks>
     internal static double ShellPaneChromePx(double w)
         => Math.Clamp(144 + (0.108 * w), 233, 313);
