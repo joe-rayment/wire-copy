@@ -156,15 +156,22 @@ html, body {
   column-gap: clamp(20px, 2.6vw, 40px);
   row-gap: 0;
   align-items: stretch;
-  /* The ONLY shrinkable child of #column. The TUI budgets the pushed window in
-     21px terminal lines while these cards are a fixed 165–242px stride, so a
-     tall list can overrun the pane; when it does the overrun is taken off the
-     BOTTOM of the grid instead of scrolling the page and pushing the status bar
-     out of view. */
+  /* The ONLY shrinkable child of #column, so its height IS the admission budget —
+     LinkTreeRenderer.ShellPaneChromePx is calibrated as (#column − #grid) off this
+     very box. The overrun stays INSIDE the grid rather than scrolling the page and
+     pushing the status bar out of view.
+     overflow-y is `auto`, not `hidden` (2026-07-26): the budget is measured and
+     gate-checked, so in the normal case there is nothing to scroll and no scrollbar
+     appears — but if the estimate ever drifts, the extra row becomes reachable
+     instead of silently vanishing. A link the user cannot reach is worse than a
+     scrollbar. `hidden` here is what turned a budget error into disappeared links. */
   flex: 1 1 auto;
   min-height: 0;
   align-content: start;
-  overflow: hidden;
+  overflow-x: hidden;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--tr-dim, #5f875f) transparent;
 }
 
 .section {

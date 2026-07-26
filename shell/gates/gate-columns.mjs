@@ -14,10 +14,12 @@
 //            white-on-fill (selection fg) and the treatment MOVES with the selection
 //            (workspace-v654).
 //   DOCKED — with the live-page pane revealed (the "browser sidecar" that narrows the
-//            reader), the story list renders "Link Tree.dc.html"'s ONE wide column
-//            (workspace-h2caq — the roomier clamp(420px,40vw,700px) track), opens out
-//            to 2 when the pane is hidden, long titles WRAP across lines, and
-//            hiding/re-showing the pane (|) keeps the selection on the same story.
+//            reader), the story list is STILL 2 columns — docking buys narrower cards,
+//            never fewer (workspace-h2caq made it collapse to one; the user rejected
+//            that on 2026-07-26). Right steps between the two docked columns, Down
+//            crosses a row, long titles WRAP across lines, and hiding/re-showing the
+//            pane (|) keeps the selection on the same story while only the card WIDTH
+//            changes.
 // Reads the VISIBLE viewport only (baseY-relative) — the full scrollback retains the wide
 // pre-resize render and would be read as stale.
 // Run from shell/: node gates/gate-columns.mjs
@@ -154,14 +156,14 @@ for (const cfg of [
         cols.push((await selectedColumn(term, vp.baseY, probeRow, crosses)).col)
         if (k < 2) { env.key('Right'); await sleep(700) }
       }
-      // Since workspace-8d02r launcher ARROWS move in the HTML pane's responsive
-      // geometry (3 columns at 1360px), while this hidden terminal grid keeps its
-      // fixed 2 columns: the second Right advances to index 2, which the terminal
-      // projects on the NEXT row — so the fill leaves the probe row. The
-      // user-visible arrow behaviour is proven on the pane itself in
-      // gate-launcher-html H4c/H4d.
-      check('spotlight: Right steps column 0 → 1, then advances beyond the probe row (pane-geometry nav)',
-        cols[0] === 0 && cols[1] === 1 && cols[2] === -1, `cols=[${cols.join(',')}]`)
+      // The pane and this hidden terminal grid now share ONE geometry — both fixed at
+      // 2 columns (2026-07-26; workspace-8d02r had the pane on a responsive count, so
+      // a second Right advanced to index 2 and the fill LEFT this row). With 2 columns
+      // there is no index 2 on the row: the second Right must leave the fill where it
+      // is. The user-visible arrow behaviour is proven on the pane itself in
+      // gate-launcher-html H-arrows-c/d.
+      check('spotlight: Right steps column 0 → 1, and a second Right stays (no column 2)',
+        cols[0] === 0 && cols[1] === 1 && cols[2] === 1, `cols=[${cols.join(',')}]`)
       env.shot('columns-spotlight')
     }
     term.close()
@@ -243,6 +245,24 @@ async function selectedStory (term, vp, selFg) {
 // does, the buffer still holds the previous width's render WRAPPED by the new
 // terminal width (visible as mid-word fragments). Polling for the settled shape
 // is the honest wait; the timeout failing means the resize re-render never came.
+// Wait until the pty has finished reflowing and its width has SETTLED. The column
+// count used to double as this signal (docked was 1 column, undocked 2), but both are
+// 2 now, so dock/undock has to be detected on the terminal's actual width or the grid
+// gets measured mid-reflow at the old size.
+async function waitStableWidth (term, timeout = 12000) {
+  const t0 = Date.now()
+  let last = -1, stable = 0
+  while (Date.now() - t0 < timeout) {
+    const d = await term.eval('window.__dims()').catch(() => null)
+    const cols = d ? d.cols : -1
+    stable = cols === last && cols > 0 ? stable + 1 : 0
+    last = cols
+    if (stable >= 3) return cols
+    await sleep(350)
+  }
+  return last
+}
+
 async function waitStoryCols (term, expCols, timeout = 12000) {
   const names = ['one', 'two', 'three', 'four', 'five']
   const t0 = Date.now()
@@ -263,11 +283,11 @@ async function waitStoryCols (term, expCols, timeout = 12000) {
 }
 
 // Asserts the story grid renders exactly `expCols` columns and titles wrap, in the
-// CURRENT viewport. Since workspace-vingi the SHELL-mode story grid follows the HTML
-// link-tree pane's responsive track count (LinkTreeRenderer.ShellPaneColumns); since
-// workspace-h2caq that track is "Link Tree.dc.html"'s roomier clamp(420px,40vw,700px),
-// so the docked ~58% split at 1360px is ONE wide column and the full 1360px window
-// two. The fixed-2 contract (workspace-ehon) still governs plain-terminal mode only.
+// CURRENT viewport. The count is ALWAYS 2 — shell mode and plain terminal, docked and
+// undocked (workspace-ehon / workspace-21uy). workspace-vingi/h2caq briefly made the
+// shell-mode grid follow a responsive track, which collapsed the docked ~58% split to
+// ONE column; the user rejected that on 2026-07-26 and LinkTreeRenderer.ShellPaneColumns
+// is fixed at 2 again. A docked pane buys NARROWER cards, never fewer.
 async function measureStoryGrid (term, label, expCols = 2) {
   const vp = await viewport(term)
   const rowOne = vp.lines.findIndex(l => l.includes('Dispatch one'))
@@ -317,9 +337,10 @@ async function measureStoryGrid (term, label, expCols = 2) {
     let st = null
     for (let i = 0; i < 40; i++) { st = await term.eval('window.__wc.state()'); if (st?.revealed) break; await sleep(500) }
     check('story: pane auto-revealed (reader narrowed by the docked sidecar)', !!st?.revealed)
-    await waitStoryCols(term, 1)
+    const dockedCols = await waitStableWidth(term)
+    await waitStoryCols(term, 2)
 
-    const vpDocked = await measureStoryGrid(term, 'docked', 1)
+    const vpDocked = await measureStoryGrid(term, 'docked', 2)
     env.shot('columns-story-docked')
 
     // Move the selection to the NEXT story — the state CHANGE the doctrine demands —
@@ -327,8 +348,8 @@ async function measureStoryGrid (term, label, expCols = 2) {
     const rowOne = vpDocked.lines.findIndex(l => l.includes('Dispatch one'))
     const dividerCols = []
     for (let c = 0; c < (vpDocked.lines[rowOne] || '').length; c++) if (vpDocked.lines[rowOne][c] === '│') dividerCols.push(c)
-    check('story: the docked split is a SINGLE wide column (no card divider)',
-      dividerCols.length === 0, `dividers=${dividerCols.length}`)
+    check('story: the docked split still carries TWO columns (one card divider)',
+      dividerCols.length === 1, `dividers=${dividerCols.length}`)
     // The tree boots with Dispatch one selected — sample its title fg once and use it
     // as the "this card is selected" signature for the rest of the run.
     const selTitleFg = await fgAt(term, vpDocked.baseY, rowOne, vpDocked.lines[rowOne].indexOf('Dispatch one'))
@@ -350,12 +371,20 @@ async function measureStoryGrid (term, label, expCols = 2) {
     }
     env.shot('columns-story-meta')
 
-    env.key('Down'); await sleep(700)
+    // Docked is TWO columns, so the story beside card 1 is reached with Right; Down
+    // crosses a whole row. Exercise both — the horizontal step is what a 1-column
+    // regression silently kills.
+    env.key('Right'); await sleep(700)
     const vpMoved = await viewport(term)
-    check('story: Down moves the selection to the next story while docked',
+    check('story: Right moves the selection to the adjacent story while docked',
       (await selectedStory(term, vpMoved, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpMoved, selTitleFg)}`)
+    env.key('Down'); await sleep(700)
+    const vpDown = await viewport(term)
+    check('story: Down crosses a full row while docked (two → four, same column)',
+      (await selectedStory(term, vpDown, selTitleFg)) === 'four', `selected=${await selectedStory(term, vpDown, selTitleFg)}`)
+    env.key('Up'); await sleep(700)
 
-    // The state CHANGE, not just the initial state: after Down the white-on-fill
+    // The state CHANGE, not just the initial state: after Right the white-on-fill
     // must have MOVED — card 2's meta gains the selection fg, card 1's reverts.
     if (hits.length >= 2) {
       const hits2 = bylineHits(vpMoved)
@@ -367,20 +396,23 @@ async function measureStoryGrid (term, label, expCols = 2) {
       env.shot('columns-story-meta-moved')
     }
 
-    // Undock (| hides the pane → reader reflows to FULL width): the responsive grid
-    // opens out to 2 columns at 1360px, selection still on Dispatch two.
+    // Undock (| hides the pane → reader reflows to FULL width): STILL 2 columns, just
+    // wider cards, selection still on Dispatch two.
     env.key('bar'); await sleep(500)
     let stHid = null
     for (let i = 0; i < 20; i++) { stHid = await term.eval('window.__wc.state()'); if (!stHid?.revealed) break; await sleep(400) }
     check('story: | undocks the pane', stHid?.revealed === false)
+    const undockedCols = await waitStableWidth(term)
+    check('story: undocking actually widened the terminal region',
+      undockedCols > dockedCols, `docked=${dockedCols} cols → undocked=${undockedCols} cols`)
     await waitStoryCols(term, 2)
     const vpFull = await measureStoryGrid(term, 'undocked-full-width', 2)
     const rowOneF = vpFull.lines.findIndex(l => l.includes('Dispatch one'))
     const divF = []
     for (let c = 0; c < (vpFull.lines[rowOneF] || '').length; c++) if (vpFull.lines[rowOneF][c] === '│') divF.push(c)
-    check('story: undock opened the grid out to 2 columns (1 divider on the card row)',
-      divF.length === 1 && dividerCols.length === 0,
-      `docked dividers=${dividerCols.length} undocked dividers=${divF.length}`)
+    check('story: undocking keeps 2 columns and only makes the cards WIDER',
+      divF.length === 1 && dividerCols.length === 1 && divF[0] > dividerCols[0],
+      `docked divider@${dividerCols[0]} undocked divider@${divF[0]}`)
     check('story: selection survived undock on the same story',
       (await selectedStory(term, vpFull, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpFull, selTitleFg)}`)
     // Two columns is where the horizontal keys have something to do: Left steps back
@@ -398,13 +430,14 @@ async function measureStoryGrid (term, label, expCols = 2) {
       (await selectedStory(term, vpRight, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpRight, selTitleFg)}`)
     env.shot('columns-story-undocked')
 
-    // Re-dock: back to 1 column, selection still held.
+    // Re-dock: still 2 columns (narrower again), selection still held.
     env.key('bar'); await sleep(500)
     let stBack = null
     for (let i = 0; i < 30; i++) { stBack = await term.eval('window.__wc.state()'); if (stBack?.revealed) break; await sleep(500) }
     check('story: | re-docks the pane', !!stBack?.revealed)
-    await waitStoryCols(term, 1)
-    const vpRe = await measureStoryGrid(term, 'redocked', 1)
+    await waitStableWidth(term)
+    await waitStoryCols(term, 2)
+    const vpRe = await measureStoryGrid(term, 'redocked', 2)
     check('story: selection survived re-dock on the same story',
       (await selectedStory(term, vpRe, selTitleFg)) === 'two', `selected=${await selectedStory(term, vpRe, selTitleFg)}`)
     env.shot('columns-story-redocked')

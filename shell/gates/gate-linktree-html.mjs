@@ -3,14 +3,15 @@
 // live .NET TUI over the shell channel — renders the user's link list per
 // "Link Tree.dc.html" and reacts to REAL keystrokes. Every check asserts a USER-VISIBLE
 // OUTCOME on the pane's DOM / computed styles (per the project Verification Doctrine):
-// the pane shows over the DOCKED terminal split as ONE wide column, undocking reflows to
-// 2 at 1360px, the width sweep hits the design's 1/2/3-column breakpoints over a FLUID
-// minimum track (1680px stays at 2 — it must NOT fan out — and only ~2250px+ buys a 3rd)
+// the grid is EXACTLY 2 COLUMNS at every width, docked or not (workspace-21uy — the
+// docked collapse to 1 and the wide fan-out to 3 are both regressions the user rejected,
+// 2026-07-26), wide panes buying WIDER cards and BIGGER type instead of more columns,
 // with the design's clamp(165px,16.2vw,242px) card footprint and 21→34px headline type,
 // the design's palette (phosphor headline, title-pink byline, muted date tail, all-white
-// when selected), NO row sliced by the grid's bottom edge, Down/Right recolor the
-// visually adjacent card, Enter NAVIGATES the live page pane to the selected story's URL
-// and the pane hides, Tab brings it back, Ctrl+= zooms it.
+// when selected), NO row sliced by the grid's bottom edge AND no dead band a further row
+// would fill (A13/D…e — the check whose absence let "3 of 15 shown" ship green),
+// Down/Right recolor the visually adjacent card, Enter NAVIGATES the live page pane to
+// the selected story's URL and the pane hides, Tab brings it back, Ctrl+= zooms it.
 // Headful under Xvfb ONLY (never headless). Run from shell/: node gates/gate-linktree-html.mjs
 import http from 'node:http'
 import fs from 'node:fs'
@@ -143,8 +144,8 @@ try {
 
   const gD = await lt.eval(GEO_JS)
   const stateD = JSON.parse(await lt.eval(STATE_JS)).state
-  check('A5 DOCKED (~58% of 1360px): grid renders 1 column == pushed state.columns',
-    gD.cols === 1 && stateD.columns === 1, `rendered=${gD.cols} state=${stateD.columns} paneW=${gD.winW}`)
+  check('A5 DOCKED (~58% of 1360px): grid renders 2 columns == pushed state.columns',
+    gD.cols === 2 && stateD.columns === 2, `rendered=${gD.cols} state=${stateD.columns} paneW=${gD.winW}`)
   const cardW = gD.cards.length ? gD.cards[0].w : 0
   check('A6 section headers span the grid with real name + count',
     gD.sections.length >= 1 && /DISPATCHES/.test(gD.sections[0].text) && /\(9\)/.test(gD.sections[0].text) &&
@@ -177,26 +178,43 @@ try {
     unclipped(gD2).length === 0,
     `clipped=${JSON.stringify(unclipped(gD2).map(c => ({ y: c.y, bottom: c.bottom })))} gridBottom=${gD2.grid.bottom}`)
   // Docked, the pane and the terminal are the SAME rectangle (A1) — so this reads
-  // the C# px-mirror's core assumption straight off the running app: the pane px
-  // LinkTreeRenderer infers from the TUI's cell dims (PaneCellPx / PaneLinePx) must
-  // UNDER-estimate the real pane, or the row budget overruns and slices a card, and
-  // must not under-estimate by much, or the pane sits half empty. Xterm's fit leaves
-  // a little container slack, which is exactly the margin this band allows for.
+  // the C# px-mirror straight off the running app. The constants were CALIBRATED
+  // against this measurement (11.43 px/cell, 21.9 px/line, 2026-07-26), so the
+  // estimate should now track the real pane within ~2% on both axes rather than
+  // deliberately running under it. Drift past that band means the pane's type scale
+  // moved and the row budget is being computed against a pane that no longer exists.
   const dims = await term.eval('window.__dims()')
-  const estW = dims.cols * 11.2
-  const estH = dims.rows * 21.0
-  check('A12 the C# px-mirror under-estimates the real pane by <6% on both axes',
-    estW <= gD2.winW + 1 && estH <= gD2.winH + 1 &&
-    estW >= gD2.winW * 0.94 && estH >= gD2.winH * 0.94,
+  const estW = dims.cols * 11.43
+  const estH = dims.rows * 21.9
+  check('A12 the C# px-mirror tracks the real pane within 2% on both axes',
+    Math.abs(estW - gD2.winW) <= gD2.winW * 0.02 && Math.abs(estH - gD2.winH) <= gD2.winH * 0.02,
     `${dims.cols}x${dims.rows} cells → est ${estW.toFixed(0)}x${estH.toFixed(0)}px vs real ${gD2.winW}x${gD2.winH}px`)
+
+  // ── The check whose ABSENCE let "3 of 15 shown" ship green: the pane must admit
+  //    every row it has room to draw. Under-filling is as much a bug as clipping —
+  //    it is what the user sees as links vanishing below the fold. Allow the last
+  //    partial row (a fixed card stride can never divide an arbitrary pane height).
+  const fillCheck = (g, label) => {
+    const rows = [...new Set(g.cards.map(c => c.y))].sort((a, b) => a - b)
+    const stride = rows.length > 1 ? rows[1] - rows[0] : expH(g.winW) + 12
+    const gridH = g.grid.bottom - g.grid.top
+    const used = g.cards.length ? Math.max(...g.cards.map(c => c.bottom)) - g.grid.top : 0
+    const room = gridH - used
+    check(`${label} the pane admits every row it can DRAW — no dead band a further row would fill`,
+      room < stride,
+      `gridH=${gridH} used=${used} spare=${room.toFixed(0)} stride=${stride.toFixed(0)} rows=${rows.length} cards=${g.cards.length}`)
+  }
+  fillCheck(gD2, 'A13 DOCKED:')
   env.shot('ltree-a-docked')
 
-  // ── (b) STATE CHANGE: Down recolors the card directly BELOW (single column) ──────
+  // ── (b) STATE CHANGE: Down recolors the card directly BELOW. Docked is TWO
+  //    columns now, so "the next row down" is index + columns, not index + 1 —
+  //    the geometric assertions below are what actually pin it. ──────────────────────
   const selB = gD2.cards.findIndex(c => c.sel)
   env.key('Down'); await sleep(900)
   const gB = await lt.eval(GEO_JS)
   const selR = gB.cards.findIndex(c => c.sel)
-  const okB0 = selB >= 0 && selR === selB + 1 && !!gB.cards[selR] && !!gB.cards[selB] &&
+  const okB0 = selB >= 0 && selR === selB + gB.cols && !!gB.cards[selR] && !!gB.cards[selB] &&
     gB.cards[selR].x === gB.cards[selB].x && gB.cards[selR].y > gB.cards[selB].y
   check('B0 Down selected the VISUALLY next card (same column, next row down)', okB0,
     `sel ${selB}(${gB.cards[selB] && gB.cards[selB].x},${gB.cards[selB] && gB.cards[selB].y}) → ${selR}(${gB.cards[selR] && gB.cards[selR].x},${gB.cards[selR] && gB.cards[selR].y})`)
@@ -205,8 +223,8 @@ try {
     okB0 ? `${gB.cards[selR].w}x${gB.cards[selR].h} vs ${gB.cards[selB].w}x${gB.cards[selB].h}` : 'no selected card')
   env.shot('ltree-b-moved')
 
-  // ── (c) UNDOCK (|): pane grows to the full window; 1 → 2 columns at 1360px;
-  //    the selection survives on the SAME story ────────────────────────────────────
+  // ── (c) UNDOCK (|): pane grows to the full window; still 2 columns, now WIDER
+  //    ones with bigger type; the selection survives on the SAME story ─────────────
   const selTitle = gB.cards[selR].title
   env.key('bar'); await sleep(600)
   let st2 = null
@@ -241,12 +259,15 @@ try {
     `sel ${selC0}(${g4.cards[selC0] && g4.cards[selC0].x},${g4.cards[selC0] && g4.cards[selC0].y}) → ${selC1}(${g4.cards[selC1] && g4.cards[selC1].x},${g4.cards[selC1] && g4.cards[selC1].y})`)
   env.shot('ltree-c-undocked-2col')
 
-  // ── (d) Width sweep (undocked): the design's breakpoints on the REAL window ──────
+  // ── (d) Width sweep (undocked): TWO columns at every width ───────────────────────
   const wid = env.activate()
-  // The design's table for clamp(420px,40vw,700px): ≤910 → 1, 910–2250 → 2, 2250+ → 3.
-  // 1680 is the regression case — a FIXED 420px minimum track would fan it out to 3
-  // narrow columns; the fluid 40vw track holds it at 2 wide ones.
-  for (const [w, h, exp] of [[700, 900, 1], [1000, 900, 2], [1680, 1000, 2], [2320, 1300, 3]]) {
+  // The tile-grid contract (workspace-21uy): 2 columns everywhere. 700px is the
+  // narrow end that used to collapse to 1 and 2320px the wide end that used to fan
+  // out to 3 — the two extremes ResponsiveGrid's remarks record as rejected. Wide
+  // panes buy WIDER cards and BIGGER type, never more columns.
+  const EXP_COLS = 2
+  for (const [w, h] of [[700, 900], [1000, 900], [1680, 1000], [2320, 1300]]) {
+    const exp = EXP_COLS
     env.x('windowsize', wid, String(w), String(h))
     let got = null
     const t1 = Date.now()
@@ -257,7 +278,7 @@ try {
       if (Math.abs(got.winW - w) <= 20 && got.cols === exp && sc.columns === exp) break
       await sleep(300)
     }
-    check(`D${w} at ~${w}px: ${exp} column(s), rendered == pushed state`,
+    check(`D${w} at ~${w}px: exactly ${exp} columns, rendered == pushed state`,
       got && got.cols === exp && got.stateCols === exp,
       `rendered=${got && got.cols} state=${got && got.stateCols} winW=${got && got.winW}`)
     const vw = (got && got.winW) || w
@@ -273,12 +294,15 @@ try {
       got && got.cards.length > 0 && Math.abs(got.cards[0].ts - ts) <= 0.6 &&
       Math.abs(got.cards[0].ms - ms) <= 0.6,
       got && got.cards.length ? `title=${got.cards[0].ts} meta=${got.cards[0].ms}` : 'no cards')
-    check(`D${w}c2 at ~${w}px: every card is at least the 420px minimum track wide`,
-      got && got.cards.length > 0 && got.cards.every(c => c.w >= 420),
-      got && `widths=${[...new Set(got.cards.map(c => c.w))]}`)
+    // NOTE: the old "every card is at least the design's 420px minimum track wide"
+    // check lived here. It contradicts the 2-column contract by construction — a
+    // docked pane is ~790px and two tracks in it are ~365px each — so it is gone
+    // rather than weakened. Card WIDTH is now whatever half the pane is; what still
+    // has to hold is the fixed card HEIGHT and the type scale, checked above.
     check(`D${w}d at ~${w}px: no card sliced by the grid edge`,
       got && got.cards.length > 0 && unclipped(got).length === 0,
       got && `clipped=${JSON.stringify(unclipped(got).map(c => ({ y: c.y, bottom: c.bottom })))} gridBottom=${got.grid.bottom} winH=${got.winH}`)
+    if (got) fillCheck(got, `D${w}e at ~${w}px:`)
     env.shot(`ltree-d-${w}px-${exp}col`)
   }
 

@@ -21,14 +21,16 @@ internal class LinkTreeRenderer
     private const string Dim = "\x1b[2m";
 
     /// <summary>
-    /// One terminal cell in HTML-pane design px. Width measured live 2026-07-24 (a
-    /// 1360px window is 121 cols at the 18px scale); height 2026-07-25 (xterm runs
-    /// lineHeight 1.0, so a 900px window is 42 rows). CSS zoom cancels out of both
-    /// ratios, which is why the pane's clamp()s can be mirrored in cell units at all.
+    /// One terminal cell in HTML-pane design px, MEASURED on the live pane
+    /// (gates/probe-linktree-budget.mjs, 2026-07-26: 69 cols × 41 rows over a real
+    /// 789 × 900px pane). CSS zoom cancels out of both ratios, which is why the
+    /// pane's clamp()s can be mirrored in cell units at all. The earlier 11.2/21.0
+    /// pair under-read the pane by ~2% on width and ~4% on height, which cost a row
+    /// at the sizes where the budget lands near a boundary.
     /// Pinned end-to-end by gate-linktree-html.mjs check A12.
     /// </summary>
-    private const double PaneCellPx = 11.2;
-    private const double PaneLinePx = 21.0;
+    private const double PaneCellPx = 11.43;
+    private const double PaneLinePx = 21.9;
 
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
@@ -160,31 +162,24 @@ internal class LinkTreeRenderer
     }
 
     /// <summary>
-    /// The HTML link-tree pane's responsive column count for a given terminal
-    /// width ("Link Tree.dc.html", workspace-h2caq): the cell-unit mirror of the
-    /// design's
-    /// <c>repeat(auto-fill, minmax(min(clamp(420px,40vw,700px),100%),1fr))</c>
-    /// with <c>clamp(20px,2.6vw,40px)</c> gaps inside <c>clamp(16px,2.4vw,36px)</c>
-    /// side padding. The minimum track is FLUID, not a fixed 420px: it is what
-    /// stops a wide window fanning out into narrow columns, and what buys the
-    /// design's big 21–34px headline type. Terminal cells map to design px at
-    /// ~11.2 px/cell (measured live 2026-07-24: a 1360px window is 121 cols at
-    /// the 18px scale; CSS zoom cancels out of the ratio). "Link Tree.dc.html"
-    /// is a markedly roomier grid than the earlier responsive sheet, so the
-    /// breakpoints move out: ≤910px → 1 (including the docked-sidecar split of a
-    /// laptop window), 910–2250 → 2 (every ordinary window, a 1512pt MacBook
-    /// included), 2250–2990 → 3, ≥2990 → 4 (a large external display).
-    /// Terminal-mode rendering never calls this.
+    /// The HTML link-tree pane's column count: ALWAYS 2, at every window width and
+    /// docked or not, matching the terminal grid's fixed 2-column contract
+    /// (<see cref="ResponsiveGrid.FixedColumns"/>, workspace-21uy).
     /// </summary>
-    internal static int ShellPaneColumns(int terminalWidth)
-    {
-        var w = terminalWidth * PaneCellPx;
-        var pad = Math.Clamp(0.024 * w, 16, 36);
-        var gap = Math.Clamp(0.026 * w, 20, 40);
-        var track = Math.Clamp(0.40 * w, 420, 700);
-        var content = w - (2 * pad);
-        return Math.Clamp((int)((content + gap) / (track + gap)), 1, 6);
-    }
+    /// <remarks>
+    /// workspace-h2caq made this a responsive mirror of "Link Tree.dc.html"'s
+    /// <c>repeat(auto-fill, minmax(min(clamp(420px,40vw,700px),100%),1fr))</c>. That
+    /// floored the minimum track at 420px, so the docked-sidecar split (~790px of
+    /// pane, measured) collapsed to ONE column — the exact regression
+    /// <see cref="ResponsiveGrid"/>'s class remarks already record as rejected, and
+    /// the user rejected it again on 2026-07-26. The design's minimum track LOSES to
+    /// the 2-column contract: a docked card is ~365px and the headline/byline type
+    /// scales down with it through the stylesheet's own clamp()s. The pane's CSS
+    /// lays out exactly <c>var(--cols)</c> tracks from this number
+    /// (linktree.css <c>#grid</c>), so nothing downstream re-derives a count.
+    /// Terminal-mode rendering never calls this.
+    /// </remarks>
+    internal static int ShellPaneColumns(int terminalWidth) => ResponsiveGrid.FixedColumns;
 
     /// <summary>
     /// One story row's vertical footprint in the HTML pane, in design px: the
@@ -195,39 +190,26 @@ internal class LinkTreeRenderer
         => Math.Clamp(0.162 * paneWidthPx, 165, 242) + 12;
 
     /// <summary>
-    /// Everything the HTML pane spends above and below the story grid, in design
-    /// px — the px-mirror of linktree.css's clamp()s, the way
-    /// <see cref="ShellPaneColumns"/> mirrors the grid track. Column padding, then
-    /// the masthead (eyebrow, CRT page title, meta line, the gap under it), the top
-    /// rule, and the footer block (▼-more mark, rule, key hints). Deliberately runs
-    /// a shade PESSIMISTIC (measured live it comes in ~10px under): over-reserving
-    /// costs dead space at the bottom of the pane, under-reserving slices a card.
+    /// Everything the HTML pane spends above and below the story grid, in design px:
+    /// column padding, the masthead (eyebrow, CRT page title, meta line), the top
+    /// rule, and the footer block (▼-more mark, rule, key hints).
     /// </summary>
+    /// <remarks>
+    /// MEASURED, not derived from the stylesheet. <c>#grid</c> is the only shrinkable
+    /// child of <c>#column</c> (linktree.css <c>flex: 1 1 auto</c>), so the grid's own
+    /// height IS the budget and chrome is exactly
+    /// <c>#column.height − #grid.height</c> off the live pane. Measured with
+    /// gates/probe-linktree-budget.mjs on 2026-07-26, docked and undocked:
+    /// 233px at 789px of pane, 236 at 877, 247 at 974, 258 at 1070, 300 at 1330,
+    /// 311 at 1482 and at 1650 (the clamp()s flatten past ~1500px). A clamped line
+    /// through those points reproduces every one to within ~13px — a fourteenth of a
+    /// card stride. The previous version summed linktree.css's clamp()s instead; it
+    /// happened to land close here, but the same approach measured ~55px light on the
+    /// launcher pane, so it is not a method to trust. Re-run the probe if the pane's
+    /// chrome changes.
+    /// </remarks>
     internal static double ShellPaneChromePx(double w)
-    {
-        var padTop = Math.Clamp(0.024 * w, 20, 34);
-        var padBottom = Math.Clamp(0.016 * w, 14, 22);
-
-        // Masthead: eyebrow + its margin, the page title (line-height 1), the meta
-        // line + its margin, and the gap under the whole block.
-        var masthead =
-            (Math.Clamp(0.0092 * w, 11, 13) * 1.5) + 12
-            + Math.Clamp(0.031 * w, 28, 42)
-            + 12 + (Math.Clamp(0.01 * w, 12, 14.5) * 1.5)
-            + Math.Clamp(0.019 * w, 16, 26);
-
-        var topRule = Math.Clamp(0.01 * w, 12, 14) + Math.Clamp(0.015 * w, 12, 20);
-
-        // Footer: padding above the block, the "▼ N more below" mark, the rule + its
-        // margin, and the key-hint row.
-        var footer =
-            Math.Clamp(0.016 * w, 14, 22)
-            + (Math.Clamp(0.009 * w, 11, 13) * 1.5) + 12
-            + Math.Clamp(0.01 * w, 12, 14) + 10
-            + (Math.Clamp(0.0095 * w, 11.5, 13.5) * 1.5);
-
-        return padTop + masthead + topRule + footer + padBottom;
-    }
+        => Math.Clamp(144 + (0.108 * w), 233, 313);
 
     /// <summary>
     /// Lines per story row in shell mode: the design's card stride expressed in
@@ -237,15 +219,46 @@ internal class LinkTreeRenderer
         => Math.Max(1, (int)Math.Round(ShellPaneCardStridePx(terminalWidth * PaneCellPx) / PaneLinePx));
 
     /// <summary>
-    /// How many lines of the pane are left for the story grid once its chrome is
-    /// paid for — the ceiling the admission loop honours
-    /// (<see cref="LinkTreeLayout.PaneBudgetLines"/>). Never less than one row, so a
-    /// pane too short for even one card still shows the selected story.
+    /// How many story ROWS the pane can actually draw: its grid height divided by the
+    /// card stride, both in px. Counting in px is the point — quantising the stride
+    /// into whole 21px terminal lines throws away up to 20px a row, and the loss
+    /// compounds down a tall pane (workspace-55jdj).
     /// </summary>
+    /// <remarks>
+    /// The terminal reports whole LINES, so the pane's true pixel height lies in
+    /// [rows, rows+1) lines; half a line is added back so a window that sits just
+    /// past a row boundary is not rounded out of it. Validated against ten live
+    /// measurements (gates/probe-linktree-budget.mjs, docked and undocked, 800–1300px
+    /// tall): this reproduces the row count the pane actually renders in every one.
+    /// </remarks>
+    internal static int ShellPaneRows(int terminalWidth, int terminalHeight)
+    {
+        var w = terminalWidth * PaneCellPx;
+        var gridPx = ((terminalHeight + 0.5) * PaneLinePx) - ShellPaneChromePx(w);
+        return Math.Max(1, (int)(gridPx / ShellPaneCardStridePx(w)));
+    }
+
+    /// <summary>
+    /// The line budget the admission loop honours
+    /// (<see cref="LinkTreeLayout.PaneBudgetLines"/>): the pane's grid height priced
+    /// in lines at the CARD's own px-per-line, not the terminal's.
+    /// </summary>
+    /// <remarks>
+    /// The conversion rate matters. A section header costs the loop ~3 lines but takes
+    /// only ~20px of pane, while a card row costs <see cref="ShellPaneCellHeight"/>
+    /// lines and takes the full stride. Converting the budget at the terminal's 21.9px
+    /// a line therefore lets a single section header eat ~45px of budget it never
+    /// spends on screen — enough to push the last card row out and leave the dead band
+    /// the user reported. Pricing the budget at <c>stride / cellHeight</c> instead
+    /// keeps card rows exact and leaves headers the slack they actually need.
+    /// </remarks>
     internal static int ShellPaneGridLines(int terminalWidth, int terminalHeight)
     {
-        var gridPx = (terminalHeight * PaneLinePx) - ShellPaneChromePx(terminalWidth * PaneCellPx);
-        return Math.Max(ShellPaneCellHeight(terminalWidth), (int)(gridPx / PaneLinePx));
+        var w = terminalWidth * PaneCellPx;
+        var gridPx = ((terminalHeight + 0.5) * PaneLinePx) - ShellPaneChromePx(w);
+        var cellHeight = ShellPaneCellHeight(terminalWidth);
+        var pxPerLine = ShellPaneCardStridePx(w) / cellHeight;
+        return Math.Max(cellHeight, (int)(gridPx / pxPerLine));
     }
 
     /// <summary>
@@ -287,7 +300,14 @@ internal class LinkTreeRenderer
             ? ShellPaneGridLines(terminalWidth, terminalHeight)
             : int.MaxValue;
 
-        var visibleRows = Math.Max(1, Math.Min(availableHeight, paneBudgetLines) / cellHeight);
+        // In shell mode PaneBudgetLines is the single binding budget, so VisibleRows
+        // must not re-cap it: the admission loop takes min(VisibleRows × CellHeight,
+        // PaneBudgetLines), and rounding DOWN here would claw back exactly the header
+        // slack the budget just granted. The pane's true card-row capacity is
+        // ShellPaneRows; this is that capacity in the units the loop multiplies.
+        var visibleRows = shellPane
+            ? (paneBudgetLines + cellHeight - 1) / cellHeight
+            : Math.Max(1, Math.Min(availableHeight, paneBudgetLines) / cellHeight);
         var cellWidth = ResponsiveGrid.CellWidthFor(width, columns);
 
         return new LinkTreeLayout(
