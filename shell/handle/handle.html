@@ -1,49 +1,60 @@
 <!doctype html>
-<!-- Wire Copy drawer handle (workspace-2dmuu). A thin always-present strip carrying the
-     browser sidecar's pull: vertical on the dock edge while the drawer is shut,
-     horizontal over the top of the live page once it is open. Display-only in the same
-     sense as the launcher and link-tree panes — it holds no dock state and decides
-     nothing. A click sends ONE message to main, which writes '|' to the TUI's stdin;
-     the TUI then drives the reveal exactly as it does for a real keypress, so the
-     drawer has a single authority. The vertical→horizontal re-orientation is played by
-     a proxy of this same bar inside overlay.html (both load handle.css). -->
+<!-- Wire Copy drawer handle (workspace-2dmuu). The browser sidecar's front edge: a
+     full-height labelled rail down the dock edge while the drawer is shut, the same
+     rail across the full width of the browser panel once it is open. Display-only in
+     the same sense as the launcher and link-tree panes — it holds no dock state and
+     decides nothing. A click sends ONE message to main, which writes '|' to the TUI's
+     stdin; the TUI then drives the reveal exactly as it does for a real keypress, so
+     the drawer has a single authority. The vertical→horizontal swing is played by a
+     proxy of this same rail inside overlay.html (both load handle.css). -->
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Wire Copy — Drawer handle</title>
+<title>Wire Copy — Live page drawer</title>
 <link rel="stylesheet" href="../launcher/tokens.css">
 <link rel="stylesheet" href="handle.css">
 </head>
 <body data-orient="vertical">
-  <div id="clip" class="wc-bar-clip"><div id="bar" class="wc-bar"></div></div>
+  <div id="stroke" class="wc-rail-stroke"></div>
+  <div id="label" class="wc-rail-label"><span class="mark">▌</span> <span id="action">Show live page</span><span class="kbd"><span class="brk">[</span><span class="key">|</span><span class="brk">]</span></span></div>
 <script>
 'use strict'
 
-// The resting orientation is pushed by main alongside every layout change, so the bar
+// The resting orientation is pushed by main alongside every layout change, so the rail
 // is already correct the moment the transition overlay drops off it.
-function apply (orient) {
-  document.body.dataset.orient = orient === 'horizontal' ? 'horizontal' : 'vertical'
+// The label names what a click will DO, so it flips with the drawer: shut, the click
+// shows the page; open, it hides it. main sends the wording so the shortcut and the
+// action can never disagree with the TUI's own status line.
+function apply (msg) {
+  const orient = msg && msg.orient === 'horizontal' ? 'horizontal' : 'vertical'
+  document.body.dataset.orient = orient
+  if (msg && msg.action) document.getElementById('action').textContent = msg.action
 }
 
-// A click anywhere in the strip pulls the drawer — the whole strip is the hit target,
-// not just the painted 4px stroke. `click` (not pointerdown) so a press that slides off
-// the bar cancels, the way every other button in the world behaves.
+// A click anywhere on the rail pulls the drawer — the whole edge is the hit target.
+// `click` (not pointerdown) so a press that slides off cancels, like every other
+// button in the world.
 document.addEventListener('click', () => { if (window.wch) window.wch.toggle() })
 
 // ── Gate / introspection hooks ─────────────────────────────────────────────────
-// The bar's rect in viewport px plus its orientation: a gate asserts the OUTCOME
-// (where the bar actually is and which way it runs), never mere presence.
+// The rail's rect and its label, in viewport px: a gate asserts the OUTCOME (where
+// the rail actually is, which way it runs, and that it is legibly labelled), never
+// mere presence.
 window.__handle = () => {
-  const r = document.getElementById('bar').getBoundingClientRect()
+  const s = document.getElementById('stroke').getBoundingClientRect()
+  const l = document.getElementById('label').getBoundingClientRect()
   return {
     orient: document.body.dataset.orient,
-    bar: { x: Math.round(r.left), y: Math.round(r.top), w: Math.round(r.width), h: Math.round(r.height) },
+    label: document.getElementById('label').textContent.replace(/\s+/g, ' ').trim(),
+    stroke: { x: Math.round(s.left), y: Math.round(s.top), w: Math.round(s.width), h: Math.round(s.height) },
+    labelRect: { x: Math.round(l.left), y: Math.round(l.top), w: Math.round(l.width), h: Math.round(l.height) },
     view: { w: window.innerWidth, h: window.innerHeight }
   }
 }
 
-apply(new URLSearchParams(location.search).get('orient'))
-if (window.wch) wch.onState(msg => apply(msg && msg.orient))
+const boot = new URLSearchParams(location.search)
+apply({ orient: boot.get('orient'), action: boot.get('action') })
+if (window.wch) wch.onState(msg => apply(msg))
 </script>
 </body>
 </html>

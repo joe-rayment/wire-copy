@@ -71,6 +71,7 @@ async function settled (term, timeoutMs = 6000) {
 
 let ov = null
 let lt = null
+let hp = null
 try {
   const term = await attach(env.cdpPort, 'term.html', 'terminal pane')
   check('H0 shell booted to the launcher', (await pollTermText(term, 'Go to URL', 30000)).ok)
@@ -79,9 +80,12 @@ try {
   // ── (a) The launcher: NO bar. Two independent reasons it must be absent — the
   //    drawer has nothing to show, and '|' would be typed into the URL bar. ──────────
   const stLauncher = await term.eval('window.__wc.state()')
-  check('H1 no handle on the launcher — the drawer holds no page yet',
+  check('H1 no rail on the launcher — the drawer holds no page yet',
     stLauncher.handleShown === false,
     `handleShown=${stLauncher.handleShown} lens=${stLauncher.pageBounds && stLauncher.pageBounds.x}`)
+  check('H1b with no rail up the terminal is FULL width (the boot contract gate-p1 pins)',
+    stLauncher.termBounds.width === stLauncher.contentSize[0],
+    `term.w=${stLauncher.termBounds.width} content.w=${stLauncher.contentSize[0]}`)
   const wid = env.activate()
   env.shotWindow('handle-a-launcher', wid)
 
@@ -94,18 +98,29 @@ try {
   let st = null
   for (let i = 0; i < 50; i++) { st = await term.eval('window.__wc.state()'); if (st?.revealed && st.handleShown) break; await sleep(400) }
   st = await settled(term, 8000)
-  check('H3 with a page loaded and the drawer open, the bar is on screen and HORIZONTAL',
+  check('H3 with a page loaded and the drawer open, the rail is HORIZONTAL',
     st.handleShown === true && st.handleOrient === 'horizontal' &&
     st.handleBounds.width > st.handleBounds.height,
     `shown=${st.handleShown} orient=${st.handleOrient} bounds=${JSON.stringify(st.handleBounds)}`)
-  check('H4 the open bar sits over the PAGE pane, at its top, not over the reader',
+  check('H4 the open rail spans the FULL WIDTH of the browser panel, along its top edge',
     st.handleBounds.y === 0 &&
-    st.handleBounds.x >= st.pageBounds.x &&
-    st.handleBounds.x + st.handleBounds.width <= st.pageBounds.x + st.pageBounds.width,
-    `handle=${JSON.stringify(st.handleBounds)} page=${JSON.stringify(st.pageBounds)}`)
-  check('H5 the live page keeps its FULL height — the bar floats, it does not push it down',
+    st.handleBounds.x === st.pageBounds.x &&
+    st.handleBounds.width === st.pageBounds.width,
+    `rail=${JSON.stringify(st.handleBounds)} page=${JSON.stringify(st.pageBounds)}`)
+  check('H5 the live page keeps its FULL height — the rail floats, it does not push it down',
     st.pageBounds.y === 0 && st.pageBounds.height === st.contentSize[1],
     `page=${JSON.stringify(st.pageBounds)} content=${JSON.stringify(st.contentSize)}`)
+  // The label is the point of the new shape: assert the TEXT and that it is laid out
+  // with real extent, not just present in the DOM.
+  hp = await Cdp.connect((await findTarget(env.cdpPort, x => x.url.includes('handle.html'), 15000, 'handle pane')).webSocketDebuggerUrl)
+  let hIn = JSON.parse(await hp.eval('JSON.stringify(window.__handle())'))
+  check('H5b the open rail says what a click will DO, with its shortcut, reading across',
+    /hide live page/i.test(hIn.label) && /\[\|\]/.test(hIn.label) &&
+    hIn.labelRect.w > hIn.labelRect.h && hIn.labelRect.w >= 60,
+    `label="${hIn.label}" rect=${JSON.stringify(hIn.labelRect)}`)
+  check('H5c the phosphor edge runs the rail\'s whole length, on its underside',
+    hIn.stroke.w === hIn.view.w && hIn.stroke.h <= 4 && hIn.stroke.y >= hIn.view.h - 4,
+    `stroke=${JSON.stringify(hIn.stroke)} view=${JSON.stringify(hIn.view)}`)
   env.shotWindow('handle-b-open', wid)
 
   // ── (c) THE PRIMARY ACTION: a real mouse click on the bar closes the drawer ───────
@@ -118,14 +133,37 @@ try {
     closed && closed.revealed === false,
     `clicked (${openPt.x},${openPt.y}) → revealed=${closed && closed.revealed}`)
   const stC = await settled(term, 8000)
+  // "Full width" now means the whole window bar the rail's own strip — the rail is up
+  // here, and it sits BESIDE the terminal rather than over it (H8b).
   check('H7 the drawer is really shut: page parked off-screen, reader back to full width',
     stC.paneShown === false && stC.pageBounds.x === stC.contentSize[0] &&
-    stC.termBounds.width === stC.contentSize[0],
-    `page.x=${stC.pageBounds.x} term.w=${stC.termBounds.width} content.w=${stC.contentSize[0]}`)
-  check('H8 the bar RE-ORIENTED to vertical and returned to the dock edge',
-    stC.handleOrient === 'vertical' && stC.handleBounds.height > stC.handleBounds.width &&
+    stC.termBounds.width === stC.contentSize[0] - stC.handleBounds.width,
+    `page.x=${stC.pageBounds.x} term.w=${stC.termBounds.width} content.w=${stC.contentSize[0]} rail.w=${stC.handleBounds.width}`)
+  check('H8 the rail RE-ORIENTED to vertical, running the FULL HEIGHT of the dock edge',
+    stC.handleOrient === 'vertical' && stC.handleBounds.height === stC.contentSize[1] &&
+    stC.handleBounds.y === 0 &&
     stC.handleBounds.x + stC.handleBounds.width === stC.contentSize[0],
-    `orient=${stC.handleOrient} bounds=${JSON.stringify(stC.handleBounds)} content.w=${stC.contentSize[0]}`)
+    `orient=${stC.handleOrient} bounds=${JSON.stringify(stC.handleBounds)} content=${JSON.stringify(stC.contentSize)}`)
+  check('H8b the shut rail owns its strip — the terminal stops short of it, never under it',
+    stC.termBounds.width === stC.contentSize[0] - stC.handleBounds.width,
+    `term.w=${stC.termBounds.width} content.w=${stC.contentSize[0]} rail.w=${stC.handleBounds.width}`)
+  hIn = JSON.parse(await hp.eval('JSON.stringify(window.__handle())'))
+  check('H8c the shut rail FLIPPED to the opposite action, still with its shortcut',
+    /show live page/i.test(hIn.label) && !/hide/i.test(hIn.label) && /\[\|\]/.test(hIn.label) &&
+    hIn.labelRect.h > hIn.labelRect.w && hIn.labelRect.h >= 60,
+    `label="${hIn.label}" rect=${JSON.stringify(hIn.labelRect)}`)
+  // The shortcut the rail advertises must be the one that actually works: press it and
+  // the drawer opens, with no mouse involved.
+  env.key('bar')
+  let byKey = null
+  for (let i = 0; i < 30; i++) { byKey = await term.eval('window.__wc.state()'); if (byKey && byKey.revealed) break; await sleep(200) }
+  check('H8d the advertised [|] shortcut really opens the drawer',
+    byKey && byKey.revealed === true, `revealed=${byKey && byKey.revealed}`)
+  const stBack = await settled(term, 8000)
+  hIn = JSON.parse(await hp.eval('JSON.stringify(window.__handle())'))
+  check('H8e …and the rail flipped back to the hide wording',
+    /hide live page/i.test(hIn.label), `label="${hIn.label}"`)
+  env.key('bar'); await settled(term, 8000)
   check('H9 clicking the handle did NOT hand the keyboard to the page',
     stC.mode === 'reader' && modeBefore === 'reader' && stC.termFocused === true &&
     stC.handleFocused === false,
@@ -253,9 +291,24 @@ try {
   // gate-p4 drives its thief page — then type with NO CDP eval in between (every eval
   // against the term target pulls Chromium focus off the page, gate-p4.mjs:140-144).
   // Coordinates come from the lens's own client rect, offset by the pane origin.
-  env.type('zz')
-  await sleep(700)
-  const typed = await term.eval(`window.__wc.lensEval("document.getElementById('probe').value")`)
+  // The click→focus→type setup races Chromium's focus delivery, so retry the SETUP
+  // (never the assertion) until the field is actually taking input. Observed flaky at
+  // roughly one run in three; a check that fails at random teaches nothing.
+  let typed = ''
+  for (let attempt = 0; attempt < 3 && typed !== 'zz'; attempt++) {
+    if (attempt > 0) {
+      // Re-clicking alone cannot restore focus: setMode short-circuits when the mode is
+      // already 'browser', so nothing re-focuses the view. Esc back to reader first, so
+      // the next click is a real mode CHANGE and grants the page focus again.
+      env.key('Escape'); await sleep(500)
+      await term.eval(`window.__wc.lensEval("document.getElementById('probe').value = ''; 1")`)
+      env.click(pagePt.x, pagePt.y)
+      await sleep(800)
+    }
+    env.type('zz')
+    await sleep(700)
+    typed = await term.eval(`window.__wc.lensEval("document.getElementById('probe').value")`)
+  }
   stB = await term.eval('window.__wc.state()')
   check('H20 the bar does not steal the keyboard — typing still lands on the PAGE',
     typed === 'zz' && stB.mode === 'browser' && stB.termFocused === false && stB.handleFocused === false,
@@ -283,6 +336,7 @@ try {
 } finally {
   if (ov) ov.close()
   if (lt) lt.close()
+  if (hp) hp.close()
   env.down()
   try { fixture.close() } catch {}
 }

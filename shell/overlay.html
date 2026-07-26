@@ -31,19 +31,31 @@
     overflow: hidden; display: none;
   }
   #card img { display: block; }
-  /* Drawer-handle proxy: a sibling AFTER #card so it rides ON the sliding page (its
+  /* Drawer-rail proxy: siblings AFTER #card so they ride ON the sliding page (their
      destination is the card's top edge) instead of being clipped by #card's overflow.
-     Moved only by transform — compositor-only, no layout per frame. The clip window is
-     the SAME 8px the resting pane's strip imposes, so the bloom cannot change size when
-     this stage drops off the real handle. cursor:pointer + the click listener below make
-     the bar the one live control on an otherwise inert overlay: mid-flight the mouse can
+     The rail HINGES AROUND THE WINDOW'S TOP-RIGHT CORNER, which both of its states
+     share: shut it runs down the dock edge from that corner, open it runs left along
+     the top from the same corner. So it folds up into the corner and unrolls along the
+     other axis, rather than pivoting about its own middle — a 900px rail spun about its
+     centre sweeps an enormous diagonal wedge across the page, which reads as a glitch
+     rather than a drawer. That means animating the fill's RECT (one small box, no text
+     inside) instead of transforming it, so the phosphor edges keep their true 2px
+     thickness at every frame. cursor:pointer + the click listener below make the rail
+     the one live control on an otherwise inert overlay: mid-flight the mouse can
      reverse the drawer exactly as pressing | already can. */
-  #handleClip {
-    left: 0; top: 0; display: none;
-    transform-origin: center; will-change: transform;
-    cursor: pointer;
+  #railFill {
+    position: absolute; display: none; background: #000; cursor: pointer; overflow: hidden;
   }
-  #handle { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+  #strokeL { left: 0; top: 0; width: 2px; height: 100%; }
+  #strokeB { left: 0; bottom: 0; width: 100%; height: 2px; }
+  /* TWO labels, because the wording changes with the drawer: "show" becomes "hide".
+     They ride the same path and cross-fade inside the fold, where both are invisible —
+     which also means a mid-flight reversal just replays them backwards, with no timer
+     to swap text at the right moment and no wrong caption left pinned if it aborts. */
+  #railLabelA, #railLabelB {
+    position: absolute; left: 0; top: 0; display: none;
+    transform-origin: center; will-change: transform;
+  }
 </style>
 </head>
 <body>
@@ -51,40 +63,70 @@
   <img id="backB" alt="">
   <div id="scrim"></div>
   <div id="card"><img id="cardImg" alt=""></div>
-  <div id="handleClip" class="wc-bar-clip"><div id="handle" class="wc-bar"></div></div>
+  <div id="railFill">
+    <div id="strokeL" class="wc-rail-stroke"></div>
+    <div id="strokeB" class="wc-rail-stroke"></div>
+  </div>
+  <div id="railLabelA" class="wc-rail-label"></div>
+  <div id="railLabelB" class="wc-rail-label"></div>
 <script>
   const backA = document.getElementById('backA')
   const backB = document.getElementById('backB')
   const card = document.getElementById('card')
   const cardImg = document.getElementById('cardImg')
   const scrim = document.getElementById('scrim')
-  const handle = document.getElementById('handle')
-  const handleClip = document.getElementById('handleClip')
+  const railFill = document.getElementById('railFill')
+  const strokeL = document.getElementById('strokeL')
+  const strokeB = document.getElementById('strokeB')
+  const railLabelA = document.getElementById('railLabelA')
+  const railLabelB = document.getElementById('railLabelB')
 
-  const anim = { phase: 'idle', gen: 0, slide: null, corner: null, scrimAnim: null, fade: null, handleAnim: null, x0: 0, x1: 0 }
+  // Same composition as the resting pane: eyebrow mark, the action, then the shortcut
+  // in the app's [key] idiom.
+  const labelHtml = g =>
+    `<span class="mark">▌</span> ${g.action}` +
+    `<span class="kbd"><span class="brk">[</span><span class="key">${g.key}</span><span class="brk">]</span></span>`
 
-  // The CLIP is positioned by the bar's CENTRE: rotating a len×thick box about its own
-  // centre gives a thick×len box centred on the same point, which is what makes the
-  // vertical→horizontal change one object turning rather than two bars crossfading.
-  // The clip is longer than the bar so only the bloom's thin axis is ever cut — the
-  // same window the resting strip imposes.
-  const CLIP_PAD = 40   // long-axis slack: the bloom must never be cut along the bar
-  const CLIP_THICK = 8  // thin-axis window: EXACTLY the resting strip's 8px
-  function barTransform (g, len) {
-    return `translate(${g.cx - (len + CLIP_PAD) / 2}px, ${g.cy - CLIP_THICK / 2}px) rotate(${g.deg}deg)`
+  const anim = {
+    phase: 'idle', gen: 0, x0: 0, x1: 0,
+    slide: null, corner: null, scrimAnim: null, fade: null,
+    fillAnim: null, labelAAnim: null, labelBAnim: null, strokeLAnim: null, strokeBAnim: null
+  }
+  // Where the fold happens: by 45% of the slide the rail has retracted into the corner
+  // nub, and it unrolls along the other axis over the rest. Sequencing the two axes is
+  // what keeps the shape a rail throughout — interpolating both at once would swell it
+  // into a block covering a quarter of the window at the midpoint.
+  const FOLD = 0.45
+
+  const rectFrame = r => ({ left: r.x + 'px', top: r.y + 'px', width: r.w + 'px', height: r.h + 'px' })
+  // The corner nub both states fold through: the top-right corner is shared, so it is
+  // the rail's own thickness square tucked into it.
+  const nubOf = (from, to) => {
+    const cornerX = from.x + from.w // === to.x + to.w, the window's right edge
+    const thick = Math.min(from.w, to.h)
+    return { x: cornerX - thick, y: 0, w: thick, h: thick }
+  }
+  function labelTransform (g) {
+    return `translate(${g.cx}px, ${g.cy}px) rotate(${g.deg}deg) translate(-50%, -50%)`
   }
 
   // The one live control on an inert stage. Everything else on this overlay absorbs the
   // mouse by design; the bar must not, or it would be a visibly animating control that
   // ignores clicks for the 340ms it is most obviously there.
-  handleClip.addEventListener('click', e => { e.stopPropagation(); window.wcov.handleClick() })
+  for (const el of [railFill, railLabelA, railLabelB]) {
+    el.addEventListener('click', e => { e.stopPropagation(); window.wcov.handleClick() })
+  }
 
   function cancelAll () {
-    for (const a of [anim.slide, anim.corner, anim.scrimAnim, anim.fade, anim.handleAnim]) { try { a && a.cancel() } catch {} }
-    anim.slide = anim.corner = anim.scrimAnim = anim.fade = anim.handleAnim = null
+    for (const a of [anim.slide, anim.corner, anim.scrimAnim, anim.fade,
+      anim.fillAnim, anim.labelAAnim, anim.labelBAnim, anim.strokeLAnim, anim.strokeBAnim]) { try { a && a.cancel() } catch {} }
+    anim.slide = anim.corner = anim.scrimAnim = anim.fade = null
+    anim.fillAnim = anim.labelAAnim = anim.labelBAnim = anim.strokeLAnim = anim.strokeBAnim = null
     anim.phase = 'idle'
     card.style.display = 'none'
-    handleClip.style.display = 'none'
+    railFill.style.display = 'none'
+    railLabelA.style.display = 'none'
+    railLabelB.style.display = 'none'
     backA.removeAttribute('src')
     backB.removeAttribute('src')
     backB.style.opacity = '0'
@@ -108,15 +150,25 @@
     card.style.height = p.h + 'px'
     card.style.transform = `translateX(${p.cardX0}px)`
     card.style.display = 'block'
-    // Drawer handle: staged here, but whether to DRAW it is decided at wcov:go from
+    // Drawer rail: staged here, but whether to DRAW it is decided at wcov:go from
     // freshly re-evaluated availability — a transition on the launcher (or before any
-    // page exists) must show no bar at all.
-    handle.style.width = p.barLen + 'px'
-    handle.style.height = p.barThick + 'px'
-    handleClip.style.width = (p.barLen + CLIP_PAD) + 'px'
-    handleClip.style.height = CLIP_THICK + 'px'
-    handleClip.style.transform = barTransform(p.handleFrom, p.barLen)
-    handleClip.style.display = 'none'
+    // page exists) must show no rail at all.
+    Object.assign(railFill.style, rectFrame(p.handleFrom.rect))
+    strokeL.style.width = p.railStroke + 'px'
+    strokeB.style.height = p.railStroke + 'px'
+    // The phosphor edge is on whichever side faces the reader: the rail's left while
+    // the drawer is shut, its underside once open. They cross-fade through the fold.
+    strokeL.style.opacity = p.handleFrom.vertical ? '1' : '0'
+    strokeB.style.opacity = p.handleFrom.vertical ? '0' : '1'
+    railLabelA.innerHTML = labelHtml(p.handleFrom)
+    railLabelB.innerHTML = labelHtml(p.handleTo)
+    railLabelA.style.transform = labelTransform(p.handleFrom)
+    railLabelB.style.transform = labelTransform(p.handleFrom)
+    railLabelA.style.opacity = '1'
+    railLabelB.style.opacity = '0'
+    railFill.style.display = 'none'
+    railLabelA.style.display = 'none'
+    railLabelB.style.display = 'none'
     try { await Promise.all([backA.decode(), cardImg.decode()]) } catch {}
     window.wcov.armed(p.gen)
   })
@@ -124,7 +176,9 @@
   window.wcov.onGo(p => {
     if (p.gen !== anim.gen) return
     anim.handleOn = !!p.handleOn
-    handleClip.style.display = anim.handleOn ? 'block' : 'none'
+    railFill.style.display = anim.handleOn ? 'block' : 'none'
+    railLabelA.style.display = anim.handleOn ? 'block' : 'none'
+    railLabelB.style.display = anim.handleOn ? 'block' : 'none'
     const { durMs, easing, scrimFrom, scrimTo, cornerFrom, cornerTo } = anim.params
     anim.phase = 'slide'
     anim.slide = card.animate(
@@ -140,23 +194,43 @@
     anim.scrimAnim = scrim.animate(
       [{ opacity: scrimFrom }, { opacity: scrimTo }],
       { duration: durMs, easing: 'linear', fill: 'forwards' })
-    // The handle travels on the card's own easing, but TIPS OVER late: at 62% of the
-    // slide it has covered ~72% of the distance and only ~32% of the rotation, so the
-    // drawer comes out first and the pull swings down onto it — a drawer being opened,
-    // not a bar being tweened. The mid keyframe is what makes it read as physical.
-    const { handleFrom, handleTo, barLen } = anim.params
+    // The rail folds into the shared top-right corner and unrolls along the other axis,
+    // on the card's own easing so the two arrive together. The label rides the same
+    // path but fades through the fold: at the nub it would overhang a 30px square, and
+    // turning type mid-flight is only legible at the ends anyway.
+    const { handleFrom, handleTo } = anim.params
     if (anim.handleOn) {
-      const lerp = (a, b, t) => a + ((b - a) * t)
+      const opts = { duration: durMs, easing, fill: 'forwards' }
+      const nub = nubOf(handleFrom.rect, handleTo.rect)
+      anim.fillAnim = railFill.animate([
+        { ...rectFrame(handleFrom.rect), offset: 0 },
+        { ...rectFrame(nub), offset: FOLD },
+        { ...rectFrame(handleTo.rect), offset: 1 }
+      ], opts)
+      const lerp = (a, b, k) => a + ((b - a) * k)
       const mid = {
-        cx: lerp(handleFrom.cx, handleTo.cx, 0.72),
-        cy: lerp(handleFrom.cy, handleTo.cy, 0.72),
-        deg: lerp(handleFrom.deg, handleTo.deg, 0.32)
+        cx: lerp(handleFrom.cx, handleTo.cx, 0.5),
+        cy: lerp(handleFrom.cy, handleTo.cy, 0.5),
+        deg: lerp(handleFrom.deg, handleTo.deg, 0.5)
       }
-      anim.handleAnim = handleClip.animate([
-        { transform: barTransform(handleFrom, barLen), offset: 0 },
-        { transform: barTransform(mid, barLen), offset: 0.62 },
-        { transform: barTransform(handleTo, barLen), offset: 1 }
-      ], { duration: durMs, easing, fill: 'forwards' })
+      // The outgoing caption fades before the fold, the incoming one after it, so the
+      // wording changes while nothing is legible.
+      const path = [
+        { transform: labelTransform(handleFrom), offset: 0 },
+        { transform: labelTransform(mid), offset: 0.5 },
+        { transform: labelTransform(handleTo), offset: 1 }
+      ]
+      const withOpacity = (fades) => path.map((f, i) => ({ ...f, opacity: fades[i] }))
+      anim.labelAAnim = railLabelA.animate(withOpacity([1, 0, 0]), opts)
+      anim.labelBAnim = railLabelB.animate(withOpacity([0, 0, 1]), opts)
+      // The phosphor edge changes sides at the fold, where the rail is a square and
+      // neither side reads as long — the only moment the swap is invisible.
+      const strokeOpts = { duration: durMs, easing: 'linear', fill: 'forwards' }
+      const vFrom = handleFrom.vertical ? 1 : 0
+      anim.strokeLAnim = strokeL.animate(
+        [{ opacity: vFrom }, { opacity: vFrom, offset: FOLD }, { opacity: 1 - vFrom }], strokeOpts)
+      anim.strokeBAnim = strokeB.animate(
+        [{ opacity: 1 - vFrom }, { opacity: 1 - vFrom, offset: FOLD }, { opacity: vFrom }], strokeOpts)
     }
     anim.slide.onfinish = () => { window.wcov.done(anim.gen, 'slide') }
   })
@@ -180,7 +254,8 @@
     // The handle MUST be in this array. Every animation here carries fill:'forwards',
     // so one left out would run on to the wrong end and stay pinned there — the bar
     // would sit horizontal over a drawer that had just shut.
-    for (const a of [anim.slide, anim.corner, anim.scrimAnim, anim.handleAnim]) { try { a && a.reverse() } catch {} }
+    for (const a of [anim.slide, anim.corner, anim.scrimAnim,
+      anim.fillAnim, anim.labelAAnim, anim.labelBAnim, anim.strokeLAnim, anim.strokeBAnim]) { try { a && a.reverse() } catch {} }
   })
 
   window.wcov.onAbort(() => cancelAll())
@@ -200,8 +275,8 @@
     // Live handle geometry, read back off the composited matrix — a gate asserts where
     // the bar actually IS and which way it runs, not that an animation object exists.
     let hnd = null
-    if (handleClip.style.display !== 'none') {
-      const r = handle.getBoundingClientRect()
+    if (railFill.style.display !== 'none') {
+      const r = railFill.getBoundingClientRect()
       hnd = {
         cx: Math.round(r.left + (r.width / 2)),
         cy: Math.round(r.top + (r.height / 2)),

@@ -1,43 +1,23 @@
 /* =============================================================================
-   Wire Copy drawer handle — the browser sidecar's pull.
+   Wire Copy drawer handle — the browser sidecar's front edge.
    ----------------------------------------------------------------------------
-   ONE bar in two orientations: a vertical rail on the window's dock edge while
-   the drawer is shut, the SAME rail laid horizontally over the top of the live
-   page once it is open. The material is the panes' selection rail verbatim
-   (launcher.css / linktree.css .card-rail) — a 4px phosphor stroke with its 10px
-   bloom — so the handle reads as the same "this edge is live" signal the story
-   cards already use, rather than as a new piece of vocabulary.
+   ONE rail in two orientations. Shut, it runs the FULL HEIGHT of the window down
+   the dock edge; open, it runs the FULL WIDTH of the browser panel across its
+   top. Same object, swung through ninety degrees — the drawer's front coming out
+   and laying down.
 
-   Loaded by BOTH the resting handle pane (handle.html) and the transition overlay
-   (overlay.html, which animates a proxy of the same element through the
-   vertical→horizontal arc). One stylesheet, so the two can never drift apart.
+   It is chrome, so it is built from the app's own chrome vocabulary rather than a
+   new one: the eyebrow the launcher and link-tree panes wear at their top left
+   ("▌ LAUNCHER", "▌ LINK TREE") — title-pink, uppercase, wide-tracked — over pure
+   terminal black, with the panes' phosphor rail marking the edge that faces the
+   reader. Nothing here is invented; it is the same three marks the rest of the
+   app already uses, arranged along an edge.
+
+   Loaded by BOTH the resting pane (handle.html) and the transition overlay
+   (overlay.html, which animates a proxy of the same rail through the swing), so
+   the two cannot drift apart.
    ============================================================================= */
 
-/* The bar itself — shared with the overlay's #handle proxy. Square ends and no
-   radius: this is terminal chrome, and the rail it is cut from has neither. */
-.wc-bar {
-  position: absolute;
-  background: var(--tr-green);
-  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
-}
-
-/* The bloom is clipped to a fixed WC_BAR_CLIP window on the bar's THIN axis in EVERY
-   state — resting and mid-flight. Without this the proxy, which lives on a full-window
-   stage, renders the whole 10px bloom while the resting pane's 8px strip amputates it,
-   and the moment the overlay drops the halo visibly shrinks. Geometry checks are blind
-   to that: box-shadow is outside getBoundingClientRect. Clipping both to the same
-   window is what makes the hand-off invisible. The long axis is never clipped — every
-   container leaves ≥ 32px past the bar's ends, more than the bloom's reach. */
-.wc-bar-clip {
-  position: absolute;
-  overflow: hidden;
-}
-
-/* ── Resting pane (handle.html) ───────────────────────────────────────────────
-   The pane is a thin strip; its background is the same pure black as the
-   terminal and the live page's chrome, so only the bar is ever visible. The
-   strip is deliberately larger than the bar in the cross axis — the pointer only
-   has to find the strip, not the 4px stroke. */
 html, body {
   margin: 0;
   height: 100%;
@@ -45,37 +25,56 @@ html, body {
   overflow: hidden;
   user-select: none;
   cursor: pointer;
+  font-family: var(--tr-font-mono);
 }
 
-/* Clip window: 8px across the bar, centred in whichever strip the pane occupies. */
-#clip { left: 50%; top: 50%; }
-body[data-orient="vertical"] #clip {
-  width: 8px; height: 100%; transform: translate(-50%, -50%);
-}
-body[data-orient="horizontal"] #clip {
-  width: 100%; height: 8px; transform: translate(-50%, -50%);
-}
-
-#bar {
-  left: 50%;
-  top: 50%;
-  transform: translate(-50%, -50%);
-}
-body[data-orient="vertical"] #bar {
-  width: var(--wc-bar-thick, 4px);
-  height: var(--wc-bar-len, 96px);
-}
-body[data-orient="horizontal"] #bar {
-  width: var(--wc-bar-len, 96px);
-  height: var(--wc-bar-thick, 4px);
+/* The phosphor edge: the panes' selection-rail material (--tr-green with its 10px
+   bloom) on whichever side faces the reader. Shut that is the rail's left edge;
+   open it is its underside, where it also parts the chrome from a live page that
+   is usually white. */
+.wc-rail-stroke {
+  position: absolute;
+  background: var(--tr-green);
+  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
 }
 
-/* Pointer feedback. The drawer is a physical thing: brightening the bloom on
-   hover and easing it back on press is the whole affordance — no colour change,
-   no motion, nothing that could be mistaken for the drawer already moving. */
-body:hover #bar {
-  box-shadow: 0 0 14px rgba(0, 215, 0, 0.85);
+/* The label. Centred along the rail in BOTH orientations, so the swing carries it on
+   one arc instead of sliding it end to end. It names the ACTION the click performs —
+   "show" while the drawer is shut, "hide" once it is out — rather than naming the
+   drawer, and carries the keyboard shortcut for the same thing, in the app's own key
+   idiom ([key] with the key in cyan, which the design system reserves for exactly
+   this). So the rail teaches the shortcut while it is being used with the mouse. */
+.wc-rail-label {
+  position: absolute;
+  white-space: nowrap;
+  color: var(--tr-bright);
+  font-size: 12px;
+  letter-spacing: 0.26em;
+  text-transform: uppercase;
+  line-height: 1;
 }
-body:active #bar {
-  box-shadow: 0 0 6px rgba(0, 215, 0, 0.55);
+.wc-rail-label .mark { color: var(--tr-bright); }
+.wc-rail-label .kbd {
+  color: var(--tr-med);
+  letter-spacing: 0.12em;
+  margin-left: 1.1em;
 }
+.wc-rail-label .kbd .key { color: var(--tr-cyan); }
+
+/* ── Resting pane (handle.html) ───────────────────────────────────────────── */
+body[data-orient="vertical"] #stroke {
+  left: 0; top: 0; width: 2px; height: 100%;
+}
+body[data-orient="horizontal"] #stroke {
+  left: 0; bottom: 0; width: 100%; height: 2px;
+}
+
+#label { left: 50%; top: 50%; transform: translate(-50%, -50%); }
+/* Rotated in place, so it reads top-to-bottom down the shut drawer's edge. */
+body[data-orient="vertical"] #label { transform: translate(-50%, -50%) rotate(90deg); }
+
+/* Pointer feedback: the bloom lifts on hover and settles on press. No motion, and
+   no colour change that could be mistaken for the drawer already moving. */
+body:hover #stroke { box-shadow: 0 0 14px rgba(0, 215, 0, 0.85); }
+body:hover #label { color: var(--tr-pink); }
+body:active #stroke { box-shadow: 0 0 6px rgba(0, 215, 0, 0.55); }
