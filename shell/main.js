@@ -116,7 +116,9 @@ const state = {
   mode: 'reader',     // 'reader' | 'browser'
   revealed: false,
   paneShown: false,   // physical visibility (lags `revealed` during the collapse slide)
-  ptyDims: { cols: 0, rows: 0 }
+  ptyDims: { cols: 0, rows: 0 },
+  termReady: false,   // term.html has loaded xterm and is listening for pty:data
+  ptyBacklog: []      // bytes the TUI wrote before that (workspace-ak0kq)
 }
 
 // ---- persisted user prefs (window bounds, terminal type scale) ----
@@ -167,6 +169,16 @@ function rememberBounds () {
 const FONT_DEFAULT = 18
 const FONT_MIN = 8
 const FONT_MAX = 32
+// Remembered terminal GRID (workspace-ak0kq). The pty is spawned before the renderer
+// has measured itself, so it needs a size up front; last session's is far closer than
+// 80x24 and usually exact, which makes the corrective resize a no-op.
+let termGrid = (() => {
+  const saved = readJson(prefsFile('term-prefs.json'))
+  const c = saved && Number(saved.cols)
+  const r = saved && Number(saved.rows)
+  return (c > 0 && r > 0) ? { cols: c, rows: r } : { cols: 120, rows: 40 }
+})()
+
 let termFontSize = (() => {
   const saved = readJson(prefsFile('term-prefs.json'))
   const px = saved ? Number(saved.fontSize) : NaN
@@ -178,7 +190,7 @@ function setTermFont (px) {
   const next = Math.min(FONT_MAX, Math.max(FONT_MIN, px))
   if (next === termFontSize) return
   termFontSize = next
-  writeJson(prefsFile('term-prefs.json'), { fontSize: termFontSize })
+  writeJson(prefsFile('term-prefs.json'), { fontSize: termFontSize, ...termGrid })
   if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('wc:font', termFontSize)
   // The launcher pane self-scales (zoom = px/18); push live zoom the same way (L5,
   // workspace-e2qz3). The initial value rides its ?font= query param at load.
@@ -828,7 +840,10 @@ function spawnTui () {
     baseArgs = ['exec', process.env.WIRECOPY_SHELL_TUI_DLL ||
       path.join(ROOT, 'src/WireCopy.API/bin/Release/net10.0/WireCopy.API.dll')]
   }
-  const { cols, rows } = state.ptyDims
+  // Spawned before the renderer has measured itself (workspace-ak0kq): fall back to the
+  // remembered grid, then to a sane default. term:ready corrects it if it differs.
+  const cols = state.ptyDims.cols || termGrid.cols
+  const rows = state.ptyDims.rows || termGrid.rows
   const env = {
     ...process.env,
     TERM: 'xterm-256color',
@@ -860,6 +875,10 @@ function spawnTui () {
   })
   state.ptyProc.onData(d => {
     if (!firstPtyByte) { firstPtyByte = true; bootMark('tui-first-paint') }
+    // The TUI can start writing before term.html has finished loading xterm. Its bytes
+    // are a cursor-addressed STREAM — dropping any of them corrupts every frame after —
+    // so hold them until the renderer says it is listening, then replay in order.
+    if (!state.termReady) { state.ptyBacklog.push(d); return }
     // Transition settle heuristic (workspace-tj1z.3): the post-snap reflow is a byte
     // burst on this relay; bytes AFTER the settle capture dirty the seam (gate metric).
     if (trans) {
@@ -1132,6 +1151,15 @@ app.whenReady().then(() => {
       `http://127.0.0.1:${termSrv.address().port}/handle/handle.html` +
       `?orient=${state.handleOrient}&action=${encodeURIComponent(railAction(state.revealed))}`)
       .catch(err => console.error('[shell] handle pane load failed: ' + err))
+
+    // workspace-ak0kq: start the .NET child NOW rather than waiting for term:ready.
+    // The TUI's ~0.5s boot shares nothing with the terminal renderer's — which has to
+    // spawn a renderer process, parse half a megabyte of xterm.js and resolve a webfont
+    // gate before it can report a size — so the two belong in parallel. Safe here and
+    // not earlier: the control channel above is already listening, so the child can
+    // connect the moment it starts. It spawns at the remembered grid; term:ready
+    // corrects the size and releases the buffered output.
+    if (!state.ptyProc) spawnTui()
   })
 
   // Drawer-handle click (workspace-2dmuu). Sender-guarded like the overlay acks. This
@@ -1182,8 +1210,21 @@ app.whenReady().then(() => {
   ipcMain.on('term:ready', (_e, dims) => {
     bootMark('term-ready')
     state.ptyDims = dims
+    // Remember the real grid so the NEXT launch can spawn straight into it.
+    if (dims.cols > 0 && dims.rows > 0) {
+      termGrid = { cols: dims.cols, rows: dims.rows }
+      writeJson(prefsFile('term-prefs.json'), { fontSize: termFontSize, ...termGrid })
+    }
     if (state.ptyProc) state.ptyProc.resize(dims.cols, dims.rows)
     else spawnTui()
+    // Release everything the TUI wrote while the renderer was still loading, in order,
+    // BEFORE any later pty:data can overtake it.
+    state.termReady = true
+    if (state.ptyBacklog.length) {
+      const backlog = state.ptyBacklog.join('')
+      state.ptyBacklog = []
+      if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('pty:data', backlog)
+    }
   })
   ipcMain.on('pty:input', (_e, d) => { if (state.ptyProc) state.ptyProc.write(d) })
   ipcMain.on('term:resize', (_e, dims) => {

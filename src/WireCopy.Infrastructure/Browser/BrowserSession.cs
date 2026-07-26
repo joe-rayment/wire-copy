@@ -105,11 +105,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     // that reappears (e.g. after a crash recovery) re-docks itself when the user wanted a dock.
     private bool _userWantsDock;
 
-    // True only while PrewarmAsync is driving the attach. The attach normally reveals the
-    // sidecar on completion; during a prewarm nothing has been navigated to yet, so a
-    // reveal here would pop the browser pane open at boot with a blank page in it.
-    private volatile bool _prewarming;
-
     private bool _disposed;
     private bool _browsersInstalled;
 
@@ -274,33 +269,6 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         finally
         {
             _lock.Release();
-        }
-    }
-
-    /// <inheritdoc />
-    public async Task PrewarmAsync(CancellationToken cancellationToken = default)
-    {
-        // Outside the shell "launching a browser" really does open a window, so a prewarm
-        // there WOULD be the banned startup warmup. Only the shell's CDP attach is safe.
-        if (_disposed || !_shell.IsConnected || _page != null)
-        {
-            return;
-        }
-
-        _prewarming = true;
-        try
-        {
-            await GetOrCreatePageAsync().ConfigureAwait(false);
-            _logger.LogInformation("Browser prewarmed: the first navigation will not wait on the CDP attach");
-        }
-        catch (Exception ex)
-        {
-            // Best effort by definition: the first navigation still attaches on demand.
-            _logger.LogDebug(ex, "Browser prewarm failed (non-fatal — the first navigation will attach)");
-        }
-        finally
-        {
-            _prewarming = false;
         }
     }
 
@@ -1150,9 +1118,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         _logger.LogInformation(
             "Attached to the desktop shell browser at {Endpoint} (single-window, headful)", endpoint);
 
-        // A prewarm has nothing on screen to dock to — leave the sidecar alone and let
-        // the first real navigation reveal it (SyncWindowStateAsync reconciles it there).
-        if (_userWantsDock && !_prewarming)
+        if (_userWantsDock)
         {
             _isDocked = await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false);
         }

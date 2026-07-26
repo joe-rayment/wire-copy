@@ -121,8 +121,14 @@ try {
   for (let i = 0; i < 40 && !(await lt.eval('!!window.__linkTreeReady').catch(() => false)); i++) await sleep(250)
 
   // ── (a) DOCKED (the auto-revealed default): pane over the terminal split ─────────
+  // `revealed` flips at the START of the reveal, but the pane's setBounds lands as the
+  // transition finishes — so wait for the BOUNDS to narrow too, or A1 samples the
+  // full-window rectangle from mid-slide and fails at random (seen 2026-07-26 once the
+  // TUI began booting earlier and shifted the timing).
   let st = null
-  for (let i = 0; i < 40; i++) { st = await term.eval('window.__wc.state()'); if (st?.revealed && st.linkTreeShown) break; await sleep(500) }
+  const docked = s => !!s?.revealed && s.linkTreeShown === true && s.linkTreeBounds && s.contentSize &&
+    s.linkTreeBounds.width < s.contentSize[0] * 0.75
+  for (let i = 0; i < 40; i++) { st = await term.eval('window.__wc.state()'); if (docked(st)) break; await sleep(500) }
   check('A0 sidecar auto-docked and link pane SHOWN', !!st?.revealed && st.linkTreeShown === true,
     `revealed=${st && st.revealed} linkTreeShown=${st && st.linkTreeShown}`)
   check('A1 pane bounds track the TERMINAL region (left split), not the full window',
