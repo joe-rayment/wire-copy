@@ -356,6 +356,56 @@ try {
     env.shot(`ltree-d-${w}px-${exp}col`)
   }
 
+  // ── (d2) HEIGHT sweep (workspace-55jdj): the sweep above varies only WIDTH, and the
+  //    budget this pane spends is VERTICAL. Its bug lives at short heights, where the
+  //    TUI's own card shrinks with the window while the pane's does not, so the terminal
+  //    can admit more grid rows than the pane can hold and the last row is cut. Drive the
+  //    real window through five heights at a fixed width and assert, at each one, exactly
+  //    what this bead asked for: the stage does not overflow (chrome is never pushed out
+  //    of view), the last admitted card row is fully INSIDE the visible grid, and the rows
+  //    spend the grid rather than leaving a band.
+  const STAGE_JS = `(function(){
+    const st=document.getElementById('stage'); const c=document.getElementById('column');
+    const f=document.getElementById('footer').getBoundingClientRect();
+    return {stScroll:st.scrollHeight, stClient:st.clientHeight,
+      colH:Math.round(c.getBoundingClientRect().height),
+      footerBottom:Math.round(f.bottom), winH:window.innerHeight};
+  })()`
+  const byHeight = []
+  for (const h of [700, 820, 940, 1060, 1180]) {
+    env.x('windowsize', wid, '1360', String(h))
+    // Wait for the PANE to reach the height, then settle for the pty round-trip
+    // (window → term.html's observer → pty → TUI re-page → pushed state → pane).
+    const t2 = Date.now()
+    let gh = null
+    do { gh = await lt.eval(GEO_JS); if (Math.abs(gh.winH - h) <= 24) break; await sleep(300) }
+    while (Date.now() - t2 < 10000)
+    await sleep(2600)
+    gh = await lt.eval(GEO_JS)
+    const st = await lt.eval(STAGE_JS)
+    const rows = [...new Set(gh.cards.map(c => c.y))].length
+    byHeight.push({ h, rows, cards: gh.cards.length, winH: gh.winH })
+    check(`V${h} at ${h}px tall: the chrome fits — the stage does not scroll and the footer is on screen`,
+      st.stScroll <= st.stClient + 1 && st.footerBottom <= st.winH + 1,
+      `stageScroll=${st.stScroll} stageClient=${st.stClient} footerBottom=${st.footerBottom} winH=${st.winH}`)
+    check(`V${h}b at ${h}px tall: every admitted card is fully inside the visible grid`,
+      gh.cards.length > 0 && unclipped(gh).length === 0,
+      `cards=${gh.cards.length} clipped=${JSON.stringify(unclipped(gh).map(c => ({ y: c.y, bottom: c.bottom })))} gridBottom=${gh.grid.bottom}`)
+    check(`V${h}c at ${h}px tall: one card height for the page, inside ${CARD_MIN}-${CARD_MAX}px`,
+      sameHeight(gh.cards) && inBounds(gh.cards),
+      `heights=${[...new Set(gh.cards.map(c => c.h))]}`)
+    fillCheck(gh, `V${h}d at ${h}px tall:`)
+    env.shot(`ltree-v-${h}h`)
+  }
+  // The vertical budget has to be a budget, not a constant: taller windows must hold
+  // more rows. A pane that draws the same three rows at 700px and 1180px is not
+  // mirroring anything.
+  const rowsByH = byHeight.map(b => b.rows)
+  check('V-sweep the admitted row count RISES with the window height',
+    new Set(rowsByH).size >= 2 && rowsByH.every((r, i) => i === 0 || r >= rowsByH[i - 1]) &&
+    rowsByH[rowsByH.length - 1] > rowsByH[0],
+    byHeight.map(b => `${b.h}px→${b.rows} rows/${b.cards} cards`).join('  '))
+
   // ── (e) Enter OPENS the selected story: live page pane navigates to ITS url and
   //    the pane hides for the reader view ──────────────────────────────────────────
   // Re-dock first (the sweep left the sidecar out): "Enter navigates the live page
