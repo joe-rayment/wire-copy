@@ -55,11 +55,6 @@ public interface IInputHandler
     NavigationCommand MapKeyToCommand(ConsoleKey key, ConsoleModifiers modifiers);
 
     /// <summary>
-    /// Gets help text showing all key bindings.
-    /// </summary>
-    string GetHelpText();
-
-    /// <summary>
     /// Prompts user for URL input.
     /// </summary>
     /// <param name="prompt">Prompt message.</param>

@@ -114,21 +114,6 @@ public class PreloadPanelDeliveryTests
 
     // ---- C. Discoverability ----
 
-    [Fact]
-    public void HelpText_AdvertisesPrefetchDetailKey()
-    {
-        var themeProvider = Substitute.For<IThemeProvider>();
-        themeProvider.CurrentTheme.Returns(ThemeName.Phosphor);
-        var handler = new TerminalInputHandler(
-            themeProvider,
-            Substitute.For<IResizeDetector>(),
-            Substitute.For<INavigationService>(),
-            Substitute.For<Microsoft.Extensions.Logging.ILogger<TerminalInputHandler>>());
-
-        handler.GetHelpText().Should().Contain("Prefetch detail",
-            "the user could not have found the \\ key — it was advertised nowhere");
-    }
-
     [Theory]
     [InlineData(ViewMode.Hierarchical)]
     [InlineData(ViewMode.Readable)]

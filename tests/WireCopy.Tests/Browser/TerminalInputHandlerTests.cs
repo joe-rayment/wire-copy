@@ -279,74 +279,6 @@ public class TerminalInputHandlerTests
 
     #endregion
 
-    #region GetHelpText
-
-    [Fact]
-    public void GetHelpText_ContainsCollectionKeybindings()
-    {
-        var help = _sut.GetHelpText();
-
-        help.Should().Contain("Save to Reading List");
-        help.Should().Contain("Save all links to Reading List");
-        help.Should().Contain("Save to specific collection");
-        help.Should().Contain("Delete / remove item");
-        help.Should().Contain("Reorder items");
-    }
-
-    [Fact]
-    public void GetHelpText_ContainsSearchKeybindings()
-    {
-        var help = _sut.GetHelpText();
-
-        help.Should().Contain("Search");
-        help.Should().Contain("Next / previous match");
-    }
-
-    [Fact]
-    public void GetHelpText_ContainsNavigationKeybindings()
-    {
-        var help = _sut.GetHelpText();
-
-        help.Should().Contain("Move down");
-        help.Should().Contain("Move up");
-        help.Should().Contain("Go back");
-        help.Should().Contain("Follow link");
-    }
-
-    [Fact]
-    public void GetHelpText_ContainsCacheKeybindings()
-    {
-        var help = _sut.GetHelpText();
-
-        help.Should().Contain("Refresh (bypass cache)");
-        help.Should().Contain("Interactive refresh");
-    }
-
-    [Fact]
-    public void GetHelpText_ContainsPerViewSections()
-    {
-        var help = _sut.GetHelpText();
-
-        help.Should().Contain("Link Tree View");
-        help.Should().Contain("Reader View");
-        help.Should().Contain("Narrow width");
-        help.Should().Contain("Widen width");
-    }
-
-    [Fact]
-    public void GetHelpText_ShowsBothOldAndNewWidthBindings()
-    {
-        var help = _sut.GetHelpText();
-
-        // Both h/l and +/- should appear in help
-        help.Should().Contain("h / ");
-        help.Should().Contain("l / ");
-        help.Should().Contain("-");
-        help.Should().Contain("+");
-    }
-
-    #endregion
-
     #region DrainPendingTasks - key preservation
 
     [Fact]
@@ -610,18 +542,7 @@ public class TerminalInputHandlerTests
 
     #endregion
 
-    #region Help text (workspace-5wzs)
-
-    [Fact]
-    public void GetHelpText_LinkTreeView_DocumentsSpaceAsSelectDeselect()
-    {
-        // workspace-5wzs: Space maps to ToggleSelection (save-selection toggle),
-        // never expand/collapse — the help text must match the actual binding.
-        var help = _sut.GetHelpText();
-
-        help.Should().NotContain("Toggle expand/collapse");
-        help.Should().Contain("Select / deselect item");
-    }
+    #region Space key binding (workspace-5wzs)
 
     [Fact]
     public void MapKeyInfo_Spacebar_ReturnsToggleSelection()
