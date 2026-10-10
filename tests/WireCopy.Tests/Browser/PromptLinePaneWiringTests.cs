@@ -149,6 +149,58 @@ public sealed class PromptLinePaneWiringTests : IAsyncLifetime
         Assert.False(_server.TryTakeNext(TimeSpan.FromMilliseconds(300), out _), "no pane is up, so no state may be sent");
     }
 
+    // Guards:   while a wizard/chooser card is being painted into the terminal, the link-tree HTML pane is hidden
+    //           (linkTreeState visible:false) so the user can see the card, and it comes back (visible:true) once the card is gone.
+    // Fails if: RenderHierarchical keeps pushing linkTreeState visible:true while OverlayActive is set (the pane then
+    //           covers the card), or it never re-shows the pane after the overlay is cleared.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PromptLinePaneWiringTests.LinkTree_PaneIsHiddenWhileOverlayCardIsUp"
+    [Fact]
+    public async Task LinkTree_PaneIsHiddenWhileOverlayCardIsUp()
+    {
+        _server = await RecordingShellServer.StartAsync(_socketPath);
+        await using var channel = ShellChannel.TryConnect(_socketPath, NullLogger.Instance);
+        Assert.NotNull(channel);
+        var renderer = CreateRenderer(channel);
+
+        var page = CreateFlatPage(5);
+        var options = new RenderOptions { TerminalWidth = 121, TerminalHeight = 60, ShellPane = true };
+
+        var originalOut = Console.Out;
+        Console.SetOut(TextWriter.Null);
+        try
+        {
+            // No card: the pane is shown, as always.
+            renderer.OverlayActive = false;
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            var shown = await _server.WaitForNextAsync("linkTreeState");
+            Assert.True(shown.GetProperty("visible").GetBoolean());
+
+            // A card is up: the pane is hidden (once, not re-sent on every repaint).
+            renderer.OverlayActive = true;
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            var hidden = await _server.WaitForNextAsync("linkTreeState");
+            Assert.False(hidden.GetProperty("visible").GetBoolean());
+
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            Assert.False(_server.TryTakeNext(TimeSpan.FromMilliseconds(300), out var extra), $"a repaint under the card must not re-show the pane (got {extra.Method})");
+
+            // A prompt keystroke under the card must not resurrect the pane either.
+            await renderer.SetPromptLineAsync(new PromptLineState { Prefix = ":", Buffer = "x", Cursor = 1 });
+            Assert.False(_server.TryTakeNext(TimeSpan.FromMilliseconds(300), out var prompted), $"the hidden pane must not be re-sent on a prompt keystroke (got {prompted.Method})");
+            await renderer.SetPromptLineAsync(null);
+
+            // Card gone: the next render brings the pane back.
+            renderer.OverlayActive = false;
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            var back = await _server.WaitForNextAsync("linkTreeState");
+            Assert.True(back.GetProperty("visible").GetBoolean());
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
     private static TerminalPageRenderer CreateRenderer(ShellChannel channel)
     {
         var themeProvider = Substitute.For<IThemeProvider>();

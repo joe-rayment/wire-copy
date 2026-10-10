@@ -57,7 +57,7 @@ const fixture = http.createServer((req, res) => {
 await new Promise(r => fixture.listen(FPORT, '127.0.0.1', r))
 const base = `http://127.0.0.1:${FPORT}/`
 
-const env = new Env({ display: ':88', cdpPort: 9298 })
+const env = new Env({ display: process.env.GATE_DISPLAY || ':88', cdpPort: process.env.GATE_CDP_PORT || 9298 })
 await env.up()
 const shell = env.launchShell()
 
@@ -107,9 +107,24 @@ try {
     await sleep(1500)
   }
 
+  // The REAL visibility of the link-tree pane: the shell's own BrowserView flag
+  // (applyLinkTreeVisibility -> v.setVisible), not a pushed message or a DOM node.
+  const paneShown = async want => {
+    let st = null
+    for (let i = 0; i < 25; i++) {
+      st = await term.eval('window.__wc.state()').catch(() => null)
+      if (st && st.linkTreeShown === want) break
+      await sleep(250)
+    }
+    return { ok: !!st && st.linkTreeShown === want, got: st && st.linkTreeShown }
+  }
+
   // ---- Page A: open, then the user teaches the layout by hand ----
   check('T1 TUI rendered fixture page A', (await openFixture('breakwater')).ok)
   await attachTree()
+  // Baseline, so the "hidden" checks below can really fail: with no card up the pane IS shown.
+  const base0 = await paneShown(true)
+  check('T1b link-tree pane is SHOWN over the terminal before any wizard card', base0.ok, `linkTreeShown=${base0.got}`)
 
   // g l = re-run layout setup. Option 1 ("Mark the links yourself") is the default when
   // there is no AI key. Keystrokes can drop under load, so the chord is retried until the
@@ -121,10 +136,19 @@ try {
     chooser = await pollTermText(term, 'Mark the links yourself', 8000)
   }
   check('T2 layout chooser offers "Mark the links yourself"', chooser.ok)
+  // workspace-olkxx: the card is painted into the TERMINAL grid, and the link-tree pane sits OVER
+  // the terminal — so the card is only visible to the user if the pane is hidden. (Before the fix
+  // the card was in the xterm buffer, found by the check above, while the pane covered it.)
+  const hidChooser = await paneShown(false)
+  check('T2e link-tree pane is HIDDEN while the layout chooser card is up', hidChooser.ok, `linkTreeShown=${hidChooser.got}`)
+  await sleep(400)
+  env.shotWindow('tree-exclusions-chooser', wid)
   env.key('Return')
   // Label mode: the cursor lands on the FIRST story row. 'a' ranks it, then Down walks past
   // the other 11 stories to the ad (row 13, listed last because it follows the river in page order).
   check('T2a label mode is up', (await pollTermText(term, 'Label the links', 15000)).ok)
+  const hidLabel = await paneShown(false)
+  check('T2f link-tree pane is HIDDEN while the "Label the links" card is up', hidLabel.ok, `linkTreeShown=${hidLabel.got}`)
   await sleep(1000)
   env.key('a'); await sleep(500)
   // Walk Down until the highlighted row (the one with the cursor marker) IS the ad: never count rows.
@@ -142,10 +166,17 @@ try {
     (await pollTermText(term, '1 article(s) · 1 ad(s)', 8000)).ok)
   env.shotWindow('tree-exclusions-label', wid)
   env.key('Return'); await sleep(2500) // -> preview card
+  const hidPreview = await paneShown(false)
+  check('T2g link-tree pane is still HIDDEN on the preview card', hidPreview.ok, `linkTreeShown=${hidPreview.got}`)
+  env.shotWindow('tree-exclusions-preview', wid)
   env.key('s')                         // save exactly what is previewed
   const saved = path.join(env.extraEnv.XDG_DATA_HOME, 'WireCopy', 'hierarchy', '127.0.0.1_8174.json')
   for (let i = 0; i < 40 && !fs.existsSync(saved); i++) await sleep(500)
   await sleep(1500)
+  // The wizard is over (the card is gone): the link-tree pane must be back.
+  const backShown = await paneShown(true)
+  check('T2h link-tree pane is SHOWN again once the wizard finished', backShown.ok, `linkTreeShown=${backShown.got}`)
+  env.shotWindow('tree-exclusions-after-wizard', wid)
   // The durable rule the whole gate rests on: the saved layout must carry an exclusion for the ad.
   let cfg = {}
   try { cfg = JSON.parse(fs.readFileSync(saved, 'utf8'))[0] || {} } catch {}

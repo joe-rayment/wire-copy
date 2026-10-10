@@ -107,6 +107,15 @@ public class TerminalPageRenderer : IPageRenderer
         _shellChannel = shellChannel ?? new NullShellChannel();
     }
 
+    /// <summary>
+    /// workspace-olkxx: true while the orchestrator has an overlay painter (a wizard,
+    /// strategy-chooser or schedule card) that draws into the TERMINAL grid. Under the
+    /// Electron shell the link-tree HTML pane sits over the terminal, so while this is
+    /// set the pane must be hidden or the card is invisible. Set by the orchestrator
+    /// before every page render.
+    /// </summary>
+    internal bool OverlayActive { get; set; }
+
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
     {
         LeaveLauncherIfShown(); // workspace-0jxo
@@ -129,7 +138,15 @@ public class TerminalPageRenderer : IPageRenderer
             // The view-model replays the SAME admission window the grid render
             // used (same remainingHeight budget). Fire and forget — the shell
             // round-trip must never block or throw into the render path.
-            if (_shellChannel.IsConnected)
+            if (_shellChannel.IsConnected && OverlayActive)
+            {
+                // workspace-olkxx: a wizard / chooser / schedule card is being painted into
+                // the terminal grid. The HTML pane sits OVER the terminal, so keep it hidden
+                // (the terminal's own text tree + the card show through). The first render
+                // after the painter clears pushes visible:true again.
+                LeaveLinkTreeIfShown();
+            }
+            else if (_shellChannel.IsConnected)
             {
                 var linkState = LinkTreeRenderer.BuildViewState(
                     page, context, options, remainingHeight, linkCount, sectionCount);

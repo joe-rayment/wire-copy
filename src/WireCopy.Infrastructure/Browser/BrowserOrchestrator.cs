@@ -1726,6 +1726,14 @@ public partial class BrowserOrchestrator : IBrowserService
             options = GetCurrentRenderOptions();
             var viewMode = _navigationService.CurrentContext.ViewMode;
 
+            // workspace-olkxx: an active overlay painter (wizard / chooser / schedule
+            // card) draws into the terminal grid; tell the renderer so it keeps the
+            // shell's HTML link-tree pane (which covers the terminal) hidden meanwhile.
+            if (_renderer is UI.TerminalPageRenderer overlayAwareRenderer)
+            {
+                overlayAwareRenderer.OverlayActive = _activeOverlayPainter != null;
+            }
+
             // Launcher view doesn't require a page - render directly
             if (viewMode == ViewMode.Launcher)
             {
