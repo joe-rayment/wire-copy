@@ -1002,10 +1002,27 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
             {
                 foreach (var node in nodes.ToList())
                 {
+                    // The substring selectors above also match <html>/<head>/<body> when a
+                    // site puts a state class on them while a consent banner, modal or
+                    // paywall is up (modal-open, has-overlay, paywall-active ...). Removing
+                    // the document skeleton empties the page (workspace-79zhv).
+                    if (IsDocumentSkeleton(node))
+                    {
+                        continue;
+                    }
+
                     node.Remove();
                 }
             }
         }
+    }
+
+    private static bool IsDocumentSkeleton(HtmlNode node)
+    {
+        var name = node.Name;
+        return name.Equals("html", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("head", StringComparison.OrdinalIgnoreCase)
+            || name.Equals("body", StringComparison.OrdinalIgnoreCase);
     }
 
     private static bool IsInsideBoilerplate(HtmlNode node)
@@ -1013,6 +1030,14 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         var current = node.ParentNode;
         while (current != null)
         {
+            // <html>/<body> state classes (modal-open, has-overlay ...) describe the page,
+            // not a boilerplate region the paragraph sits in (workspace-79zhv).
+            if (IsDocumentSkeleton(current))
+            {
+                current = current.ParentNode;
+                continue;
+            }
+
             var tagName = current.Name.ToLowerInvariant();
             if (tagName == "nav" || tagName == "footer" || tagName == "aside")
             {

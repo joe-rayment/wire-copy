@@ -1055,4 +1055,121 @@ public class ReadableContentTests
     }
 
     #endregion
+
+    #region Boilerplate pass spares the document skeleton (workspace-79zhv)
+
+    private const string SkeletonP1 = "The first paragraph of the story is comfortably longer than fifty characters so it counts as real article text.";
+    private const string SkeletonP2 = "The second paragraph carries on with more reporting detail, again well past the fifty character threshold.";
+    private const string SkeletonP3 = "A third paragraph closes the section with concluding remarks that are also longer than fifty characters.";
+
+    private static string SkeletonArticleBody(string wrapperClass) => $@"
+        <div class='{wrapperClass}'>
+            <h1>Council Approves New Transit Plan</h1>
+            <p>{SkeletonP1}</p>
+            <p>{SkeletonP2}</p>
+            <p>{SkeletonP3}</p>
+        </div>";
+
+    // Guards:   A page captured while a modal/consent/paywall is up (state class on <body>) still
+    //           yields its article instead of an empty reader view.
+    // Fails if: the boilerplate pass removes <body> because its class contains 'modal'/'overlay'/
+    //           'cookie'/'paywall'/'newsletter', or the paragraph walk treats <body> as boilerplate.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractAsync_BodyStateClass_StillExtractsArticle"
+    [Theory]
+    [InlineData("modal-open")]
+    [InlineData("has-overlay")]
+    [InlineData("paywall-active")]
+    [InlineData("cookie-consent-shown")]
+    [InlineData("newsletter-modal-visible")]
+    public async Task ExtractAsync_BodyStateClass_StillExtractsArticle(string bodyClass)
+    {
+        var html = $@"<html><head><title>Council Approves New Transit Plan</title>
+            <meta property='og:type' content='article' /></head>
+            <body class='{bodyClass}'>{SkeletonArticleBody("article-body")}</body></html>";
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        result.Should().NotBeNull();
+        result!.Paragraphs.Should().Contain(p => p.Contains("first paragraph of the story"));
+        result.Paragraphs.Should().Contain(p => p.Contains("second paragraph carries on"));
+        result.Paragraphs.Should().Contain(p => p.Contains("third paragraph closes"));
+    }
+
+    // Guards:   Same as above but with the state class on <html> (e.g. paywall-active) rather than <body>.
+    // Fails if: the boilerplate pass removes <html>, taking the whole document with it.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractAsync_HtmlStateClass_StillExtractsArticle"
+    [Theory]
+    [InlineData("paywall-active")]
+    [InlineData("modal-open overlay-visible")]
+    public async Task ExtractAsync_HtmlStateClass_StillExtractsArticle(string htmlClass)
+    {
+        var html = $@"<html class='{htmlClass}'><head><title>Council Approves New Transit Plan</title>
+            <meta property='og:type' content='article' /></head>
+            <body>{SkeletonArticleBody("article-body")}</body></html>";
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        result.Should().NotBeNull();
+        result!.Paragraphs.Should().Contain(p => p.Contains("first paragraph of the story"));
+        result.Paragraphs.Should().Contain(p => p.Contains("third paragraph closes"));
+    }
+
+    // Guards:   The no-known-container fallback (full-document paragraph walk) is not defeated by a
+    //           <body class="modal-open"> ancestor being mistaken for a boilerplate region.
+    // Fails if: IsInsideBoilerplate counts the 'modal' class on <body>/<html> against every paragraph.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractAsync_BodyStateClass_NoContentContainer_StillExtractsArticle"
+    [Fact]
+    public async Task ExtractAsync_BodyStateClass_NoContentContainer_StillExtractsArticle()
+    {
+        var html = $@"<html class='has-overlay'><head><title>Council Approves New Transit Plan</title></head>
+            <body class='modal-open'>{SkeletonArticleBody("wrapper")}</body></html>";
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/story");
+
+        result.Should().NotBeNull();
+        result!.Paragraphs.Should().Contain(p => p.Contains("first paragraph of the story"));
+        result.Paragraphs.Should().Contain(p => p.Contains("second paragraph carries on"));
+    }
+
+    // Guards:   The HasExtractableContent pre-check (same boilerplate pass) also keeps a page whose
+    //           <body> carries a modal state class.
+    // Fails if: RemoveBoilerplate deletes <body> so the pre-check says there is nothing to read.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~HasExtractableContent_BodyStateClass_ReturnsTrue"
+    [Fact]
+    public void HasExtractableContent_BodyStateClass_ReturnsTrue()
+    {
+        var html = $@"<html><head><title>Council Approves New Transit Plan</title></head>
+            <body class='modal-open paywall-active'>{SkeletonArticleBody("article-body")}</body></html>";
+
+        ReadableContentExtractor.HasExtractableContent(html).Should().BeTrue();
+    }
+
+    // Guards:   Real boilerplate inside the body (a cookie banner, a modal div) is still stripped
+    //           out of the article text; the fix only spares <html>/<head>/<body>.
+    // Fails if: the skeleton guard is widened so ordinary elements with boilerplate classes survive.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractAsync_CookieBannerInsideBody_StillStripped"
+    [Fact]
+    public async Task ExtractAsync_CookieBannerInsideBody_StillStripped()
+    {
+        var html = $@"<html><head><title>Council Approves New Transit Plan</title>
+            <meta property='og:type' content='article' /></head>
+            <body class='modal-open'>
+                <div class='cookie-banner'><p>Accept cookies so we can personalise the advertising you see on this website today.</p></div>
+                <div class='newsletter-modal'><p>Sign up to our newsletter for the very latest headlines delivered every morning.</p></div>
+                {SkeletonArticleBody("article-body")}
+            </body></html>";
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        result.Should().NotBeNull();
+        result!.Paragraphs.Should().Contain(p => p.Contains("first paragraph of the story"));
+        result.Paragraphs.Should().NotContain(p => p.Contains("Accept cookies"));
+        result.Paragraphs.Should().NotContain(p => p.Contains("Sign up to our newsletter"));
+    }
+
+    #endregion
 }
