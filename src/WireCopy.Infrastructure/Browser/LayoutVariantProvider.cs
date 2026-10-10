@@ -1,5 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using Microsoft.Extensions.Logging;
+using Microsoft.Extensions.Logging.Abstractions;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Enums.Browser;
@@ -21,12 +23,14 @@ internal sealed class LayoutVariantProvider : ILayoutVariantProvider
     };
 
     private readonly IUserSettingsStore _settingsStore;
+    private readonly ILogger _logger;
     private readonly object _lock = new();
     private readonly Dictionary<ViewMode, int> _currentIndices = new();
 
-    public LayoutVariantProvider(IUserSettingsStore settingsStore)
+    public LayoutVariantProvider(IUserSettingsStore settingsStore, ILogger<LayoutVariantProvider>? logger = null)
     {
         _settingsStore = settingsStore;
+        _logger = logger ?? NullLogger<LayoutVariantProvider>.Instance;
         LoadPersistedPreferences();
     }
 
@@ -117,9 +121,11 @@ internal sealed class LayoutVariantProvider : ILayoutVariantProvider
         {
             _settingsStore.Set(GetSettingsKey(mode), variantName);
         }
-        catch
+        catch (Exception ex)
         {
-            // Best-effort persistence; don't crash on I/O failure
+            // Best-effort persistence: a failed write must not crash the UI, but it must leave a trace
+            // (the chosen variant is otherwise silently lost on the next launch).
+            _logger.LogWarning(ex, "Could not persist layout variant '{Variant}' for {Mode}", variantName, mode);
         }
     }
 }

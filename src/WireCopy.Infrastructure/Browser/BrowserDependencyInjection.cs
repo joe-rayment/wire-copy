@@ -201,7 +201,7 @@ public static class BrowserDependencyInjection
         services.AddSingleton<ILayoutVariantProvider>(sp =>
         {
             var settingsStore = sp.GetRequiredService<IUserSettingsStore>();
-            return new LayoutVariantProvider(settingsStore);
+            return new LayoutVariantProvider(settingsStore, sp.GetService<ILogger<LayoutVariantProvider>>());
         });
 
         // Register navigation service (manages history and state)

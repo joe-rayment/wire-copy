@@ -1499,6 +1499,15 @@ public class LinkExtractor : ILinkExtractor
                 return resolvedUri.ToString();
             }
 
+            // mailto:, tel:, sms:, ftp:, data:, intent: ... are routine on real pages (footers carry
+            // several) and are never readable stories: drop them quietly. Checked only after both
+            // resolution attempts, so scheme-less paths (parsed as file URIs on Unix) still resolve.
+            if (Uri.TryCreate(href, UriKind.Absolute, out var nonWebUri))
+            {
+                _logger.LogDebug("Skipping non-http(s) link: scheme='{Scheme}' href='{Href}'", nonWebUri.Scheme, href);
+                return null;
+            }
+
             _logger.LogWarning("Failed to resolve URL: href='{Href}' with baseUri='{BaseUri}'", href, baseUri);
             return null;
         }
