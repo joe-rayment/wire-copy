@@ -332,6 +332,57 @@ public class LinkTreeViewStateTests
         rendered.Should().Be(rows, "a budget of exactly N rows has to admit N rows");
     }
 
+    // Guards:   the link-tree header's "cached" tag (LinkTreeViewState.Cached) shows for a page that was
+    //           reached through a redirect: the page cache is keyed by the URL the user ASKED for, but
+    //           page.Url is the FINAL url after the redirect.
+    // Fails if: BuildViewState looks only at page.Url (the old behavior), so a revisit of a redirected page
+    //           loses its "cached" tag; or it ignores page.RequestedUrl / the URL normalizer.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~BuildViewState_CachedTag"
+    [Theory]
+    [InlineData("http://127.0.0.1:8163/world", "http://127.0.0.1:8163/world")]       // exact request url
+    [InlineData("http://127.0.0.1:8163/world/", "http://127.0.0.1:8163/world")]      // trailing slash: normalized key
+    [InlineData("HTTP://127.0.0.1:8163/world#top", "http://127.0.0.1:8163/world")]   // case + fragment: normalized key
+    public void BuildViewState_CachedTag_ShowsForARedirectedPageWhoseRequestUrlIsCached(string requestedUrl, string cachedEntry)
+    {
+        // page.Url is the FINAL url ("http://127.0.0.1:8163/"); only the REQUEST url is in the cache.
+        var page = CreatePage(sectionTwoStories: 2);
+        page.RequestedUrl = requestedUrl;
+        var options = Options(terminalWidth: 121, terminalHeight: 60);
+        options = options with { CachedUrls = new HashSet<string> { cachedEntry } };
+
+        var state = LinkTreeRenderer.BuildViewState(
+            page, new NavigationContext(), options, maxLines: 60, linkCount: 6, sectionCount: 2);
+
+        state.Cached.Should().BeTrue("the page cache holds this page under the URL the user requested");
+    }
+
+    [Fact]
+    public void BuildViewState_CachedTag_StaysOffWhenNeitherTheRequestNorTheFinalUrlIsCached()
+    {
+        var page = CreatePage(sectionTwoStories: 2);
+        page.RequestedUrl = "http://127.0.0.1:8163/world";
+        var options = Options(terminalWidth: 121, terminalHeight: 60);
+        options = options with { CachedUrls = new HashSet<string> { "http://127.0.0.1:8163/somewhere-else" } };
+
+        var state = LinkTreeRenderer.BuildViewState(
+            page, new NavigationContext(), options, maxLines: 60, linkCount: 6, sectionCount: 2);
+
+        state.Cached.Should().BeFalse();
+    }
+
+    [Fact]
+    public void BuildViewState_CachedTag_StillWorksForAPageWithoutARequestedUrlWhoseFinalUrlIsCached()
+    {
+        var page = CreatePage(sectionTwoStories: 2); // RequestedUrl never set (null)
+        var options = Options(terminalWidth: 121, terminalHeight: 60);
+        options = options with { CachedUrls = new HashSet<string> { page.Url } };
+
+        var state = LinkTreeRenderer.BuildViewState(
+            page, new NavigationContext(), options, maxLines: 60, linkCount: 6, sectionCount: 2);
+
+        state.Cached.Should().BeTrue();
+    }
+
     private static Page CreateFlatPage(int stories)
     {
         var root = LinkNode.CreateRoot();

@@ -218,7 +218,7 @@ public class PageLoadPipeline
 
                 return new PageLoadPipelineResult
                 {
-                    Page = await RebuildFromBuildCacheAsync(buildCache).ConfigureAwait(false),
+                    Page = await RebuildFromBuildCacheAsync(buildCache, url).ConfigureAwait(false),
                     FetchMethod = FetchMethod.Cached,
                     BuildResult = null,
                 };
@@ -375,6 +375,7 @@ public class PageLoadPipeline
         // refresh, and cache lookups all use the correct URL.
         var finalUrl = loadResult.Url ?? requestedUrl;
         var page = Page.Create(finalUrl, loadResult.Html, metadata);
+        page.RequestedUrl = requestedUrl;
 
         var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
 
@@ -577,9 +578,16 @@ public class PageLoadPipeline
     /// Creates a fresh NavigationTree with clean selection state.
     /// Used by NavigateToAsync for build cache hits.
     /// </summary>
-    public async Task<Page> RebuildFromBuildCacheAsync(PageBuildCache cache)
+    /// <param name="cache">The cached build results.</param>
+    /// <param name="requestedUrl">
+    /// The URL the user asked for (the cache key it was found under). It differs from
+    /// <c>cache.FinalUrl</c> when the load was redirected, and is what the page cache is
+    /// keyed by, so <see cref="Page.RequestedUrl"/> carries it for the "cached" header tag.
+    /// </param>
+    public async Task<Page> RebuildFromBuildCacheAsync(PageBuildCache cache, string? requestedUrl = null)
     {
         var page = Page.Create(cache.FinalUrl, string.Empty, cache.Metadata);
+        page.RequestedUrl = requestedUrl;
 
         // workspace-5oe9.5: identical store-agnostic routing as BuildPage.
         // Durable Sections route to the pattern path FIRST — a build-cache

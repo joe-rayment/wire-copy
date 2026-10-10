@@ -875,7 +875,7 @@ public partial class BrowserOrchestrator : IBrowserService
                         _pageCache.ApplyLinkListTtl(url);
                     }
 
-                    var page = await _pipeline.RebuildFromBuildCacheAsync(buildCache).ConfigureAwait(false);
+                    var page = await _pipeline.RebuildFromBuildCacheAsync(buildCache, url).ConfigureAwait(false);
                     await CompleteNavigation(page, url, options).ConfigureAwait(false);
                     return;
                 }

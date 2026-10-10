@@ -9,9 +9,15 @@
 // and the app's own log names the build-cache HIT for the request url and no MISS for it.
 // The log is the ONLY signal that separates a build-cache hit from the HTML-cache rebuild that
 // happened before the fix (same stories painted either way, so painted stories alone prove
-// nothing). Deliberately NOT asserted, because they are false/blind on main too (observed):
-//  - the link-tree "cached" header: LinkTreeRenderer compares page.Url (the FINAL url) with the
-//    HTML cache's request urls, so a redirected page never shows it, restart or not;
+// nothing).
+// workspace-ae265: the link-tree header's "cached" tag also has to show on that revisit. The page
+// cache is keyed by the REQUEST url but LinkTreeRenderer looked up page.Url (the FINAL url), so a
+// redirected page never showed the tag, restart or not. Asserted on the revisit (V2) both as the
+// state the app pushes (window.__linkTreeState().state.cached) and as the tag PAINTED in the
+// header's meta line (a .m-muted span reading "cached"); the revisit screenshot shows it too.
+// V1 (first open) is logged but deliberately NOT asserted either way: CachingPageLoader caches the
+// HTML before the first render, so the first visit may legitimately already be tagged.
+// Deliberately NOT asserted, because it is blind on main too (observed):
 //  - the fixture request count: the live page pane re-fetches the final url and the story
 //    preload re-fetches stories on every open, and the HTML cache already served the request url.
 // Headful under Xvfb ONLY (never headless). Run from shell/: node gates/gate-cache-restart.mjs
@@ -84,6 +90,10 @@ async function openAndRead (shell, label) {
   const pane = JSON.parse(await lt.eval(`JSON.stringify({
     title: (document.getElementById('pagetitle') || {}).textContent || '',
     meta: (document.getElementById('metaline') || {}).textContent || '',
+    // the 'cached' tag as PAINTED in the header's meta line (paintHeader adds it as a .m-muted span)
+    tagPainted: [...document.querySelectorAll('#metaline .m-muted')].some(e => e.textContent.trim() === 'cached'),
+    // the same flag as the app PUSHED it (LinkTreeViewState.Cached) - the source the tag is painted from
+    stateCached: ((window.__linkTreeState() || {}).state || {}).cached === true,
     cards: [...document.querySelectorAll('#grid .card-title')].map(e => e.textContent)
   })`))
   return { term, lt, wid, pane }
@@ -97,6 +107,8 @@ try {
   check('V1b fixture served the redirect + final page (cold fetch happened)',
     (hits[REQ_PATH] || 0) >= 1 && (hits[FINAL_PATH] || 0) >= 1, JSON.stringify(hits))
   check('V1c cold visit was NOT a build-cache hit', !logSince(off1).includes(`build cache HIT for ${reqUrl}`))
+  console.log('V1 pane:', JSON.stringify(v1.pane))
+  env.shotWindow('cache-restart-first-visit', v1.wid)
   await sleep(3000) // let the disk cache flush its files
   // ---- quit like a user: `q` in the TUI closes the whole app ----
   v1.lt.close(); v1.term.close()
@@ -119,6 +131,11 @@ try {
     v2.pane.title === 'Harbour Gazette World Desk' && v2.pane.cards.length === stories.length &&
       v2.pane.cards.some(c => c.includes('breakwater')),
     JSON.stringify(v2.pane))
+  console.log('V2 pane:', JSON.stringify(v2.pane))
+  check('V2e revisit of the REDIRECTED page: the app pushes cached=true (cache is keyed by the request url)',
+    v2.pane.stateCached === true, `stateCached=${v2.pane.stateCached} meta=${JSON.stringify(v2.pane.meta)}`)
+  check('V2f revisit of the REDIRECTED page: the header paints the "cached" tag',
+    v2.pane.tagPainted === true, `tagPainted=${v2.pane.tagPainted} meta=${JSON.stringify(v2.pane.meta)}`)
   env.shotWindow('cache-restart-revisit', v2.wid)
   v2.lt.close(); v2.term.close()
 } catch (e) {

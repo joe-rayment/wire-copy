@@ -6,6 +6,7 @@ using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
+using WireCopy.Infrastructure.Browser.Cache;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Components;
 
@@ -939,6 +940,34 @@ internal class LinkTreeRenderer
     }
 
     /// <summary>
+    /// workspace-ae265: whether the page cache holds this page, for the header's "cached" tag.
+    /// The cache is keyed by the URL the user REQUESTED, but <see cref="Page.Url"/> is the FINAL
+    /// url after any redirect — so a page reached through a redirect never matched on
+    /// <c>page.Url</c> alone. Tries both URLs: raw membership first (cheap, exact), then the cache's
+    /// own key function (<see cref="UrlNormalizer"/>) so a trailing slash, fragment, or host case
+    /// difference between the request URL and the stored key doesn't hide the tag.
+    /// </summary>
+    private static bool IsPageCached(Page page, IReadOnlySet<string>? cachedUrls)
+    {
+        if (cachedUrls is null || cachedUrls.Count == 0)
+        {
+            return false;
+        }
+
+        var candidates = string.IsNullOrWhiteSpace(page.RequestedUrl)
+            ? new[] { page.Url }
+            : new[] { page.RequestedUrl, page.Url };
+
+        if (candidates.Any(cachedUrls.Contains))
+        {
+            return true;
+        }
+
+        var normalizedCached = new HashSet<string>(cachedUrls.Select(UrlNormalizer.Normalize));
+        return candidates.Any(c => normalizedCached.Contains(UrlNormalizer.Normalize(c)));
+    }
+
+    /// <summary>
     /// Renders the link tree as a 2-column grid of cards.
     /// This is the single LinkTree rendering entry point — there are no other variants.
     /// </summary>
@@ -1148,7 +1177,7 @@ internal class LinkTreeRenderer
             Domain = domain,
             LinkCount = linkCount,
             SectionCount = sectionCount,
-            Cached = options.CachedUrls?.Contains(page.Url) == true,
+            Cached = IsPageCached(page, options.CachedUrls),
             Columns = layout.Columns,
             Items = items,
             SelectedIndex = selectedIndex,

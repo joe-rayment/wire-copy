@@ -22,6 +22,13 @@ public class Page
     public string Url { get; private set; }
 
     /// <summary>
+    /// workspace-ae265: the URL the user asked for, when known. It differs from <see cref="Url"/>
+    /// (the FINAL url) when the load was redirected. The page cache is keyed by the requested
+    /// url, so the "cached" header tag must look this one up too. Null when not tracked.
+    /// </summary>
+    public string? RequestedUrl { get; set; }
+
+    /// <summary>
     /// Page metadata (title, description, etc.).
     /// </summary>
     public PageMetadata Metadata { get; private set; }
