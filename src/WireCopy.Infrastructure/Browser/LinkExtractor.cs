@@ -22,9 +22,10 @@ public class LinkExtractor : ILinkExtractor
     /// exactly how techmeme showed "no articles": caches written before the
     /// aggregator-promotion pass froze every story as External, and the cache
     /// hit path never re-extracts. v2 = aggregator promotion + geometry +
-    /// sponsor flags (2026-06).
+    /// sponsor flags (2026-06). v3 = ad/sponsor text matched as labels and
+    /// non-article URL markers matched as whole path segments (workspace-vk4nf).
     /// </summary>
-    public const int ExtractionVersion = 2;
+    public const int ExtractionVersion = 3;
 
     /// <summary>
     /// Display-text length at or above which a link with no other signals is
@@ -70,13 +71,47 @@ public class LinkExtractor : ILinkExtractor
         "content", "article", "story", "post", "entry", "main", "card", "headline", "featured"
     };
 
-    private static readonly HashSet<string> AdSponsorPatterns = new(StringComparer.OrdinalIgnoreCase)
+    /// <summary>
+    /// workspace-vk4nf — ad/sponsor LABELS that only count at the START of the
+    /// link text ("Sponsored: …", "Ad: …", "Promoted · …", "Sponsored by Acme") or
+    /// as the whole text. Matching them anywhere flagged real headlines:
+    /// "Week ahead: …" ("ad:"), "State-sponsored hackers …", "Senator promoted to
+    /// chair".
+    /// </summary>
+    private static readonly string[] AdSponsorLeadLabels =
     {
-        "sponsored", "advertisement", "ad:", "created for", "created by",
-        "promoted", "partner content", "paid content", "special advertising",
-        "get it in your inbox", "sign up for", "minutes a day",
+        "sponsored", "advertisement", "promoted", "ad:",
+    };
+
+    /// <summary>
+    /// Multi-word promo phrases; these may appear anywhere in the text but, like
+    /// the labels above, must not be glued to a preceding letter, digit or hyphen.
+    /// </summary>
+    private static readonly string[] AdSponsorPhrases =
+    {
+        "created for", "created by", "partner content", "paid content",
+        "special advertising", "get it in your inbox", "sign up for", "minutes a day",
         "make sense of the day", "catch up on big news",
         "delivered to your inbox", "subscribe to the newsletter",
+    };
+
+    /// <summary>
+    /// One precompiled matcher for <see cref="AdSponsorLeadLabels"/> and
+    /// <see cref="AdSponsorPhrases"/> (workspace-vk4nf). Bounded by a match timeout
+    /// so a pathological link text can never stall extraction.
+    /// </summary>
+    private static readonly System.Text.RegularExpressions.Regex AdSponsorTextRegex = BuildAdSponsorTextRegex();
+
+    /// <summary>
+    /// workspace-vk4nf — path segments that mark utility pages (accounts,
+    /// newsletters, podcasts…). Matched as WHOLE segments: the old substring test
+    /// flagged real articles such as /tech/2026/10/login-with-passkeys-explained
+    /// and /business/subscription-fatigue-hits-streaming as navigation.
+    /// </summary>
+    private static readonly HashSet<string> NonArticlePathSegments = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "login", "signup", "subscription", "subscriptions",
+        "newsletter", "newsletters", "account", "auth", "podcasts",
     };
 
     private static readonly HashSet<string> AdSponsorClasses = new(StringComparer.OrdinalIgnoreCase)
@@ -720,6 +755,92 @@ public class LinkExtractor : ILinkExtractor
         return (author, pubDate);
     }
 
+    internal static bool IsAdOrSponsoredLink(string displayText, string? parentSelector)
+    {
+        // Check display text for ad/sponsor LABELS (not bare substrings, so
+        // "Week ahead: …" and "State-sponsored hackers …" are real headlines).
+        try
+        {
+            if (AdSponsorTextRegex.IsMatch(displayText))
+            {
+                return true;
+            }
+        }
+        catch (System.Text.RegularExpressions.RegexMatchTimeoutException)
+        {
+            // Unmatchable text is treated as a normal link, never as an ad.
+        }
+
+        // Check parent selector for ad-related classes
+        // Use word boundary matching to avoid false positives (e.g., "head" matching "ad")
+        if (!string.IsNullOrEmpty(parentSelector))
+        {
+            var selectorLower = parentSelector.ToLowerInvariant();
+
+            // Extract class names from selector (classes are prefixed with .)
+            // Format: "tag.class1.class2 > tag#id.class3"
+            var classMatches = System.Text.RegularExpressions.Regex.Matches(selectorLower, @"\.([a-z0-9_-]+)");
+            var classNames = classMatches.Select(m => m.Groups[1].Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+            if (classNames.Any(cls => AdSponsorClasses.Contains(cls)))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    internal static bool IsNonArticleUrl(string url)
+    {
+        try
+        {
+            var path = new Uri(url).AbsolutePath;
+            foreach (var segment in path.Split('/', StringSplitOptions.RemoveEmptyEntries))
+            {
+                // "/login.php" / "/signup.html": compare the stem before any extension.
+                var dot = segment.IndexOf('.');
+                var stem = dot >= 0 ? segment[..dot] : segment;
+                if (NonArticlePathSegments.Contains(stem))
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+        catch
+        {
+            return false;
+        }
+    }
+
+    private static System.Text.RegularExpressions.Regex BuildAdSponsorTextRegex()
+    {
+        // A letter, digit or hyphen on the left means we are inside a bigger word
+        // ("ahead:", "state-sponsored"), not looking at a label.
+        const string leftBoundary = @"(?<![\p{L}\p{N}\-\u2010\u2011])";
+        const string rightBoundary = @"(?![\p{L}\p{N}])";
+
+        static string Escape(string pattern) =>
+            string.Join(@"\s+", pattern.Split(' ').Select(System.Text.RegularExpressions.Regex.Escape));
+
+        // Labels ending in a letter also need a right boundary ("promotedly" is not
+        // "promoted"); "ad:" ends in punctuation and needs none.
+        var labels = string.Join("|", AdSponsorLeadLabels.Select(l =>
+            char.IsLetter(l[^1]) ? Escape(l) + rightBoundary : Escape(l)));
+        var phrases = string.Join("|", AdSponsorPhrases.Select(p => Escape(p) + rightBoundary));
+
+        // Leading punctuation/brackets are skipped so "[Ad: …]" and "• Sponsored" still lead.
+        var pattern = $@"^[\W_]*(?:{labels})|{leftBoundary}(?:{phrases})";
+
+        return new System.Text.RegularExpressions.Regex(
+            pattern,
+            System.Text.RegularExpressions.RegexOptions.IgnoreCase |
+            System.Text.RegularExpressions.RegexOptions.CultureInvariant,
+            TimeSpan.FromSeconds(1));
+    }
+
     private static bool IsSectionContainer(HtmlNode node)
     {
         if (SectionContainerTags.Contains(node.Name))
@@ -1124,36 +1245,6 @@ public class LinkExtractor : ILinkExtractor
         return Math.Min(100, importance);
     }
 
-    private static bool IsAdOrSponsoredLink(string displayText, string? parentSelector)
-    {
-        var textLower = displayText.ToLowerInvariant();
-
-        // Check display text for ad/sponsor patterns
-        if (AdSponsorPatterns.Any(pattern => textLower.Contains(pattern.ToLowerInvariant())))
-        {
-            return true;
-        }
-
-        // Check parent selector for ad-related classes
-        // Use word boundary matching to avoid false positives (e.g., "head" matching "ad")
-        if (!string.IsNullOrEmpty(parentSelector))
-        {
-            var selectorLower = parentSelector.ToLowerInvariant();
-
-            // Extract class names from selector (classes are prefixed with .)
-            // Format: "tag.class1.class2 > tag#id.class3"
-            var classMatches = System.Text.RegularExpressions.Regex.Matches(selectorLower, @"\.([a-z0-9_-]+)");
-            var classNames = classMatches.Select(m => m.Groups[1].Value).ToHashSet(StringComparer.OrdinalIgnoreCase);
-
-            if (classNames.Any(cls => AdSponsorClasses.Contains(cls)))
-            {
-                return true;
-            }
-        }
-
-        return false;
-    }
-
     /// <summary>
     /// Checks if a CSS class matches any member of a class set, supporting compound
     /// class names (e.g., "related-stories" matches "related" in the set).
@@ -1231,28 +1322,6 @@ public class LinkExtractor : ILinkExtractor
         }
 
         return false;
-    }
-
-    private static bool IsNonArticleUrl(string url)
-    {
-        try
-        {
-            var path = new Uri(url).AbsolutePath.ToLowerInvariant();
-            return path.Contains("/newsletters/") ||
-                   path.Contains("/newsletter/") ||
-                   path.Contains("/newsletters") ||
-                   path.Contains("/podcasts/") ||
-                   path.Contains("/spotlight/podcasts") ||
-                   path.Contains("/subscription") ||
-                   path.Contains("/account/") ||
-                   path.Contains("/auth/") ||
-                   path.Contains("/login") ||
-                   path.Contains("/signup");
-        }
-        catch
-        {
-            return false;
-        }
     }
 
     private static bool IsArticleUrlPattern(string url)
