@@ -288,4 +288,108 @@ public class PodcastFeedGeneratorTests
         guid.Attribute("isPermaLink")!.Value.Should().Be("false");
         guid.Value.Should().Be("ep1");
     }
+
+    // ---- workspace-p7ctn: article text can carry characters XML 1.0 forbids ----
+
+    [Fact]
+    public async Task GenerateFeedXmlAsync_ControlCharsInEpisodeText_AreDroppedAndEmojiSurvives()
+    {
+        // Guards:   a stray vertical tab / control byte in scraped article text no longer
+        //           crashes feed generation (which failed the publish after the audio uploaded);
+        //           real emoji (valid surrogate pairs) are left alone.
+        // Fails if: GenerateFeedXmlAsync stops stripping XML-invalid characters (it throws
+        //           ArgumentException from XDocument.Save), or the stripper eats surrogate pairs.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~GenerateFeedXmlAsync_ControlCharsInEpisodeText_AreDroppedAndEmojiSurvives"
+        var episode = CreateTestEpisode() with
+        {
+            Title = "Bad\u000Bchar \U0001F600 ok",
+            Description = "x\u0001y \U0001F680",
+        };
+
+        var xml = await _generator.GenerateFeedXmlAsync(CreateTestPodcast(), [episode]);
+
+        var item = XDocument.Parse(xml).Root!.Element("channel")!.Element("item")!;
+        item.Element("title")!.Value.Should().Be("Badchar \U0001F600 ok");
+        item.Element("description")!.Value.Should().Be("xy \U0001F680");
+        item.Element(Itunes + "summary")!.Value.Should().Be("xy \U0001F680");
+    }
+
+    [Theory]
+    [InlineData(0x0000)]
+    [InlineData(0x0008)]
+    [InlineData(0x000B)]
+    [InlineData(0x000C)]
+    [InlineData(0x000E)]
+    [InlineData(0x001F)]
+    [InlineData(0xFFFE)]
+    [InlineData(0xFFFF)]
+    [InlineData(0xD800)] // lone high surrogate
+    [InlineData(0xDC00)] // lone low surrogate
+    public async Task GenerateFeedXmlAsync_InvalidCharEverywhereTextEnters_StillProducesParsableFeed(int codeUnit)
+    {
+        // Guards:   every place article-derived text enters the feed (channel fields, episode
+        //           text and URLs, chapter title / link / image attributes) is sanitised, for each
+        //           kind of XML-invalid character, so no single field can break the whole feed.
+        // Fails if: any one insertion point loses its XmlSafe(...) call, or the stripper misses a
+        //           class of invalid char (C0 controls, U+FFFE/FFFF, unpaired surrogates).
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~InvalidCharEverywhereTextEnters"
+        var bad = ((char)codeUnit).ToString();
+        var podcast = new PodcastMetadata
+        {
+            Title = $"Pod{bad}cast",
+            Description = $"De{bad}sc",
+            Author = $"Au{bad}thor",
+            Language = "en-us",
+            ImageUrl = $"https://example.com/c{bad}over.jpg",
+            Category = $"Tech{bad}nology",
+            FeedUrl = $"https://example.com/fe{bad}ed.xml",
+        };
+        var episode = CreateTestEpisode(id: $"e{bad}p1") with
+        {
+            Title = $"Ti{bad}tle",
+            Description = $"Ep{bad}Desc",
+            AudioUrl = $"https://example.com/a{bad}.m4a",
+            AudioMimeType = $"audio/x{bad}-m4a",
+            ChaptersJsonUrl = $"https://example.com/ch{bad}.json",
+            Chapters =
+            [
+                new ChapterMark
+                {
+                    Title = $"Chap{bad}ter",
+                    StartTime = TimeSpan.Zero,
+                    LinkUrl = $"https://example.com/l{bad}",
+                    ImageUrl = $"https://example.com/i{bad}.png",
+                },
+            ],
+        };
+
+        var xml = await _generator.GenerateFeedXmlAsync(podcast, [episode]);
+
+        var channel = XDocument.Parse(xml).Root!.Element("channel")!;
+        channel.Element("title")!.Value.Should().Be("Podcast");
+        channel.Element(Itunes + "author")!.Value.Should().Be("Author");
+        var item = channel.Element("item")!;
+        item.Element("title")!.Value.Should().Be("Title");
+        item.Element("guid")!.Value.Should().Be("ep1");
+        item.Element(Psc + "chapters")!.Element(Psc + "chapter")!
+            .Attribute("title")!.Value.Should().Be("Chapter");
+    }
+
+    [Fact]
+    public async Task GenerateFeedXmlAsync_CdataTerminatorInDescription_RoundTripsIntact()
+    {
+        // Guards:   a description that contains "]]>" (e.g. quoted code or markup) does not close
+        //           the CDATA section early; the parsed description equals what went in.
+        // Fails if: the CDATA writer stops splitting "]]>" (the feed becomes malformed or the
+        //           text after the marker leaks out as raw XML).
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~CdataTerminatorInDescription"
+        const string description = "before ]]> after <b>not markup</b>";
+        var episode = CreateTestEpisode() with { Description = description };
+
+        var xml = await _generator.GenerateFeedXmlAsync(CreateTestPodcast(), [episode]);
+
+        var item = XDocument.Parse(xml).Root!.Element("channel")!.Element("item")!;
+        item.Element("description")!.Value.Should().Be(description);
+        item.Element(Itunes + "summary")!.Value.Should().Be(description);
+    }
 }

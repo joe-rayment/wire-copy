@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.Text;
+using System.Xml;
 using System.Xml.Linq;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.Interfaces.Podcast;
@@ -72,27 +73,27 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
     private static XElement BuildChannel(PodcastMetadata podcast, DateTime lastBuildDate)
     {
         var channel = new XElement("channel",
-            new XElement("title", podcast.Title),
-            new XElement("description", new XCData(podcast.Description)),
-            new XElement("language", podcast.Language),
+            new XElement("title", XmlSafe(podcast.Title)),
+            new XElement("description", new XCData(XmlSafe(podcast.Description))),
+            new XElement("language", XmlSafe(podcast.Language)),
             new XElement("lastBuildDate", lastBuildDate.ToString("R")),
             new XElement("generator", "Wire Copy Podcast Generator"),
-            new XElement(Itunes + "author", podcast.Author),
-            new XElement(Itunes + "summary", new XCData(podcast.Description)),
+            new XElement(Itunes + "author", XmlSafe(podcast.Author)),
+            new XElement(Itunes + "summary", new XCData(XmlSafe(podcast.Description))),
             new XElement(Itunes + "explicit", podcast.Explicit ? "true" : "false"),
             new XElement(Itunes + "type", "episodic"),
             new XElement(Podcast + "locked", "yes"));
 
         if (!string.IsNullOrWhiteSpace(podcast.ImageUrl))
         {
-            channel.Add(new XElement(Itunes + "image", new XAttribute("href", podcast.ImageUrl)));
+            channel.Add(new XElement(Itunes + "image", new XAttribute("href", XmlSafe(podcast.ImageUrl))));
         }
 
         if (!string.IsNullOrEmpty(podcast.FeedUrl))
         {
-            channel.Add(new XElement("link", podcast.FeedUrl));
+            channel.Add(new XElement("link", XmlSafe(podcast.FeedUrl)));
             channel.Add(new XElement(Atom + "link",
-                new XAttribute("href", podcast.FeedUrl),
+                new XAttribute("href", XmlSafe(podcast.FeedUrl)),
                 new XAttribute("rel", "self"),
                 new XAttribute("type", "application/rss+xml")));
         }
@@ -100,7 +101,7 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
         if (!string.IsNullOrEmpty(podcast.Category))
         {
             channel.Add(new XElement(Itunes + "category",
-                new XAttribute("text", podcast.Category)));
+                new XAttribute("text", XmlSafe(podcast.Category))));
         }
 
         return channel;
@@ -109,18 +110,18 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
     private static XElement BuildItem(EpisodeMetadata episode)
     {
         var item = new XElement("item",
-            new XElement("title", episode.Title),
-            new XElement("description", new XCData(episode.Description)),
+            new XElement("title", XmlSafe(episode.Title)),
+            new XElement("description", new XCData(XmlSafe(episode.Description))),
             new XElement("pubDate", episode.PublishedAtUtc.ToString("R")),
             new XElement("guid",
                 new XAttribute("isPermaLink", "false"),
-                episode.Id),
+                XmlSafe(episode.Id)),
             new XElement("enclosure",
-                new XAttribute("url", episode.AudioUrl),
+                new XAttribute("url", XmlSafe(episode.AudioUrl)),
                 new XAttribute("length", episode.AudioSizeBytes),
-                new XAttribute("type", episode.AudioMimeType)),
+                new XAttribute("type", XmlSafe(episode.AudioMimeType))),
             new XElement(Itunes + "duration", FormatDuration(episode.Duration)),
-            new XElement(Itunes + "summary", new XCData(episode.Description)));
+            new XElement(Itunes + "summary", new XCData(XmlSafe(episode.Description))));
 
         // Podcasting 2.0 chapters JSON sidecar (workspace-2g70). Read by
         // Apple Podcasts / Pocket Casts / Spotify; preferred over the
@@ -128,7 +129,7 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
         if (!string.IsNullOrWhiteSpace(episode.ChaptersJsonUrl))
         {
             item.Add(new XElement(Podcast + "chapters",
-                new XAttribute("url", episode.ChaptersJsonUrl!),
+                new XAttribute("url", XmlSafe(episode.ChaptersJsonUrl)),
                 new XAttribute("type", "application/json+chapters")));
         }
 
@@ -144,16 +145,16 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
             {
                 var chapterElement = new XElement(Psc + "chapter",
                     new XAttribute("start", FormatChapterTime(chapter.StartTime)),
-                    new XAttribute("title", chapter.Title));
+                    new XAttribute("title", XmlSafe(chapter.Title)));
 
                 if (!string.IsNullOrEmpty(chapter.LinkUrl))
                 {
-                    chapterElement.Add(new XAttribute("href", chapter.LinkUrl));
+                    chapterElement.Add(new XAttribute("href", XmlSafe(chapter.LinkUrl)));
                 }
 
                 if (!string.IsNullOrEmpty(chapter.ImageUrl))
                 {
-                    chapterElement.Add(new XAttribute("image", chapter.ImageUrl));
+                    chapterElement.Add(new XAttribute("image", XmlSafe(chapter.ImageUrl)));
                 }
 
                 chaptersElement.Add(chapterElement);
@@ -163,6 +164,44 @@ internal sealed class PodcastFeedGenerator : IPodcastFeedGenerator
         }
 
         return item;
+    }
+
+    /// <summary>
+    /// Drops everything XML 1.0 cannot carry, so one stray byte in scraped article text
+    /// cannot make XDocument.Save throw (the publish would fail after the audio had
+    /// already uploaded, and again on every retry). Removes the C0 controls other than
+    /// tab/LF/CR, U+FFFE/U+FFFF and unpaired surrogates; valid surrogate pairs (emoji) stay.
+    /// Applied to every string that enters the feed, including attribute values.
+    /// </summary>
+    private static string XmlSafe(string? value)
+    {
+        if (string.IsNullOrEmpty(value))
+        {
+            return string.Empty;
+        }
+
+        StringBuilder? clean = null;
+        var i = 0;
+        while (i < value.Length)
+        {
+            var c = value[i];
+            var width = char.IsHighSurrogate(c) && i + 1 < value.Length && char.IsLowSurrogate(value[i + 1]) ? 2 : 1;
+            var keep = width == 2 || XmlConvert.IsXmlChar(c);
+
+            if (keep)
+            {
+                clean?.Append(value, i, width);
+            }
+            else
+            {
+                // First bad char: copy what has been accepted so far, then keep filtering.
+                clean ??= new StringBuilder(value.Length).Append(value, 0, i);
+            }
+
+            i += width;
+        }
+
+        return clean is null ? value : clean.ToString();
     }
 
     private static string FormatDuration(TimeSpan duration)

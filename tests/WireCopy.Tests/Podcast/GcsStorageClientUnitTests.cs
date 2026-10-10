@@ -361,4 +361,74 @@ public class GcsStorageClientUnitTests : IDisposable
     }
 
     #endregion
+
+    #region SetServiceAccountKeyContent — key file permissions (workspace-p7ctn)
+
+    private const string SampleKeyJson = """
+        {
+          "type": "service_account",
+          "project_id": "test-project",
+          "private_key_id": "key-id",
+          "private_key": "-----BEGIN RSA PRIVATE KEY-----\nMIIEowIBAAKCAQEA2Z3qX2BTLS4e\n-----END RSA PRIVATE KEY-----\n",
+          "client_email": "test@test-project.iam.gserviceaccount.com",
+          "client_id": "123456789",
+          "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+          "token_uri": "https://oauth2.googleapis.com/token"
+        }
+        """;
+
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public void SetServiceAccountKeyContent_SavedKeyFile_IsOwnerOnly_OnUnix(bool preexistingWorldReadable)
+    {
+        // Guards:   the pasted service-account private key is saved readable/writable by the
+        //           current user only (mode 0600) - for a fresh file AND when an older
+        //           world-readable gcs-key.json is already there.
+        // Fails if: the file is written with plain File.WriteAllText (default umask, typically
+        //           0644 = readable by every local user), or an existing 0644 file is not tightened.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~SavedKeyFile_IsOwnerOnly_OnUnix"
+        if (OperatingSystem.IsWindows())
+        {
+            return; // Unix mode bits do not exist on Windows.
+        }
+
+        // LocalApplicationData resolves from XDG_DATA_HOME on Linux, so a temp dir keeps the
+        // test off the real profile. The env var is restored in the finally block.
+        var dataHome = Path.Combine(_tempDir, "data-home");
+        var keyFile = Path.Combine(dataHome, "WireCopy", "gcs-key.json");
+        var previousXdg = Environment.GetEnvironmentVariable("XDG_DATA_HOME");
+        Directory.CreateDirectory(dataHome); // GetFolderPath returns "" for a folder that does not exist
+        Environment.SetEnvironmentVariable("XDG_DATA_HOME", dataHome);
+        try
+        {
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData)
+                .Should().Be(dataHome, "the test must not write to the real user profile");
+
+            if (preexistingWorldReadable)
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(keyFile)!);
+                File.WriteAllText(keyFile, "old");
+                File.SetUnixFileMode(keyFile, (UnixFileMode)Convert.ToInt32("644", 8));
+            }
+
+            var settingsStore = Substitute.For<IUserSettingsStore>();
+            var sut = new GcsStorageClient(
+                Options.Create(new GcsConfiguration { BucketName = "test-bucket" }),
+                settingsStore,
+                NullLogger<GcsStorageClient>.Instance);
+
+            var result = sut.SetServiceAccountKeyContent(SampleKeyJson);
+
+            result.IsValid.Should().BeTrue();
+            File.ReadAllText(keyFile).Should().Be(SampleKeyJson);
+            File.GetUnixFileMode(keyFile).Should().Be(UnixFileMode.UserRead | UnixFileMode.UserWrite);
+        }
+        finally
+        {
+            Environment.SetEnvironmentVariable("XDG_DATA_HOME", previousXdg);
+        }
+    }
+
+    #endregion
 }

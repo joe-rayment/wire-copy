@@ -757,7 +757,7 @@ internal sealed class GcsStorageClient : ICloudStorageClient
         Directory.CreateDirectory(appData);
 
         var keyFilePath = Path.Combine(appData, "gcs-key.json");
-        File.WriteAllText(keyFilePath, json);
+        WriteKeyFileOwnerOnly(keyFilePath, json);
 
         // Now set the path as usual
         return SetServiceAccountKeyPath(keyFilePath);
@@ -814,6 +814,39 @@ internal sealed class GcsStorageClient : ICloudStorageClient
     /// </summary>
     internal Task<StorageClient> GetClientForVerifyAsync(CancellationToken cancellationToken) =>
         GetClientAsync(cancellationToken);
+
+    /// <summary>
+    /// Writes the pasted service-account JSON so only the current user can read it.
+    /// File.WriteAllText would honour the umask (typically 0644, readable by every
+    /// local user) and would leave an existing looser file as it was.
+    /// On Unix the file is created 0600, and an already-existing file is tightened to 0600
+    /// through the open handle BEFORE the new key is written into it.
+    /// </summary>
+    private static void WriteKeyFileOwnerOnly(string path, string json)
+    {
+        if (OperatingSystem.IsWindows())
+        {
+            // Windows has no Unix mode bits; the profile directory's ACL already restricts it.
+            File.WriteAllText(path, json);
+            return;
+        }
+
+        const UnixFileMode ownerOnly = UnixFileMode.UserRead | UnixFileMode.UserWrite;
+
+        using var stream = new FileStream(path, new FileStreamOptions
+        {
+            Mode = FileMode.Create,
+            Access = FileAccess.Write,
+            Share = FileShare.None,
+            UnixCreateMode = ownerOnly,
+        });
+
+        // UnixCreateMode only applies to a NEW file; tighten one that already existed.
+        File.SetUnixFileMode(stream.SafeFileHandle, ownerOnly);
+
+        using var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(encoderShouldEmitUTF8Identifier: false));
+        writer.Write(json);
+    }
 
     private async Task<StorageClient> GetClientWithDiagnosticsAsync(CancellationToken cancellationToken)
     {
