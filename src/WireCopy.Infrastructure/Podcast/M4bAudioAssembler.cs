@@ -21,6 +21,14 @@ namespace WireCopy.Infrastructure.Podcast;
 internal sealed class M4bAudioAssembler : IAudioAssembler
 #pragma warning restore S101
 {
+    /// <summary>
+    /// workspace-vfnxw: how long FFMpegCore waits, after asking ffmpeg to quit ('q' on
+    /// stdin), before killing it on cancellation. Shared by every FFMpegCore pipeline
+    /// in the podcast code (the registered cancel callback blocks the thread calling
+    /// <c>CancellationTokenSource.Cancel()</c> for up to this long, so keep it short).
+    /// </summary>
+    internal const int FfmpegCancelGraceMs = 2000;
+
     private readonly PodcastConfiguration _config;
     private readonly ILogger<M4bAudioAssembler> _logger;
 
@@ -187,7 +195,16 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
                     runningTime > TimeSpan.Zero ? runningTime : TimeSpan.FromHours(1));
             }
 
-            await concatArgs.ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
+            // workspace-vfnxw: without CancellableThrough a cancel only took effect
+            // AFTER ffmpeg finished writing the whole file (minutes of CPU for a long
+            // episode). FFMpegCore asks ffmpeg to quit via 'q' on stdin, kills it after
+            // FfmpegCancelGraceMs, then throws OperationCanceledException. The token
+            // must already be live here: a token cancelled before registration never
+            // reaches FFMpegCore's cancel event, so ffmpeg would run to completion.
+            cancellationToken.ThrowIfCancellationRequested();
+            await concatArgs
+                .CancellableThrough(cancellationToken, FfmpegCancelGraceMs)
+                .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
 
             cancellationToken.ThrowIfCancellationRequested();
 

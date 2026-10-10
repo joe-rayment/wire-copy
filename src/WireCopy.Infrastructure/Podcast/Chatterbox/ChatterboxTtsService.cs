@@ -230,6 +230,30 @@ internal sealed class ChatterboxTtsService : ITtsService
         return TtsGenerationResult.Successful(aacBytes, totalCharsProcessed, chunks.Count);
     }
 
+    /// <summary>
+    /// Concatenates the per-chunk WAVs and transcodes ONCE to AAC so the return
+    /// contract matches OpenAI's (the audio cache stores .aac; the M4B assembler
+    /// re-encodes at assembly, so 24 kHz mono AAC is safe). The single-chunk case
+    /// still transcodes — wav in, aac out, always.
+    /// </summary>
+    internal static async Task<byte[]> AssembleToAacAsync(TempFileManager tempManager, List<string> wavPaths, CancellationToken ct)
+    {
+        var outPath = tempManager.GetTempFilePath("narration.m4a");
+
+        // workspace-vfnxw: cancellation stops ffmpeg (quit, then kill) and surfaces as
+        // OperationCanceledException. The token must already be live: a token cancelled
+        // before registration never reaches FFMpegCore's cancel event.
+        ct.ThrowIfCancellationRequested();
+        await FFMpegArguments
+            .FromDemuxConcatInput(wavPaths)
+            .OutputToFile(outPath, overwrite: true, options => options
+                .WithCustomArgument("-c:a aac -b:a 96k -ar 24000 -ac 1"))
+            .CancellableThrough(ct, M4bAudioAssembler.FfmpegCancelGraceMs)
+            .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
+
+        return await File.ReadAllBytesAsync(outPath, ct).ConfigureAwait(false);
+    }
+
 #pragma warning disable SA1202 // ordering — internal seams placed near the private helpers they wrap
     /// <summary>
     /// Effective exaggeration: the ChatterboxExaggeration settings key (invariant
@@ -296,25 +320,6 @@ internal sealed class ChatterboxTtsService : ITtsService
     /// <summary>Cached uv PATH probe for Settings-row readiness (workspace-2xej.7).</summary>
     internal bool IsUvAvailable() => UvAvailable();
 #pragma warning restore SA1202
-
-    /// <summary>
-    /// Concatenates the per-chunk WAVs and transcodes ONCE to AAC so the return
-    /// contract matches OpenAI's (the audio cache stores .aac; the M4B assembler
-    /// re-encodes at assembly, so 24 kHz mono AAC is safe). The single-chunk case
-    /// still transcodes — wav in, aac out, always.
-    /// </summary>
-    private static async Task<byte[]> AssembleToAacAsync(TempFileManager tempManager, List<string> wavPaths, CancellationToken ct)
-    {
-        var outPath = tempManager.GetTempFilePath("narration.m4a");
-
-        await FFMpegArguments
-            .FromDemuxConcatInput(wavPaths)
-            .OutputToFile(outPath, overwrite: true, options => options
-                .WithCustomArgument("-c:a aac -b:a 96k -ar 24000 -ac 1"))
-            .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
-
-        return await File.ReadAllBytesAsync(outPath, ct).ConfigureAwait(false);
-    }
 
     /// <summary>Runs one speak request; returns null on success, the error text on failure.</summary>
     private async Task<string?> SpeakChunkAsync(ChatterboxSpeakRequest request, IProgress<string>? progress, CancellationToken ct)

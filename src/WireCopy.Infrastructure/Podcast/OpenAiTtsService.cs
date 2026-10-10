@@ -567,6 +567,43 @@ internal sealed class OpenAiTtsService : ITtsService
         "tts-1-hd" => CostPerMillionCharsTts1Hd,
         _ => CostPerMillionCharsMiniTts, // gpt-4o-mini-tts family (the shipped default)
     };
+
+    /// <summary>
+    /// Concatenates multiple audio segments using FFmpeg's concat demuxer.
+    /// Raw byte concatenation is invalid for container formats like M4A/AAC;
+    /// FFmpeg properly re-muxes the streams into a single valid file.
+    /// </summary>
+    internal async Task<byte[]> ConcatenateWithFfmpegAsync(
+        List<byte[]> segments,
+        CancellationToken cancellationToken)
+    {
+        using var tempManager = new TempFileManager(null, _logger);
+
+        var ext = GetFileExtension();
+        var chunkPaths = new List<string>(segments.Count);
+
+        for (var i = 0; i < segments.Count; i++)
+        {
+            var chunkPath = tempManager.GetTempFilePath($"chunk-{i:D4}{ext}");
+            await File.WriteAllBytesAsync(chunkPath, segments[i], cancellationToken).ConfigureAwait(false);
+            chunkPaths.Add(chunkPath);
+        }
+
+        var outputPath = tempManager.GetTempFilePath($"concatenated{ext}");
+
+        // workspace-vfnxw: cancellation stops ffmpeg (quit, then kill) and surfaces as
+        // OperationCanceledException. The token must already be live: a token cancelled
+        // before registration never reaches FFMpegCore's cancel event.
+        cancellationToken.ThrowIfCancellationRequested();
+        await FFMpegArguments
+            .FromDemuxConcatInput(chunkPaths)
+            .OutputToFile(outputPath, overwrite: true, options => options
+                .WithCustomArgument("-c copy"))
+            .CancellableThrough(cancellationToken, M4bAudioAssembler.FfmpegCancelGraceMs)
+            .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
+
+        return await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
+    }
 #pragma warning restore SA1202
 
     /// <summary>
@@ -619,38 +656,6 @@ internal sealed class OpenAiTtsService : ITtsService
         }
 
         return null;
-    }
-
-    /// <summary>
-    /// Concatenates multiple audio segments using FFmpeg's concat demuxer.
-    /// Raw byte concatenation is invalid for container formats like M4A/AAC;
-    /// FFmpeg properly re-muxes the streams into a single valid file.
-    /// </summary>
-    private async Task<byte[]> ConcatenateWithFfmpegAsync(
-        List<byte[]> segments,
-        CancellationToken cancellationToken)
-    {
-        using var tempManager = new TempFileManager(null, _logger);
-
-        var ext = GetFileExtension();
-        var chunkPaths = new List<string>(segments.Count);
-
-        for (var i = 0; i < segments.Count; i++)
-        {
-            var chunkPath = tempManager.GetTempFilePath($"chunk-{i:D4}{ext}");
-            await File.WriteAllBytesAsync(chunkPath, segments[i], cancellationToken).ConfigureAwait(false);
-            chunkPaths.Add(chunkPath);
-        }
-
-        var outputPath = tempManager.GetTempFilePath($"concatenated{ext}");
-
-        await FFMpegArguments
-            .FromDemuxConcatInput(chunkPaths)
-            .OutputToFile(outputPath, overwrite: true, options => options
-                .WithCustomArgument("-c copy"))
-            .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
-
-        return await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
     }
 
     private string GetFileExtension()
