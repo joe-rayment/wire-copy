@@ -39,6 +39,14 @@ internal static class StrategyChooserHandler
     private static readonly TimeSpan StrategyProbeBudget = TimeSpan.FromSeconds(5);
 
     /// <summary>
+    /// workspace-6jk65: how long one wizard lens hook may wait on the browser
+    /// session before the wizard moves on without it. The session serialises lens
+    /// access and page screenshots behind one lock, so a stuck capture would
+    /// otherwise freeze label mode (and every key press) behind it.
+    /// </summary>
+    private static readonly TimeSpan LensHookBudget = TimeSpan.FromMilliseconds(500);
+
+    /// <summary>
     /// workspace-5oe9.9: Ctrl+L entry. An UNCONFIGURED link-list page opens
     /// AI-first ("Set up this site"); an already-configured page opens a compact
     /// summary. The multi-strategy preflight/probe/preview modal lives behind the
@@ -226,65 +234,86 @@ internal static class StrategyChooserHandler
         }
 
         return new SetupWizard.Lens(
-            ArmClickAsync: async _ =>
+            ArmClickAsync: async ct =>
             {
                 // workspace-p2qo: arm the SAME PickScript the legacy lead-pick used,
                 // now so label mode can select a row by clicking its story on the
                 // docked page. Non-fatal — keyboard labeling still works if arming fails.
-                var lensPage = await ArmLensPickAsync(session, logger).ConfigureAwait(false);
+                // workspace-6jk65: a busy lens (timeout) throws, so label mode drops to
+                // keyboard-only instead of polling a stuck lens on every animation tick.
+                var lensPage = await BoundedLensAsync(
+                    () => ArmLensPickAsync(session, logger), null, "arm click", logger, ct, failOnTimeout: true).ConfigureAwait(false);
                 if (lensPage == null)
                 {
                     logger.LogInformation("Label-mode click: no lens page to arm (keyboard labeling only)");
                 }
             },
-            PollClickAsync: async _ =>
-            {
-                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                var pick = await PollLensPickAsync(lensPage, logger).ConfigureAwait(false);
-                return pick?.ToLinkInfo(links);
-            },
-            DisarmClickAsync: async _ =>
-            {
-                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                await DisarmLensPickAsync(lensPage, logger).ConfigureAwait(false);
-            },
-            HighlightCssAsync: async (css, _) =>
-            {
-                try
+            PollClickAsync: ct => BoundedLensAsync<LinkInfo?>(
+                async () =>
                 {
                     var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                    if (lensPage == null)
+                    var pick = await PollLensPickAsync(lensPage, logger).ConfigureAwait(false);
+                    return pick?.ToLinkInfo(links);
+                },
+                null,
+                "poll click",
+                logger,
+                ct),
+            DisarmClickAsync: ct => BoundedLensAsync(
+                async () =>
+                {
+                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                    await DisarmLensPickAsync(lensPage, logger).ConfigureAwait(false);
+                },
+                "disarm click",
+                logger,
+                ct),
+            HighlightCssAsync: (css, ct) => BoundedLensAsync(
+                async () =>
+                {
+                    try
                     {
-                        logger.LogInformation("Wizard lens: no lens page; cannot highlight {Selector}", css);
+                        var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                        if (lensPage == null)
+                        {
+                            logger.LogInformation("Wizard lens: no lens page; cannot highlight {Selector}", css);
+                            return -1;
+                        }
+
+                        var count = await lensPage.EvaluateAsync<int>(
+                            TunerScript.Highlight, new { selector = css, dialect = "css" }).ConfigureAwait(false);
+                        logger.LogInformation("Wizard lens: {Selector} highlighted {Count} match(es)", css, count);
+                        return count;
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogInformation(ex, "Wizard lens: highlight failed for {Selector}", css);
                         return -1;
                     }
-
-                    var count = await lensPage.EvaluateAsync<int>(
-                        TunerScript.Highlight, new { selector = css, dialect = "css" }).ConfigureAwait(false);
-                    logger.LogInformation("Wizard lens: {Selector} highlighted {Count} match(es)", css, count);
-                    return count;
-                }
-                catch (Exception ex)
+                },
+                -1,
+                "highlight",
+                logger,
+                ct),
+            ClearAsync: ct => BoundedLensAsync(
+                async () =>
                 {
-                    logger.LogInformation(ex, "Wizard lens: highlight failed for {Selector}", css);
-                    return -1;
-                }
-            },
-            ClearAsync: async _ =>
-            {
-                try
-                {
-                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                    if (lensPage != null)
+                    try
                     {
-                        await lensPage.EvaluateAsync<string>(TunerScript.Clear).ConfigureAwait(false);
+                        var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                        if (lensPage != null)
+                        {
+                            await lensPage.EvaluateAsync<string>(TunerScript.Clear).ConfigureAwait(false);
+                        }
                     }
-                }
-                catch (Exception)
-                {
-                    // Cosmetic.
-                }
-            });
+                    catch (Exception)
+                    {
+                        // Cosmetic.
+                    }
+                },
+                "clear",
+                logger,
+                ct));
     }
 
     /// <summary>
@@ -632,6 +661,22 @@ internal static class StrategyChooserHandler
         // Set-of-Marks numbers (the analyzer's link indices) before the shot.
         var captureTask = CaptureScreenshotSafelyAsync(scope, BuildSetupMarks(links), ctx.Logger);
 
+        var overlay = new UI.Components.SetupWizardOverlay.State();
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+
+        // workspace-t1ok.1: kept as a closure because the tree pick clears the
+        // painter to show the bare list; every pick exit must re-arm it or the
+        // wizard's next card renders into a null painter — an invisible menu
+        // whose cursor still eats the arrow keys.
+        Action installWizardPainter = () => ctx.SetOverlayPainter(opts =>
+            UI.Components.SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+        installWizardPainter();
+
+        // workspace-6jk65: paint the wizard NOW so the screenshot wait (up to the
+        // cap) shows "Reading the page…" instead of the stale chooser card.
+        overlay.AnalyzingLabel = "Reading the page…";
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
         var screenshot = await ScreenshotCapture.WithCapAsync(
             () => captureTask,
             ScreenshotCapture.WizardCap,
@@ -651,17 +696,6 @@ internal static class StrategyChooserHandler
                 "Wizard proceeding text-only: screenshot not ready within {CapSeconds}s",
                 ScreenshotCapture.WizardCap.TotalSeconds);
         }
-
-        var overlay = new UI.Components.SetupWizardOverlay.State();
-        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-
-        // workspace-t1ok.1: kept as a closure because the tree pick clears the
-        // painter to show the bare list; every pick exit must re-arm it or the
-        // wizard's next card renders into a null painter — an invisible menu
-        // whose cursor still eats the arrow keys.
-        Action installWizardPainter = () => ctx.SetOverlayPainter(opts =>
-            UI.Components.SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
-        installWizardPainter();
 
         // workspace-wylw: focused wizard options highlight their matched links
         // live on the sidecar lens (same surface as the article tuner).
@@ -770,6 +804,63 @@ internal static class StrategyChooserHandler
             }
         }
     }
+
+    /// <summary>
+    /// workspace-6jk65: runs one lens hook but waits at most <see cref="LensHookBudget"/>
+    /// for it. On timeout it logs and returns <paramref name="fallback"/> (or, with
+    /// <paramref name="failOnTimeout"/>, throws so the caller degrades). The abandoned
+    /// hook keeps running; its eventual fault is observed so it cannot go unobserved.
+    /// </summary>
+    private static async Task<T> BoundedLensAsync<T>(
+        Func<Task<T>> hook,
+        T fallback,
+        string what,
+        ILogger logger,
+        CancellationToken ct,
+        bool failOnTimeout = false)
+    {
+        var task = hook();
+        try
+        {
+            return await task.WaitAsync(LensHookBudget, ct).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is TimeoutException or OperationCanceledException)
+        {
+            _ = task.ContinueWith(
+                static t => _ = t.Exception,
+                CancellationToken.None,
+                TaskContinuationOptions.OnlyOnFaulted,
+                TaskScheduler.Default);
+            if (ex is OperationCanceledException)
+            {
+                throw;
+            }
+
+            logger.LogInformation(
+                "Wizard lens: {Hook} timed out after {Ms}ms (browser busy); continuing without it",
+                what,
+                (int)LensHookBudget.TotalMilliseconds);
+            if (failOnTimeout)
+            {
+                throw;
+            }
+
+            return fallback;
+        }
+    }
+
+    private static async Task BoundedLensAsync(
+        Func<Task> hook, string what, ILogger logger, CancellationToken ct) =>
+        await BoundedLensAsync<object?>(
+            async () =>
+            {
+                await hook().ConfigureAwait(false);
+                return null;
+            },
+            null,
+            what,
+            logger,
+            ct).ConfigureAwait(false);
 
     /// <summary>
     /// Arms <see cref="PickScript"/> on the lens tab; null when no sidecar /
