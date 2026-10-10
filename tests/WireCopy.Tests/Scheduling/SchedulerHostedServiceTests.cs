@@ -31,8 +31,10 @@ public class SchedulerHostedServiceTests
         public InMemoryRunRepo Runs { get; } = new();
         public IPodcastGenerationGate Gate { get; } = new PodcastGenerationGate();
         public FakePipeline Pipeline { get; } = new();
+        public FakeTimeProvider Time { get; private set; } = null!;
         public SchedulerHostedService Build(DateTimeOffset now)
         {
+            Time = new FakeTimeProvider(now);
             var services = new ServiceCollection();
             services.AddSingleton<IScheduleStore>(Store);
             services.AddSingleton<IScheduledRunRepository>(Runs);
@@ -40,7 +42,7 @@ public class SchedulerHostedServiceTests
             services.AddSingleton<IRecipeRunPipeline>(Pipeline);
             services.AddSingleton<IUnitOfWork>(new FakeUnitOfWork());
             var sp = services.BuildServiceProvider();
-            return new SchedulerHostedService(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<SchedulerHostedService>.Instance, new FakeTimeProvider(now));
+            return new SchedulerHostedService(sp.GetRequiredService<IServiceScopeFactory>(), NullLogger<SchedulerHostedService>.Instance, Time);
         }
     }
 
@@ -75,6 +77,10 @@ public class SchedulerHostedServiceTests
     [Fact]
     public async Task GateHeld_Defers_ThenFiresOnceReleased()
     {
+        // Guards:   a slot that came due while a manual podcast generation held the gate still fires,
+        //           exactly once, when the gate frees up AFTER the 1-minute grace window has passed.
+        // Fails if: the deferred slot is re-judged by the clock alone, so it is recorded Skipped/MissedPastGrace.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~GateHeld_Defers_ThenFiresOnceReleased"
         var h = new Harness();
         h.Store.Recipes.Add(DailyRecipe());
         var scheduler = h.Build(MondaySevenAm);
@@ -84,9 +90,41 @@ public class SchedulerHostedServiceTests
         h.Pipeline.Calls.Should().Be(0, "deferred while the gate is held");
         h.Runs.All.Should().BeEmpty("no row written on defer, so it stays due");
 
-        lease!.Dispose();
+        lease!.Dispose(); // the manual run ends 6 minutes later — well past the default 1-minute grace
+        var afterGrace = MondaySevenAm.AddMinutes(6);
+        await scheduler.EvaluateOnceAsync(afterGrace, CancellationToken.None);
+        await scheduler.EvaluateOnceAsync(afterGrace.AddSeconds(45), CancellationToken.None); // next tick: row dedups
+
+        h.Pipeline.Calls.Should().Be(1, "fires once on the first tick after the gate is free, never twice");
+        h.Runs.All.Should().ContainSingle().Which.Status.Should().NotBe(ScheduledRunStatus.Skipped, "the app was open the whole time");
+    }
+
+    [Fact]
+    public async Task SlotPassingDuringAnEarlierRecipesRun_StillFiresOnTheNextPass()
+    {
+        // Guards:   a recipe whose slot arrives while the scheduler is busy running an earlier recipe
+        //           in the same sequential pass still fires on the next pass (no Skipped row).
+        // Fails if: that slot is judged by the clock alone and recorded Skipped/MissedPastGrace.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~SlotPassingDuringAnEarlierRecipesRun_StillFiresOnTheNextPass"
+        var h = new Harness();
+        h.Store.Recipes.Add(DailyRecipe("A")); // 07:00
+        h.Store.Recipes.Add(ScheduleRecipe.Create("B", Cadence.Daily(new TimeOnly(7, 5)), new[] { Step() }));
+        var scheduler = h.Build(MondaySevenAm);
+        h.Pipeline.OnRun = recipe =>
+        {
+            if (recipe.Name == "A")
+            {
+                h.Time.Advance(TimeSpan.FromMinutes(10)); // A's run takes 10 min; B's 07:05 slot passes meanwhile
+            }
+        };
+
         await scheduler.EvaluateOnceAsync(MondaySevenAm, CancellationToken.None);
-        h.Pipeline.Calls.Should().Be(1, "fires on the next tick once the gate is free");
+        h.Pipeline.RanRecipes.Should().Equal("A");
+
+        await scheduler.EvaluateOnceAsync(MondaySevenAm.AddMinutes(10), CancellationToken.None); // next pass, 07:10
+
+        h.Pipeline.RanRecipes.Should().Equal("A", "B");
+        h.Runs.All.Should().HaveCount(2).And.NotContain(r => r.Status == ScheduledRunStatus.Skipped);
     }
 
     [Fact]
@@ -183,10 +221,14 @@ public class SchedulerHostedServiceTests
         public List<string> RanRecipes { get; } = new();
         public string? ThrowForRecipe { get; set; }
 
+        /// <summary>Runs inside <see cref="RunAsync"/> — lets a test advance the fake clock to model a long run.</summary>
+        public Action<ScheduleRecipe>? OnRun { get; set; }
+
         public Task RunAsync(ScheduleRecipe recipe, ScheduledRun run, CancellationToken ct = default)
         {
             Calls++;
             RanRecipes.Add(recipe.Name);
+            OnRun?.Invoke(recipe);
             ct.ThrowIfCancellationRequested();
             if (ThrowForRecipe == recipe.Name)
             {
