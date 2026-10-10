@@ -11,9 +11,12 @@
 // page screenshot is slow (filed separately). Everything after that is what the user does: open
 // /news, ':layout clear', open the front page. Tree checks read the link-tree pane's pushed
 // items; the layouts file is read back from the gate's isolated data dir.
-// STATUS (2026-10-10): L1-L4 and L7-L9 pass on main; L5/L6 FAIL on main because submitting
-// ':layout clear' (prompt line reads ':layout clear') opens the Layout chooser card instead of
-// clearing — see workspace-zh1o1 notes. Pre-fix RED not yet run.
+// STATUS (2026-10-10): all of L0-L9 PASS on main (928e7ba1 + the store fix 2d39cb72). Pre-fix RED
+// (HierarchyConfigStore/DocumentOrderStrategy/ScheduleConfigResolution at 2d39cb72~1): L2, L6, L8
+// FAIL (the /news ad is listed; ':layout clear' wipes the homepage layout too; the front page's ad
+// comes back); L0, L1, L3, L5, L7, L9 pass there; L4 also passes pre-fix, so it does not
+// discriminate. The earlier L5/L6 failure was a command-line bug, not the store: HandleCommandLineInput
+// dispatched on the first word only, so ':layout clear' opened the chooser — fixed in 928e7ba1.
 // Headful under Xvfb ONLY (never headless). Run from shell/: node gates/gate-layout-specific.mjs
 import http from 'node:http'
 import fs from 'node:fs'
@@ -98,11 +101,13 @@ try {
   const screenText = async () => (await pollTermText(term, '\u0000never', 300)).txt
 
   // Opening a URL the way the user does; keystrokes can drop under load, so it is retried.
-  const openUrl = async (suffix, needle) => {
+  // From the launcher 'o' opens the URL prompt; from a loaded page 'o' means something else, so
+  // there the URL goes through the ':open' command line, as a user on a page would type it.
+  const openUrl = async (suffix, needle, fromPage = false) => {
     let r = { ok: false }
     for (let attempt = 0; attempt < 3 && !r.ok; attempt++) {
       if (attempt) { env.key('Escape'); await sleep(600); env.key('Escape'); await sleep(600) }
-      env.key('o'); await sleep(900)
+      if (fromPage) { env.type(':open '); await sleep(900) } else { env.key('o'); await sleep(900) }
       env.type('http:/'); await sleep(200); env.type(base.slice('http:/'.length) + suffix); await sleep(500)
       env.key('Return')
       r = await pollTermText(term, needle, 30000)
@@ -168,7 +173,7 @@ try {
     after.length === 1 && after[0].urlPattern === HOME_PATTERN, `patterns=${JSON.stringify(after.map(c => c.urlPattern))}`)
 
   // ---- 3. The front page still uses its layout ----
-  check('L7 front page rendered', (await openUrl('/?v=2', 'breakwater')).ok)
+  check('L7 front page rendered', (await openUrl('/?v=2', 'breakwater', true)).ok)
   await attachTree()
   const home = await readTree()
   check('L8 front page: the homepage layout survived the clear — ad Y is still NOT listed',
