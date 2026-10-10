@@ -42,21 +42,17 @@ internal static class CollectionCommandHandler
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
                     var links = selectedNodes
-                        .Where(n => !string.IsNullOrEmpty(n.Link.Url))
+                        .Where(n => !string.IsNullOrWhiteSpace(n.Link.Url) && !string.IsNullOrWhiteSpace(n.Link.DisplayText))
                         .Select(n => (n.Link.Url, n.Link.DisplayText))
                         .ToList();
 
-                    await service.SaveAllToReadingListAsync(links, ct).ConfigureAwait(false);
+                    var added = await service.SaveAllToReadingListAsync(links, ct).ConfigureAwait(false);
                     tree.ClearSelection();
-                    ctx.Logger.LogInformation("Saved {Count} items to Reading List", links.Count);
+                    ctx.Logger.LogInformation("Saved {Added} of {Count} selected items to Reading List", added, links.Count);
 
                     // workspace-wef6.4: success feedback is a transient with its
                     // follow-up key; toasts are reserved for modal-worthy results.
-                    ctx.NavigationService.Announce(
-                        "✓",
-                        $"Saved ({links.Count})",
-                        new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
-                        shortText: $"✓ {links.Count}");
+                    AnnounceSaveAll(ctx, added, links.Count);
                 }
                 catch (Exception ex)
                 {
@@ -292,7 +288,9 @@ internal static class CollectionCommandHandler
         if (tree != null)
         {
             var visibleNodes = tree.GetVisibleNodes()
-                .Where(n => !n.IsGroupHeader && !string.IsNullOrEmpty(n.Link.Url))
+                .Where(n => !n.IsGroupHeader
+                    && !string.IsNullOrWhiteSpace(n.Link.Url)
+                    && !string.IsNullOrWhiteSpace(n.Link.DisplayText))
                 .Select(n => (n.Link.Url, n.Link.DisplayText))
                 .ToList();
 
@@ -302,13 +300,9 @@ internal static class CollectionCommandHandler
                 {
                     using var scope = ctx.ScopeFactory.CreateScope();
                     var service = ctx.CreateCollectionService(scope);
-                    await service.SaveAllToReadingListAsync(visibleNodes, ct).ConfigureAwait(false);
-                    ctx.Logger.LogInformation("Saved {Count} links to Reading List", visibleNodes.Count);
-                    ctx.NavigationService.Announce(
-                        "✓",
-                        $"Saved ({visibleNodes.Count})",
-                        new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
-                        shortText: $"✓ {visibleNodes.Count}");
+                    var added = await service.SaveAllToReadingListAsync(visibleNodes, ct).ConfigureAwait(false);
+                    ctx.Logger.LogInformation("Saved {Added} of {Count} links to Reading List", added, visibleNodes.Count);
+                    AnnounceSaveAll(ctx, added, visibleNodes.Count);
                 }
                 catch (Exception ex)
                 {
@@ -552,6 +546,28 @@ internal static class CollectionCommandHandler
             ctx.NavigationService.SetStatusMessage($"Failed to load collections: {ex.Message}", StatusSeverity.Error);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Announces the outcome of a bulk save to the Reading List using the count the
+    /// service actually added, so already-saved links are reported instead of counted.
+    /// </summary>
+    private static void AnnounceSaveAll(CommandContext ctx, int added, int total)
+    {
+        var skipped = total - added;
+        var (text, shortText) = (added, skipped) switch
+        {
+            _ when total == 0 => ("Nothing to save", "✓ 0"),
+            (0, _) => ($"All {total} already in list", "✓ 0"),
+            (_, 0) => ($"Saved ({added})", $"✓ {added}"),
+            _ => ($"Saved ({added}) \u00b7 {skipped} already in list", $"✓ {added}"),
+        };
+
+        ctx.NavigationService.Announce(
+            "✓",
+            text,
+            new[] { new StatusKeyHint(KeyFor(CommandType.OpenCollections), "list") },
+            shortText: shortText);
     }
 
     /// <summary>

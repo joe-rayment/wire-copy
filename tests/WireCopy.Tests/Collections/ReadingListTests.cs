@@ -131,6 +131,64 @@ public class ReadingListTests
     }
 
     [Fact]
+    public void AddItemsAtEnd_SkipsUrlsAlreadyPresentAndRepeatsInBatch_ReturnsAddedCount()
+    {
+        // Guards:   "save all" never doubles a reading list: URLs already saved (even with
+        //           different letter case or a stray space) and repeats inside one batch are
+        //           skipped, and the method reports how many were really added.
+        // Fails if: AddItemsAtEnd appends every pair without checking for duplicates.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~AddItemsAtEnd_SkipsUrlsAlreadyPresentAndRepeatsInBatch"
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://existing.com", "Existing");
+
+        var items = new[]
+        {
+            ("https://new-one.com", "New One"),
+            ("HTTPS://EXISTING.COM ", "Existing again"),   // already saved: case + stray space
+            ("https://new-two.com", "New Two"),
+            ("https://new-one.com", "New One again"),       // repeat inside the batch
+        };
+
+        var added = collection.AddItemsAtEnd(items);
+
+        added.Should().Be(2);
+        collection.Items.Select(i => i.Url).Should().Equal(
+            "https://existing.com", "https://new-one.com", "https://new-two.com");
+        collection.Items.Select(i => i.SortOrder).Should().Equal(0, 1, 2);
+    }
+
+    [Fact]
+    public void AddItemsAtEnd_AllAlreadyPresent_ReturnsZeroAndKeepsTimestamp()
+    {
+        // Guards:   saving links that are all already in the list changes nothing and
+        //           reports zero added (so the UI can say "already in list").
+        // Fails if: AddItemsAtEnd re-adds known URLs or bumps UpdatedAt anyway.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~AddItemsAtEnd_AllAlreadyPresent"
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://a.com", "A");
+        var before = collection.UpdatedAt;
+
+        var added = collection.AddItemsAtEnd(new[] { ("https://a.com", "A") });
+
+        added.Should().Be(0);
+        collection.Items.Should().HaveCount(1);
+        collection.UpdatedAt.Should().Be(before);
+    }
+
+    [Fact]
+    public void ContainsUrl_IgnoresStrayWhitespaceAndCase()
+    {
+        // Guards:   a URL with a leading/trailing space is the same URL as without it.
+        // Fails if: ContainsUrl compares the untrimmed text.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ContainsUrl_IgnoresStrayWhitespaceAndCase"
+        var collection = Collection.Create("Reading List");
+        collection.AddItem("https://a.com", "A");
+
+        collection.ContainsUrl(" https://A.com ").Should().BeTrue();
+        collection.ContainsUrl("https://b.com").Should().BeFalse();
+    }
+
+    [Fact]
     public void AddItemsAtEnd_EmptyList_DoesNotUpdateTimestamp()
     {
         var collection = Collection.Create("Reading List");

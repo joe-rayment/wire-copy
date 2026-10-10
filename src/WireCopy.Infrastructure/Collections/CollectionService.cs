@@ -31,6 +31,7 @@ public class CollectionService : ICollectionService
 
     public async Task<CollectionItem?> SaveToCollectionByNameAsync(string collectionName, string url, string title, CancellationToken cancellationToken = default)
     {
+        collectionName = collectionName?.Trim() ?? string.Empty;
         var collection = await _repository.GetByNameAsync(collectionName, cancellationToken).ConfigureAwait(false);
         if (collection == null)
         {
@@ -51,6 +52,7 @@ public class CollectionService : ICollectionService
 
     public async Task<Collection> CreateCollectionAsync(string name, CancellationToken cancellationToken = default)
     {
+        name = name?.Trim() ?? string.Empty;
         var existing = await _repository.GetByNameAsync(name, cancellationToken).ConfigureAwait(false);
         if (existing != null)
         {
@@ -168,13 +170,14 @@ public class CollectionService : ICollectionService
         return item;
     }
 
-    public async Task SaveAllToReadingListAsync(IEnumerable<(string Url, string Title)> items, CancellationToken cancellationToken = default)
+    public async Task<int> SaveAllToReadingListAsync(IEnumerable<(string Url, string Title)> items, CancellationToken cancellationToken = default)
     {
         var collection = await GetOrCreateReadingListAsync(cancellationToken).ConfigureAwait(false);
-        collection.AddItemsAtEnd(items);
+        var added = collection.AddItemsAtEnd(items);
         await _repository.UpdateAsync(collection, cancellationToken).ConfigureAwait(false);
         await _unitOfWork.SaveChangesAsync(cancellationToken).ConfigureAwait(false);
-        _logger.LogInformation("Saved multiple items to Reading List");
+        _logger.LogInformation("Saved {Count} new item(s) to Reading List", added);
+        return added;
     }
 
     public async Task<int> PurgeExpiredReadingListItemsAsync(TimeSpan maxAge, CancellationToken cancellationToken = default)

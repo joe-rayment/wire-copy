@@ -155,11 +155,12 @@ public class Collection
     }
 
     /// <summary>
-    /// Checks if the collection contains a URL (case-insensitive).
+    /// Checks if the collection contains a URL (case-insensitive, ignoring surrounding whitespace).
     /// </summary>
     public bool ContainsUrl(string url)
     {
-        return _items.Any(i => string.Equals(i.Url, url, StringComparison.OrdinalIgnoreCase));
+        var trimmed = url?.Trim();
+        return _items.Any(i => string.Equals(i.Url, trimmed, StringComparison.OrdinalIgnoreCase));
     }
 
     /// <summary>
@@ -219,11 +220,14 @@ public class Collection
 
     /// <summary>
     /// Adds multiple items at the end of the collection with sequential SortOrder values.
+    /// URLs already in the collection, or repeated earlier in the same batch, are skipped
+    /// (same case-insensitive, trimmed comparison as <see cref="ContainsUrl"/>).
+    /// Returns the number of items actually added.
     /// </summary>
-    public void AddItemsAtEnd(IEnumerable<(string Url, string Title)> items)
+    public int AddItemsAtEnd(IEnumerable<(string Url, string Title)> items)
     {
         var nextSortOrder = _items.Count > 0 ? _items.Max(i => i.SortOrder) + 1 : 0;
-        var added = false;
+        var added = 0;
 
         foreach (var (url, title) in items)
         {
@@ -232,15 +236,23 @@ public class Collection
                 continue;
             }
 
-            var item = CollectionItem.Create(Id, url.Trim(), title.Trim(), nextSortOrder);
+            var trimmedUrl = url.Trim();
+            if (ContainsUrl(trimmedUrl))
+            {
+                continue;
+            }
+
+            var item = CollectionItem.Create(Id, trimmedUrl, title.Trim(), nextSortOrder);
             _items.Add(item);
             nextSortOrder++;
-            added = true;
+            added++;
         }
 
-        if (added)
+        if (added > 0)
         {
             UpdatedAt = DateTime.UtcNow;
         }
+
+        return added;
     }
 }

@@ -85,9 +85,10 @@ public interface ICollectionService
     Task<CollectionItem> SaveToReadingListAsync(string url, string title, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Saves multiple URLs to the Reading List at the end.
+    /// Saves multiple URLs to the Reading List at the end, skipping URLs already in the
+    /// list (and repeats within the batch). Returns the number of items actually added.
     /// </summary>
-    Task SaveAllToReadingListAsync(IEnumerable<(string Url, string Title)> items, CancellationToken cancellationToken = default);
+    Task<int> SaveAllToReadingListAsync(IEnumerable<(string Url, string Title)> items, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Removes expired items from the Reading List.

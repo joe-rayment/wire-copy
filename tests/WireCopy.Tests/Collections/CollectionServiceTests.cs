@@ -111,6 +111,22 @@ public class CollectionServiceTests : TestDatabaseFixture
     }
 
     [Fact]
+    public async Task SaveToCollectionByNameAsync_NameWithTrailingSpace_ReusesExistingCollection()
+    {
+        // Guards:   typing "Favs " (stray space) at the save-to-collection prompt files the
+        //           link into the existing "Favs" instead of creating a second "Favs".
+        // Fails if: the service looks up the collection by the untrimmed name.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~SaveToCollectionByNameAsync_NameWithTrailingSpace"
+        await _sut.SaveToCollectionByNameAsync("Favs", "https://example.com/1", "First");
+
+        await _sut.SaveToCollectionByNameAsync("Favs ", "https://example.com/2", "Second");
+
+        var collections = await _sut.GetAllCollectionsAsync();
+        var favs = collections.Should().ContainSingle(c => c.Name == "Favs").Subject;
+        favs.Items.Should().HaveCount(2);
+    }
+
+    [Fact]
     public async Task SaveToCollectionByNameAsync_SkipsDuplicateUrlSilently()
     {
         // Arrange
@@ -180,6 +196,20 @@ public class CollectionServiceTests : TestDatabaseFixture
         var act = () => _sut.CreateCollectionAsync("My Collection");
 
         // Assert
+        await act.Should().ThrowAsync<InvalidOperationException>()
+            .WithMessage("*already exists*");
+    }
+
+    [Fact]
+    public async Task CreateCollectionAsync_NameWithTrailingSpace_ThrowsWhenDuplicate()
+    {
+        // Guards:   creating "Favs " when "Favs" exists is refused as a duplicate.
+        // Fails if: the duplicate check uses the untrimmed name and lets a second "Favs" in.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~CreateCollectionAsync_NameWithTrailingSpace"
+        await _sut.CreateCollectionAsync("Favs");
+
+        var act = () => _sut.CreateCollectionAsync("Favs ");
+
         await act.Should().ThrowAsync<InvalidOperationException>()
             .WithMessage("*already exists*");
     }
@@ -390,6 +420,33 @@ public class CollectionServiceTests : TestDatabaseFixture
         var readingList = await _sut.GetReadingListAsync();
 
         readingList.Items.Should().HaveCount(3);
+    }
+
+    [Fact]
+    public async Task SaveAllToReadingListAsync_SavedTwice_DoesNotDuplicateAndReturnsAddedCount()
+    {
+        // Guards:   pressing "save all" twice leaves one copy of each link, and the service
+        //           returns how many links were actually added each time (3, then 0, then 1).
+        // Fails if: SaveAllToReadingListAsync appends again or returns the batch size.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~SaveAllToReadingListAsync_SavedTwice"
+        var items = new[]
+        {
+            ("https://example.com/1", "First"),
+            ("https://example.com/2", "Second"),
+            ("https://example.com/3", "Third")
+        };
+
+        var first = await _sut.SaveAllToReadingListAsync(items);
+        var second = await _sut.SaveAllToReadingListAsync(items);
+        var third = await _sut.SaveAllToReadingListAsync(items.Append(("https://example.com/4", "Fourth")));
+
+        first.Should().Be(3);
+        second.Should().Be(0);
+        third.Should().Be(1);
+        var readingList = await _sut.GetReadingListAsync();
+        readingList.Items.Select(i => i.Url).Should().Equal(
+            "https://example.com/1", "https://example.com/2",
+            "https://example.com/3", "https://example.com/4");
     }
 
     [Fact]

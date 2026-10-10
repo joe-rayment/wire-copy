@@ -406,10 +406,51 @@ public class CollectionCommandStatusTests
             ("Link 1", "https://example.com/1"),
             ("Link 2", "https://example.com/2"),
             ("Link 3", "https://example.com/3"));
+        _collectionService.SaveAllToReadingListAsync(Arg.Any<IEnumerable<(string Url, string Title)>>(), Arg.Any<CancellationToken>())
+            .Returns(3);
 
         await CollectionCommandHandler.HandleSaveAllToReadingList(_ctx, _options, CancellationToken.None);
 
         _lastStatusMessage.Should().Be("Saved (3)");
+    }
+
+    [Fact]
+    public async Task HandleSaveAllToReadingList_SomeAlreadySaved_ReportsAddedAndSkipped()
+    {
+        // Guards:   "save all" tells the truth when some links were already in the list:
+        //           the added count plus how many were skipped, not the number of links on screen.
+        // Fails if: the handler announces the visible-link count instead of the service's returned count.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~HandleSaveAllToReadingList_SomeAlreadySaved"
+        SetupHierarchicalWithLinks(
+            ("Link 1", "https://example.com/1"),
+            ("Link 2", "https://example.com/2"),
+            ("Link 3", "https://example.com/3"),
+            ("Link 4", "https://example.com/4"),
+            ("Link 5", "https://example.com/5"));
+        _collectionService.SaveAllToReadingListAsync(Arg.Any<IEnumerable<(string Url, string Title)>>(), Arg.Any<CancellationToken>())
+            .Returns(3);
+
+        await CollectionCommandHandler.HandleSaveAllToReadingList(_ctx, _options, CancellationToken.None);
+
+        _lastStatusMessage.Should().Be("Saved (3) \u00b7 2 already in list");
+    }
+
+    [Fact]
+    public async Task HandleSaveAllToReadingList_AllAlreadySaved_SaysSo()
+    {
+        // Guards:   pressing "save all" a second time says everything was already in the list
+        //           instead of claiming it saved the links again.
+        // Fails if: the handler announces "Saved (N)" when the service added nothing.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~HandleSaveAllToReadingList_AllAlreadySaved"
+        SetupHierarchicalWithLinks(
+            ("Link 1", "https://example.com/1"),
+            ("Link 2", "https://example.com/2"));
+        _collectionService.SaveAllToReadingListAsync(Arg.Any<IEnumerable<(string Url, string Title)>>(), Arg.Any<CancellationToken>())
+            .Returns(0);
+
+        await CollectionCommandHandler.HandleSaveAllToReadingList(_ctx, _options, CancellationToken.None);
+
+        _lastStatusMessage.Should().Be("All 2 already in list");
     }
 
     #endregion
