@@ -117,6 +117,12 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     private IReadOnlyList<string>? _pendingCollectionUrls;
     private bool _pendingIsCollection;
 
+    // workspace-6hc72: bumped (under _queueLock) every time the pending selection
+    // is overwritten. OnDebounceElapsed captures it with its snapshot and only
+    // publishes its queue if no newer selection has arrived since, so a slow,
+    // older build can never overwrite the queue built for a newer selection.
+    private long _pendingGeneration;
+
     // Progress tracking: all eligible content URLs from the current page
     private List<string> _allEligibleUrls = [];
     private List<string> _needsJsUrls = [];
@@ -274,6 +280,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             _pendingVisibleNodes = visibleNodes;
             _pendingCurrentPageUrl = currentPageUrl;
             _pendingIsCollection = false;
+            _pendingGeneration++;
         }
 
         // Reset the debounce timer (200ms). If the user is scrolling fast,
@@ -309,6 +316,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             _pendingCollectionSelectedIndex = selectedIndex;
             _pendingCollectionUrls = urls;
             _pendingIsCollection = true;
+            _pendingGeneration++;
         }
 
         try
@@ -1153,7 +1161,24 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         }
     }
 
-    private void OnDebounceElapsed(object? state)
+    // System.Threading.Timer callback. An exception escaping a Timer callback
+    // terminates the process, so nothing may propagate out of here (workspace-6hc72).
+    // internal (not private) so tests can invoke it directly, deterministically.
+    internal void OnDebounceElapsed(object? state)
+    {
+        try
+        {
+            RebuildQueueFromPendingSelection();
+        }
+        catch (Exception ex)
+        {
+            // Leave the previous queue in place; the next selection change (or
+            // RequestQueueRebuild) retries with fresh state.
+            _logger.LogWarning(ex, "Preload queue rebuild failed; keeping previous queue");
+        }
+    }
+
+    private void RebuildQueueFromPendingSelection()
     {
         bool isCollection;
         int selectedIndex;
@@ -1161,6 +1186,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         string? currentPageUrl;
         int collectionSelectedIndex;
         IReadOnlyList<string>? collectionUrls;
+        long generation;
 
         lock (_queueLock)
         {
@@ -1170,8 +1196,10 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             currentPageUrl = _pendingCurrentPageUrl;
             collectionSelectedIndex = _pendingCollectionSelectedIndex;
             collectionUrls = _pendingCollectionUrls;
+            generation = _pendingGeneration;
         }
 
+        List<PreloadItem> newQueue;
         if (isCollection)
         {
             if (collectionUrls == null)
@@ -1180,14 +1208,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             }
 
             RefreshPaywalledCookieState();
-            var newQueue = BuildCollectionQueue(collectionSelectedIndex, collectionUrls);
-
-            lock (_queueLock)
-            {
-                _queue = newQueue;
-            }
-
-            SignalQueueChanged();
+            newQueue = BuildCollectionQueue(collectionSelectedIndex, collectionUrls);
         }
         else
         {
@@ -1197,15 +1218,22 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             }
 
             RefreshPaywalledCookieState();
-            var newQueue = BuildQueue(selectedIndex, visibleNodes, currentPageUrl);
+            newQueue = BuildQueue(selectedIndex, visibleNodes, currentPageUrl);
+        }
 
-            lock (_queueLock)
+        lock (_queueLock)
+        {
+            // A newer selection arrived while this (slow) build ran: its own
+            // callback owns the queue now, so drop this stale result.
+            if (generation != _pendingGeneration)
             {
-                _queue = newQueue;
+                return;
             }
 
-            SignalQueueChanged();
+            _queue = newQueue;
         }
+
+        SignalQueueChanged();
     }
 
     private void RequestQueueRebuild()
