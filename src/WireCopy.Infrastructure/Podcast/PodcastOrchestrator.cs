@@ -629,22 +629,50 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                             Url = article.Url,
                             Reason = ttsResult.ErrorMessage ?? "TTS generation failed",
                         });
+
+                        // workspace-y3eg7: a fatal failure (bad/revoked key,
+                        // exhausted billing quota) will repeat for every
+                        // remaining article — stop the run on the first one
+                        // instead of re-issuing doomed requests. Like the
+                        // all-failed path, no partial episode is published.
+                        if (ttsResult.IsFatal)
+                        {
+                            return PodcastResult.Failure(
+                                $"{ttsResult.ErrorMessage} (stopped at article {i + 1}/{articles.Count})",
+                                failedArticleDetails: extractionFailures.Concat(ttsFailures).ToList());
+                        }
+
                         continue;
                     }
 
-                    // Store in cache
-                    var cacheEntry = await _audioCache.PutAsync(
-                        spokenText,
-                        article.Url,
-                        article.Title,
-                        ttsResult.AudioData,
-                        cancellationToken).ConfigureAwait(false);
-                    audioPath = cacheEntry.AudioFilePath;
+                    // Store in cache. workspace-y3eg7: the cache is best-effort —
+                    // a disk-full / permission / index-save error must not throw
+                    // away audio that was already paid for, so on failure keep the
+                    // in-memory bytes by spilling them to a run-scoped temp file.
+                    try
+                    {
+                        var cacheEntry = await _audioCache.PutAsync(
+                            spokenText,
+                            article.Url,
+                            article.Title,
+                            ttsResult.AudioData,
+                            cancellationToken).ConfigureAwait(false);
+                        audioPath = cacheEntry.AudioFilePath;
 
-                    _logger.LogInformation(
-                        "Generated and cached audio for '{Title}' ({Chars} chars)",
-                        article.Title,
-                        ttsResult.CharactersProcessed);
+                        _logger.LogInformation(
+                            "Generated and cached audio for '{Title}' ({Chars} chars)",
+                            article.Title,
+                            ttsResult.CharactersProcessed);
+                    }
+                    catch (Exception ex) when (ex is not OperationCanceledException)
+                    {
+                        _logger.LogWarning(
+                            ex,
+                            "Could not cache audio for '{Title}'; continuing with the in-memory audio",
+                            article.Title);
+                        audioPath = tempFiles.GetTempFilePath($"article-{i + 1}-uncached.mp3");
+                        await File.WriteAllBytesAsync(audioPath, ttsResult.AudioData, cancellationToken).ConfigureAwait(false);
+                    }
                 }
 
                 // Duration left as TimeSpan.Zero so M4bAudioAssembler probes

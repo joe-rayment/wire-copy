@@ -33,6 +33,14 @@ public record TtsGenerationResult
     public string? ErrorMessage { get; init; }
 
     /// <summary>
+    /// Gets whether the failure is run-ending rather than per-article: bad/revoked credentials
+    /// (401/403) or exhausted billing quota. Every remaining article would fail identically, so
+    /// the orchestrator stops synthesizing on the first fatal failure. False for ordinary,
+    /// possibly article-specific failures (workspace-y3eg7).
+    /// </summary>
+    public bool IsFatal { get; init; }
+
+    /// <summary>
     /// Creates a successful generation result.
     /// </summary>
     public static TtsGenerationResult Successful(byte[] audioData, int charactersProcessed, int chunksCompleted)
@@ -49,7 +57,7 @@ public record TtsGenerationResult
     /// <summary>
     /// Creates a failed generation result.
     /// </summary>
-    public static TtsGenerationResult Failure(string errorMessage, int charactersProcessed = 0, int chunksCompleted = 0)
+    public static TtsGenerationResult Failure(string errorMessage, int charactersProcessed = 0, int chunksCompleted = 0, bool isFatal = false)
     {
         return new TtsGenerationResult
         {
@@ -57,6 +65,7 @@ public record TtsGenerationResult
             ErrorMessage = errorMessage,
             CharactersProcessed = charactersProcessed,
             ChunksCompleted = chunksCompleted,
+            IsFatal = isFatal,
         };
     }
 }

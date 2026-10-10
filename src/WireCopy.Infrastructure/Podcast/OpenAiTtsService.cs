@@ -27,6 +27,9 @@ internal sealed class OpenAiTtsService : ITtsService
     private const double WordsPerMinute = 150.0;
     private const double AverageCharsPerWord = 5.0;
 
+    private const string QuotaExhaustedMessage =
+        "OpenAI quota exhausted (HTTP 429 insufficient_quota) \u2014 check billing and add credits at platform.openai.com/billing.";
+
     private readonly OpenAiTtsConfiguration _config;
     private readonly IUserSettingsStore? _settingsStore;
     private readonly ILogger<OpenAiTtsService> _logger;
@@ -50,6 +53,14 @@ internal sealed class OpenAiTtsService : ITtsService
             return !string.IsNullOrWhiteSpace(key);
         }
     }
+
+    /// <summary>
+    /// Test seam (workspace-y3eg7): lets a test point the real SDK <see cref="AudioClient"/> at a
+    /// loopback fake server (<see cref="OpenAIClientOptions.Endpoint"/>) and shorten its
+    /// NetworkTimeout / retry policy, so the retry loop is exercised end to end without OpenAI.
+    /// Null in production.
+    /// </summary>
+    internal Action<OpenAIClientOptions>? ConfigureClientOptions { get; init; }
 
     public TtsCostEstimate EstimateCost(string text)
     {
@@ -146,7 +157,7 @@ internal sealed class OpenAiTtsService : ITtsService
             if (!chunkResult.Success || chunkResult.AudioData is null)
             {
                 var errorMessage = chunkResult.ErrorMessage ?? $"Chunk {i + 1}/{chunks.Count} failed without an error message.";
-                return TtsGenerationResult.Failure(errorMessage, totalCharsProcessed, i);
+                return TtsGenerationResult.Failure(errorMessage, totalCharsProcessed, i, isFatal: chunkResult.IsFatal);
             }
 
             allAudioSegments.Add(chunkResult.AudioData);
@@ -359,6 +370,19 @@ internal sealed class OpenAiTtsService : ITtsService
                 var result = await audioClient.GenerateSpeechAsync(chunk, voice, options, cancellationToken).ConfigureAwait(false);
                 return ChunkGenerationResult.Ok(result.Value.ToArray());
             }
+            catch (ClientResultException ex) when (IsInsufficientQuota(ex))
+            {
+                // workspace-y3eg7: OpenAI's permanent "billing exhausted" 429. Backing off cannot
+                // help, so fail on the first attempt (no MaxRetries sleeps) and flag it fatal so
+                // the orchestrator stops the run instead of repeating the doomed request for
+                // every remaining chunk and article.
+                _logger.LogError(
+                    ex,
+                    "Chunk {ChunkNumber}/{TotalChunks} failed: OpenAI quota exhausted (HTTP 429 insufficient_quota)",
+                    chunkNumber,
+                    totalChunks);
+                return ChunkGenerationResult.Fail(QuotaExhaustedMessage, isFatal: true);
+            }
             catch (ClientResultException ex) when (ex.Status == 429 || ex.Status >= 500)
             {
                 if (attempt == _config.MaxRetries)
@@ -400,7 +424,8 @@ internal sealed class OpenAiTtsService : ITtsService
                     totalChunks,
                     ex.Status);
                 return ChunkGenerationResult.Fail(
-                    $"Authentication failed for chunk {chunkNumber}/{totalChunks} \u2014 check your API key.");
+                    $"Authentication failed for chunk {chunkNumber}/{totalChunks} \u2014 check your API key.",
+                    isFatal: true);
             }
             catch (ClientResultException ex) when (ex.Status == 400)
             {
@@ -412,7 +437,14 @@ internal sealed class OpenAiTtsService : ITtsService
                 return ChunkGenerationResult.Fail(
                     $"Bad request for chunk {chunkNumber}/{totalChunks}: {ex.Message}");
             }
-            catch (Exception ex) when (IsSdkTransportFailure(ex))
+            catch (AggregateException) when (cancellationToken.IsCancellationRequested)
+            {
+                // A real cancel that the SDK wrapped in its "Retry failed" aggregate: propagate it
+                // as a cancellation rather than letting the generic arm turn it into a failure.
+                cancellationToken.ThrowIfCancellationRequested();
+                throw;
+            }
+            catch (Exception ex) when (IsSdkTransportFailure(ex, cancellationToken))
             {
                 // workspace-roab: transport-layer transients (DNS lookup
                 // failed, connection refused, TLS handshake error). The SDK
@@ -425,6 +457,12 @@ internal sealed class OpenAiTtsService : ITtsService
                 // generic no-retry handler. Retry with the same backoff as 429/5xx, surface
                 // "Network issue" copy via onRetry(0) so the user sees
                 // connectivity-specific messaging instead of frozen.
+                //
+                // workspace-y3eg7: this arm also catches the SDK's own NetworkTimeout, which
+                // System.ClientModel surfaces as a TaskCanceledException while OUR token is NOT
+                // cancelled. That is a transient transport failure (retry), not a user cancel —
+                // IsSdkTransportFailure only claims it when the caller's token is still live.
+                var failure = ex is OperationCanceledException ? "request timed out" : ex.Message;
                 if (attempt == _config.MaxRetries)
                 {
                     _logger.LogError(
@@ -433,9 +471,9 @@ internal sealed class OpenAiTtsService : ITtsService
                         chunkNumber,
                         totalChunks,
                         attempt + 1,
-                        ex.Message);
+                        failure);
                     return ChunkGenerationResult.Fail(
-                        $"Network error generating chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries: {ex.Message}");
+                        $"Network error generating chunk {chunkNumber}/{totalChunks} after {_config.MaxRetries} retries: {failure}");
                 }
 
                 var delayMs = _config.RetryBaseDelayMs * (int)Math.Pow(2, attempt);
@@ -444,7 +482,7 @@ internal sealed class OpenAiTtsService : ITtsService
                     chunkNumber,
                     totalChunks,
                     attempt + 1,
-                    ex.Message,
+                    failure,
                     delayMs);
 
                 onRetry?.Invoke(attempt + 1, delayMs, 0);
@@ -474,17 +512,55 @@ internal sealed class OpenAiTtsService : ITtsService
     /// <see cref="HttpRequestException"/> and rethrows <see cref="ClientResultException"/> with
     /// Status 0, and its internal retry policy throws <see cref="AggregateException"/> on
     /// exhaustion ("Retry failed after N tries"). The bare HttpRequestException arm is kept as
-    /// a defensive net only. Cancellation inside an aggregate is NOT retryable.
+    /// a defensive net only. Its pipeline NetworkTimeout surfaces as a
+    /// <see cref="TaskCanceledException"/> (an <see cref="OperationCanceledException"/>), possibly
+    /// inside that aggregate. Cancellation is only ever the caller's: any
+    /// <see cref="OperationCanceledException"/> (bare or aggregated) is retryable exactly when
+    /// <paramref name="cancellationToken"/> has NOT been cancelled (workspace-y3eg7).
     /// </summary>
-#pragma warning disable SA1204 // static helper kept adjacent to its sole caller (GenerateChunkWithRetryAsync)
-    private static bool IsSdkTransportFailure(Exception ex) => ex switch
+#pragma warning disable SA1202, SA1204 // static helpers kept adjacent to their sole caller (GenerateChunkWithRetryAsync); internal for unit tests
+    internal static bool IsSdkTransportFailure(Exception ex, CancellationToken cancellationToken) => ex switch
     {
         ClientResultException { Status: 0 } => true,
         HttpRequestException { StatusCode: null } => true,
-        AggregateException agg => !agg.Flatten().InnerExceptions.Any(e => e is OperationCanceledException),
+        OperationCanceledException => !cancellationToken.IsCancellationRequested,
+        AggregateException => !cancellationToken.IsCancellationRequested,
         _ => false,
     };
-#pragma warning restore SA1204
+
+    /// <summary>
+    /// True for OpenAI's permanent "insufficient_quota" 429 (billing exhausted / hard limit
+    /// reached), as opposed to a transient rate-limit 429. Checks the exception text and the raw
+    /// response body for the error code, so it holds whichever the SDK version surfaces.
+    /// </summary>
+    internal static bool IsInsufficientQuota(ClientResultException ex)
+    {
+        if (ex.Status != 429)
+        {
+            return false;
+        }
+
+        return ContainsQuotaMarker(ex.Message) || ContainsQuotaMarker(TryReadBody(ex));
+
+        static bool ContainsQuotaMarker(string? text) =>
+            text is not null
+            && (text.Contains("insufficient_quota", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("billing_hard_limit_reached", StringComparison.OrdinalIgnoreCase)
+                || text.Contains("exceeded your current quota", StringComparison.OrdinalIgnoreCase));
+
+        static string? TryReadBody(ClientResultException e)
+        {
+            try
+            {
+                return e.GetRawResponse()?.Content?.ToString();
+            }
+            catch (Exception)
+            {
+                return null;
+            }
+        }
+    }
+#pragma warning restore SA1202, SA1204
 
     private AudioClient CreateAudioClient()
     {
@@ -494,7 +570,9 @@ internal sealed class OpenAiTtsService : ITtsService
             throw new InvalidOperationException("OpenAI TTS API key is not configured.");
         }
 
-        return new AudioClient(GetEffectiveModel(), new ApiKeyCredential(apiKey));
+        var clientOptions = new OpenAIClientOptions();
+        ConfigureClientOptions?.Invoke(clientOptions);
+        return new AudioClient(GetEffectiveModel(), new ApiKeyCredential(apiKey), clientOptions);
     }
 
 #pragma warning disable SA1202 // ordering — internal test helpers placed near the private callees they wrap
@@ -672,10 +750,10 @@ internal sealed class OpenAiTtsService : ITtsService
         };
     }
 
-    private readonly record struct ChunkGenerationResult(bool Success, byte[]? AudioData, string? ErrorMessage)
+    private readonly record struct ChunkGenerationResult(bool Success, byte[]? AudioData, string? ErrorMessage, bool IsFatal = false)
     {
         public static ChunkGenerationResult Ok(byte[] audioData) => new(true, audioData, null);
 
-        public static ChunkGenerationResult Fail(string errorMessage) => new(false, null, errorMessage);
+        public static ChunkGenerationResult Fail(string errorMessage, bool isFatal = false) => new(false, null, errorMessage, isFatal);
     }
 }

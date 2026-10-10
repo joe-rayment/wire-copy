@@ -699,6 +699,96 @@ public class PodcastOrchestratorTests : IDisposable
         result.FailedArticleDetails[0].Reason.Should().Contain("Quota exceeded");
     }
 
+    // Guards:   a FATAL TTS failure (exhausted billing quota / bad API key) stops the whole run on the first
+    //           article instead of repeating the doomed request for every remaining article, and no partial
+    //           episode is published.
+    // Fails if: the orchestrator's TTS loop goes back to "record the failure and continue" for fatal results
+    //           (the service would then be called 3 times and the run would fail with "All articles failed").
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~FatalTtsFailure_StopsRunAfterFirstArticle"
+    [Fact]
+    public async Task GeneratePodcastAsync_FatalTtsFailure_StopsRunAfterFirstArticle()
+    {
+        var url1 = "https://example.com/a1";
+        var url2 = "https://example.com/a2";
+        var url3 = "https://example.com/a3";
+
+        SetupArticleCacheHits(
+            (url1, CreateExtractedArticle(url1, "Article One")),
+            (url2, CreateExtractedArticle(url2, "Article Two")),
+            (url3, CreateExtractedArticle(url3, "Article Three")));
+        SetupCacheAnalysis(cached: 0, uncached: 3, cost: 0.15m);
+        SetupTtsAudioCacheMiss();
+
+        _ttsService.GenerateAudioAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<IProgress<TtsProgress>>(),
+                Arg.Any<CancellationToken>())
+            .Returns(TtsGenerationResult.Failure("OpenAI quota exhausted \u2014 check billing.", isFatal: true));
+
+        SetupTtsAudioCachePut();
+        SetupAssemblySuccess();
+        SetupPublishSuccess();
+
+        var result = await _sut.GeneratePodcastAsync(CreateCollection(url1, url2, url3));
+
+        await _ttsService.Received(1).GenerateAudioAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<IProgress<TtsProgress>>(),
+            Arg.Any<CancellationToken>());
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("quota exhausted");
+        await _audioAssembler.DidNotReceive().AssembleAsync(
+            Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>());
+    }
+
+    // Guards:   the TTS audio cache is best-effort: if saving to it fails (disk full, permissions, index error)
+    //           the already-paid-for audio is still used and the podcast is still built from it.
+    // Fails if: _audioCache.PutAsync is awaited unguarded again (the IOException then fails the whole run), or the
+    //           fallback hands the assembler a path that does not hold the generated audio.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~AudioCacheWriteFails_StillSucceeds"
+    [Fact]
+    public async Task GeneratePodcastAsync_AudioCacheWriteFails_StillSucceedsWithInMemoryAudio()
+    {
+        var url = "https://example.com/cache-write-fails";
+        SetupArticleCacheHits((url, CreateExtractedArticle(url, "Paid Article")));
+        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
+        SetupTtsAudioCacheMiss();
+
+        byte[] paidAudio = [9, 8, 7, 6, 5];
+        SetupTtsGeneration(audioData: paidAudio);
+
+        _audioCache.PutAsync(
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<string>(),
+                Arg.Any<byte[]>(),
+                Arg.Any<CancellationToken>())
+            .Returns<TtsAudioCacheEntry>(_ => throw new IOException("No space left on device"));
+
+        // Capture what the assembler is handed, WHILE the run's temp files still exist.
+        byte[]? assembledBytes = null;
+        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var segment = ci.Arg<AssemblyRequest>().Segments.Single();
+                assembledBytes = File.Exists(segment.AudioFilePath) ? File.ReadAllBytes(segment.AudioFilePath) : null;
+                return AssemblyResult.Successful(
+                    Path.Combine(_tempDir, "output.m4b"),
+                    TimeSpan.FromMinutes(10),
+                    1024 * 1024,
+                    new List<AudioChapterMarker> { new() { Title = "Chapter 1", StartTime = TimeSpan.Zero } });
+            });
+        SetupPublishSuccess();
+
+        var result = await _sut.GeneratePodcastAsync(CreateCollection(url));
+
+        result.Success.Should().BeTrue(result.ErrorMessage);
+        result.ArticlesProcessed.Should().Be(1);
+        assembledBytes.Should().Equal(paidAudio, "the assembler must receive the in-memory audio the cache failed to store");
+    }
+
     [Fact]
     public async Task GeneratePodcastAsync_TtsReturnsNullAudioData_TreatsAsFailure()
     {
