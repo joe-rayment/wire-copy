@@ -46,8 +46,12 @@
 'use strict'
 
 const $ = id => document.getElementById(id)
-const esc = s => String(s == null ? '' : s)
-  .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+// HTML-escape for every page-sourced value interpolated into an innerHTML template
+// (titles, URLs, hints come from arbitrary web pages): the five significant characters,
+// quotes included so a value is also safe inside a "double" or 'single'-quoted attribute.
+// null/undefined render as ''.
+const ESC_MAP = { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }
+const esc = s => String(s == null ? '' : s).replace(/[&<>"']/g, c => ESC_MAP[c])
 
 let lastMsg = null
 

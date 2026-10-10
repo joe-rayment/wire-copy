@@ -29,9 +29,17 @@ const FPORT = 8163
 const AUTHOR = 'Ada Lovelace'
 const WORDS = ['one', 'two', 'three', 'four', 'five', 'six', 'seven', 'eight', 'nine']
 const ARCH = ['alpha', 'beta', 'gamma', 'delta', 'epsilon', 'zeta']
-const story = (i, w) =>
-  `<li><a href="/a${i}.html">Dispatch ${w}: a headline sized for the responsive grid gate number ${i}</a>` +
+// workspace-as7r4: ONE story of the main list carries HTML-significant characters in its
+// anchor text. HTML_TITLE is the page SOURCE; the page's visible link text (what the TUI
+// extracts and hands to the pane) is the literal below. The pane must paint that literal
+// as TEXT — not swallow the `<b>…</b>` as markup or lose the `&`.
+const SPECIAL_I = 2
+const HTML_TITLE = 'R&amp;D &lt;b&gt;bold&lt;/b&gt; a&lt;b'
+const TITLE_LITERAL = 'R&D <b>bold</b> a<b'
+const story = (i, w, lead = '') =>
+  `<li><a href="/a${i}.html">Dispatch ${w}: ${lead}a headline sized for the responsive grid gate number ${i}</a>` +
   ` <span class="byline">${AUTHOR}</span> <time datetime="2026-07-19T08:00:00Z">Jul 19</time></li>`
+const mainStory = (w, i) => story(i + 1, w, i + 1 === SPECIAL_I ? `${HTML_TITLE} ` : '')
 const fixture = http.createServer((req, res) => {
   res.setHeader('content-type', 'text/html; charset=utf-8')
   if (/^\/a\d+\.html/.test(req.url)) {
@@ -48,7 +56,7 @@ const fixture = http.createServer((req, res) => {
   }
   res.end(`<!doctype html><meta charset="utf-8"><title>Column Wire</title><body>
 <h1>Column Wire</h1>
-<section><h2>Dispatches</h2><ul>${WORDS.map((w, i) => story(i + 1, w)).join('\n')}</ul></section>
+<section><h2>Dispatches</h2><ul>${WORDS.map((w, i) => mainStory(w, i)).join('\n')}</ul></section>
 <section><h2>Archive</h2><ul>${ARCH.map((w, i) => story(i + 10, w)).join('\n')}</ul></section>`)
 })
 await new Promise(r => fixture.listen(FPORT, '127.0.0.1', r))
@@ -121,6 +129,27 @@ const HDR_JS = `(function(){
     docked:(document.querySelector('#footer-right .docked')||{}).textContent||''};
 })()`
 const STATE_JS = `JSON.stringify(window.__linkTreeState())`
+// H0 probe: the rendered .card-title of the escape-fixture story, read back as text.
+const TITLE_JS = `(function(){
+  const L=${JSON.stringify(TITLE_LITERAL)};
+  const els=[...document.querySelectorAll('#grid .card-title')];
+  const el=els.find(e=>e.textContent.includes(L));
+  return {total:els.length, found:!!el, text:el?el.textContent:'',
+    bTags:el?el.querySelectorAll('b').length:-1, kids:el?[...el.children].map(c=>c.tagName):[]};
+})()`
+// H1 probe: render a hostile linkType through the pane's own __renderLinkTree, read the
+// resulting .card-title's attributes, then put the live message straight back.
+const ATTR_JS = `(function(){
+  const orig=window.__linkTreeState();
+  const hostile={state:Object.assign({},orig.state,{selectedIndex:0,
+    items:[{kind:'story',title:'x',linkType:'x" data-pwn="1" onmouseover="alert(1)',meta:null}]})};
+  window.__renderLinkTree(hostile);
+  const t=document.querySelector('#grid .card-title');
+  const r={painted:!!t, attrs:t?[...t.attributes].map(a=>a.name):[], cls:t?t.className:''};
+  window.__renderLinkTree(orig);
+  r.restored=window.__linkTreeState()===orig && document.querySelectorAll('#grid .card').length===orig.state.items.filter(i=>i.kind!=='section').length;
+  return r;
+})()`
 // The pager marks as the user READS them — the rendered strings, not the pushed
 // numbers behind them (workspace-u4p2z).
 const PAGER_JS = `(function(){
@@ -207,6 +236,24 @@ try {
     `heights=${[...new Set(gD2.cards.map(c => c.h))]} bounds=${CARD_MIN}-${CARD_MAX} sel=${selD}`)
   check('A8 story meta line renders the real author', gD2.cards.length > 0 && gD2.cards[0].meta.includes(AUTHOR),
     `meta="${gD2.cards[0] && gD2.cards[0].meta}"`)
+  // workspace-as7r4: page-sourced text is DATA. The fixture story whose anchor reads
+  // `R&D <b>bold</b> a<b` must be painted by the real pane as that literal text — the
+  // `<b>` shown as characters, not parsed into a bold element, and the `&` intact.
+  const rt = await lt.eval(TITLE_JS)
+  const rcv = JSON.parse(await lt.eval(STATE_JS)).state.items.find(it => (it.title || '').includes('Dispatch two:'))
+  check('H0 the story whose anchor holds `R&D <b>bold</b> a<b` renders that exact literal as TEXT, with no <b> element',
+    rt.found && rt.bTags === 0 && rt.text.includes(TITLE_LITERAL),
+    `found=${rt.found} <b>=${rt.bTags} children=[${rt.kids}] painted="${rt.text}" · pane received title="${rcv && rcv.title}"`)
+  // The attribute-context half: `linkType` is interpolated into a class="…" attribute,
+  // where only quote escaping stops a value breaking out into new attributes. Push a
+  // hostile one through the pane's real renderer (then restore the live state in the same
+  // synchronous eval — no TUI push can land between) and read the attributes it produced.
+  const ra = await lt.eval(ATTR_JS)
+  check('H1 a quote-bearing value cannot break out of the card-title class="…" attribute into new attributes',
+    ra.painted && ra.attrs.length === 1 && ra.attrs[0] === 'class' && ra.restored,
+    `attrs=[${ra.attrs}] class="${ra.cls}" restored=${ra.restored}`)
+  await sleep(300)
+  env.shot('ltree-a-escaped')
   // The whole point of this import: the design's palette, on the real pane.
   const unsel = gD2.cards.find(c => !c.sel)
   check('A9 palette per Link Tree.dc.html — headline phosphor, byline title-pink, date tail muted',
