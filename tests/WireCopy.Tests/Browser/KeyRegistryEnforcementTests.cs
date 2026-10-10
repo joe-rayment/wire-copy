@@ -122,6 +122,32 @@ public class KeyRegistryEnforcementTests
         }
     }
 
+    // Guards:   the ':help' command-line reference never advertises a key chord that is
+    //           dead, e.g. the stale "(Ctrl+L)" left on ':layout' after the chord became "g l".
+    // Fails if: a description in GetCommandLineBindings() names "(Ctrl+X)" / "(Shift+X)" /
+    //           "(g x)" that dispatches to NoOp, or ':layout' stops naming KeyFor(ChooseLayout).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~CommandLineReference_AdvertisedKeyChords"
+    [Fact]
+    public void CommandLineReference_AdvertisedKeyChords_ResolveToNonNoOp()
+    {
+        var chord = new System.Text.RegularExpressions.Regex(@"\(((?:Ctrl|Shift)\+\w|g \w)\)");
+        var bindings = KeybindingPopup.GetCommandLineBindings();
+
+        foreach (var (verb, description) in bindings)
+        {
+            foreach (System.Text.RegularExpressions.Match m in chord.Matches(description))
+            {
+                Resolve(m.Groups[1].Value).Should().NotBe(
+                    CommandType.NoOp,
+                    $"':help' row '{verb}' advertises '{m.Groups[1].Value}' in \"{description}\"; it must dispatch");
+            }
+        }
+
+        bindings.Single(b => b.Key == ":layout").Description.Should().Contain(
+            KeyRegistry.KeyFor(CommandType.ChooseLayout),
+            "':layout' must name the registry's chord for ChooseLayout, not a hard-coded literal");
+    }
+
     // ---- Enumerate every hint tier, including the state-sensitive ones ----
 
     private static IEnumerable<(string Key, string Action)[]> AllHintTiers(ViewMode mode)

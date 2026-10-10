@@ -81,7 +81,7 @@ Rules:
 
 Everything that talks to the outside world.
 
-- `Browser/` — Patchright (patched Playwright) automation, navigation, page caching, the Helix-style input router, and the Terminal.Gui shell under `Browser/UI/`.
+- `Browser/` — Patchright (patched Playwright) automation, navigation, page caching, the Helix-style input router, and the custom ANSI terminal renderer and input handling under `Browser/UI/` (hosted in the Electron desktop shell under `shell/`; no TUI framework).
 - `Podcast/` — `OpenAiTtsService`, `M4bAudioAssembler` (FFmpeg), `PodcastFeedGenerator`, `GcsStorageClient` for optional cloud publishing.
 - `Configuration/` — strongly typed options classes (`OpenAiTtsConfiguration`, `AnthropicConfiguration`, `BrowserConfiguration`, `PodcastConfiguration`, `GcsConfiguration`) and corresponding `IValidateOptions<T>` validators.
 

@@ -168,7 +168,7 @@ internal static class KeybindingPopup
             (":cred", "site login credentials"),
             (":cookies", "cookie import / status"),
             (":cache [info|clear]", "page cache stats / clear"),
-            (":layout", "site layout chooser (Ctrl+L)"),
+            (":layout", $"site layout chooser ({KeyFor(CommandType.ChooseLayout)})"),
             (":reanalyze", "fresh AI layout analysis"),
             (":dump", "dump raw HTML to fixtures/"),
             (":logs", "view recent logs (scroll · f level · / search · c copy · e export)"),

@@ -40,7 +40,6 @@
     <PackageReference Include="Serilog.Sinks.Console" Version="6.1.1" />
     <PackageReference Include="Serilog.Sinks.File" Version="7.0.0" />
     <PackageReference Include="System.ServiceModel.Syndication" Version="10.0.7" />
-    <PackageReference Include="Terminal.Gui" Version="2.2.2" />
     <PackageReference Include="z440.atl.core" Version="6.8.0" />
     <PackageReference Include="SonarAnalyzer.CSharp" Version="10.20.0.135146">
       <PrivateAssets>all</PrivateAssets>

@@ -18,26 +18,27 @@ You do **not** need a system-wide .NET install. The `./dotnet` wrapper at the re
 ```bash
 git clone https://github.com/joe-rayment/wire-copy.git
 cd wire-copy
-./dotnet restore
-./dotnet build
-./dotnet run --project src/WireCopy.API
+./run
 ```
 
-The first `./dotnet` call downloads the .NET 10 SDK. Subsequent calls reuse it. The first app run launches the bookmark grid. Press `?` from any screen for a help overlay.
+`./run` builds the app (Release), installs the Electron desktop shell on first run (a one-time `npm install` that downloads Electron), and launches it. It needs **Node.js** on your PATH. On Linux with no display it starts a virtual display (Xvfb, via `xvfb-run`; install the `xvfb` package) automatically, so the browser stays headful, never headless. Running `./dotnet run --project src/WireCopy.API` directly is refused: the interactive app only runs inside the shell.
+
+The first `./dotnet` call (made by `./run`) downloads the .NET 10 SDK. Subsequent calls reuse it. The first app run launches the bookmark grid. Press `?` from any screen for a help overlay.
 
 > **Prefer plain `dotnet`?** Add the repo root to your PATH: `export PATH="$PWD:$PATH"`. The wrapper still forwards to the vendored SDK so you don't pick up a stale system install.
 
 ## CLI
 
 ```bash
-# Default — open the launcher
-./dotnet run --project src/WireCopy.API
+# Default — open the launcher in the desktop shell
+./run
 
-# Open a specific URL directly
-./dotnet run --project src/WireCopy.API -- browse https://news.ycombinator.com
+# Unattended verbs (no shell, no TUI)
+./run run-recipe <name>
+./run resolve-section <args>
 ```
 
-The single `browse` verb takes an optional URL argument. All other navigation happens inside the TUI.
+`./run` takes no other arguments. All interactive navigation (including opening a URL) happens inside the app.
 
 ## Credentials
 

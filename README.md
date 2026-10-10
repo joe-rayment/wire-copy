@@ -32,9 +32,10 @@ For the technically curious: a .NET 10 terminal browser with Helix-style keybind
 ```bash
 git clone https://github.com/joe-rayment/wire-copy.git
 cd wire-copy
-./dotnet build
-./dotnet run --project src/WireCopy.API
+./run
 ```
+
+`./run` is the one way to launch the app: it builds the .NET app (Release), installs the Electron desktop shell on first run (a one-time `npm install` that downloads Electron), and opens the shell window. It needs **Node.js** on your PATH. On Linux with no display it starts a virtual display (Xvfb, via `xvfb-run`) automatically; the browser is always headful, never headless. Running `./dotnet run --project src/WireCopy.API` directly is refused with "WireCopy is a desktop app — launch it with ./run".
 
 The `./dotnet` wrapper bootstraps a workspace-local .NET 10 SDK into `./.dotnet/` on first use — no system-wide dotnet install required. If you'd rather type `dotnet` than `./dotnet`, add the repo root to your PATH: `export PATH="$PWD:$PATH"`.
 
@@ -247,7 +248,7 @@ tests/
 shell/                          # Electron single-window desktop shell (see shell/README.md)
 ├── launcher/ · linktree/       # Display-only HTML panes projecting pushed TUI state
 └── gates/                      # Headful end-to-end gates (Xvfb + xdotool, never headless)
-scripts/                        # Test runner + live end-to-end gates (tmux-driven)
+scripts/                        # Test runner + legacy tmux-driven live gates (see Development)
 docs/                           # Setup, testing, architecture, cookie encryption, design
 ```
 
@@ -269,7 +270,9 @@ docs/                           # Setup, testing, architecture, cookie encryptio
 ./dotnet format
 ```
 
-Live end-to-end gates (real sites, real terminal via tmux) live in `scripts/` — e.g. `test_6yb7_techmeme_live.py` walks the AI setup wizard against techmeme.com and `test_vkhr_detach_restore.py` exercises the background-podcast round trip. They require a built Release binary, tmux, and (for AI flows) an OpenAI key.
+Live end-to-end gates drive the real desktop shell headfully (Xvfb + xdotool, never headless) and live in `shell/gates/*.mjs`; run one with `cd shell && node gates/<gate>.mjs` (each gate's header says what it asserts; see [shell/README.md](shell/README.md)).
+
+The older tmux-driven gates in `scripts/` (e.g. `test_6yb7_techmeme_live.py`, `test_vkhr_detach_restore.py`) are **legacy**: they run the TUI directly in a tmux pane, outside the shell, which the app now refuses to start in, so they no longer work as-is. They are kept for reference.
 
 See [CONTRIBUTING.md](CONTRIBUTING.md) for development conventions.
 
@@ -298,7 +301,7 @@ Please use [GitHub Issues](../../issues) to report bugs or request features.
 - **Entity Framework Core 10** + **SQLite** for local persistence
 - **ASP.NET DataProtection** for cookie / credential encryption at rest
 - **Google.Cloud.Storage** for optional podcast feed publishing
-- **Terminal.Gui 2.2** for the terminal UI shell
+- **Custom ANSI terminal renderer** (`Browser/UI/`) for the reader UI, hosted in an **Electron** desktop shell (`shell/`, xterm.js)
 - **Serilog** for structured logging
 
 ## License
