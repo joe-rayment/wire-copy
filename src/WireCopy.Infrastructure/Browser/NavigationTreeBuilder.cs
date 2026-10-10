@@ -461,6 +461,46 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
     }
 #pragma warning restore SA1204
 
+    /// <summary>
+    /// workspace-dhddt: the one place the saved durable exclusion rules
+    /// (<see cref="SiteHierarchyConfig.ExcludeSelectors"/>,
+    /// <see cref="SiteHierarchyConfig.ExcludeUrlPatterns"/>,
+    /// <see cref="SiteHierarchyConfig.ExcludeSectionTitles"/>) are applied to a
+    /// link list, so the flat DocumentOrder branch (workspace-t1ok.2), the sectioned
+    /// branch and its stale-layout fallback cannot disagree. The rules pass through
+    /// <see cref="GuardExcludeRules"/> first (workspace-9k27.1), so a rule that
+    /// broadened past the save-time snapshot is skipped rather than nuking the page.
+    /// Only Content links are ever dropped; chrome links pass through untouched.
+    /// </summary>
+    private List<LinkInfo> ApplyDurableExclusions(List<LinkInfo> links, SiteHierarchyConfig config, string path)
+    {
+        if (config.ExcludeSelectors.Count == 0
+            && config.ExcludeUrlPatterns.Count == 0
+            && config.ExcludeSectionTitles.Count == 0)
+        {
+            return links;
+        }
+
+        var content = links.Where(l => l.Type == LinkType.Content).ToList();
+        var guarded = GuardExcludeRules(config, content, _logger);
+        var kept = links
+            .Where(l => l.Type != LinkType.Content || !IsExcluded(l, guarded))
+            .ToList();
+        var excludedCount = links.Count - kept.Count;
+        if (excludedCount > 0)
+        {
+            _logger.LogInformation(
+                "{Path}: excluded {Count} content link(s) via durable rules ({Selectors} selectors, {UrlPatterns} url-patterns, {SectionTitles} section-titles)",
+                path,
+                excludedCount,
+                guarded.ExcludeSelectors.Count,
+                guarded.ExcludeUrlPatterns.Count,
+                guarded.ExcludeSectionTitles.Count);
+        }
+
+        return kept;
+    }
+
     private NavigationTree BuildWithHierarchyConfig(List<LinkInfo> links, SiteHierarchyConfig hierarchyConfig)
     {
         // workspace-t1ok.2: a saved FLAT DocumentOrder config (Sections empty) is an
@@ -472,24 +512,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         // the exclusion rules applied and no stale flag.
         if (hierarchyConfig.Sections.Count == 0 && hierarchyConfig.Kind == LayoutKind.DocumentOrder)
         {
-            var flatLinks = links;
-            if (hierarchyConfig.ExcludeSelectors.Count > 0
-                || hierarchyConfig.ExcludeUrlPatterns.Count > 0
-                || hierarchyConfig.ExcludeSectionTitles.Count > 0)
-            {
-                var flatContent = links.Where(l => l.Type == LinkType.Content).ToList();
-                var guardedFlat = GuardExcludeRules(hierarchyConfig, flatContent, _logger);
-                flatLinks = links
-                    .Where(l => l.Type != LinkType.Content || !IsExcluded(l, guardedFlat))
-                    .ToList();
-                var flatExcluded = links.Count - flatLinks.Count;
-                if (flatExcluded > 0)
-                {
-                    _logger.LogInformation(
-                        "Flat DocumentOrder config: excluded {Count} link(s) via durable rules (workspace-t1ok.2)",
-                        flatExcluded);
-                }
-            }
+            var flatLinks = ApplyDurableExclusions(links, hierarchyConfig, "Flat DocumentOrder config");
 
             // workspace-t1ok.3: menu-labeled content links belong under the More
             // menu on the flat path too — retyping them to Navigation files them
@@ -510,42 +533,19 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         var matchedLinks = new HashSet<int>();
         var orderedSections = hierarchyConfig.Sections.OrderBy(s => s.SortOrder).ToList();
 
-        var allContentLinks = links.Where(l => l.Type == LinkType.Content).ToList();
-        if (allContentLinks.Count > MaxContentLinks)
-        {
-            _logger.LogInformation(
-                "Capped content links from {Total} to {Max} (AI hierarchy)",
-                allContentLinks.Count,
-                MaxContentLinks);
-        }
-
-        var contentLinks = allContentLinks.Count > MaxContentLinks
-            ? allContentLinks.Take(MaxContentLinks).ToList()
-            : allContentLinks;
-        var nonContentLinks = links.Where(l => l.Type != LinkType.Content).ToList();
-
         // workspace-5oe9.1: apply durable exclusion rules BEFORE tiering so
-        // ads/promos identified by selector/url-pattern are dropped on every
-        // visit (not just the snapshot the AI was run on). Uses the same
+        // ads/promos identified by selector/url-pattern/section-title are dropped
+        // on every visit (not just the snapshot the AI was run on). Uses the same
         // Contains semantics as MatchesSection.
-        // workspace-9k27.1: re-run the proportional over-exclusion guard on
+        // workspace-9k27.1: the proportional over-exclusion guard re-runs on
         // EVERY visit, not just at save time — a selector that was surgical on
         // the save-time snapshot can broaden on a redesign and nuke the page.
-        if (hierarchyConfig.ExcludeSelectors.Count > 0 || hierarchyConfig.ExcludeUrlPatterns.Count > 0)
-        {
-            var guarded = GuardExcludeRules(hierarchyConfig, contentLinks, _logger);
-            var beforeExclude = contentLinks.Count;
-            contentLinks = contentLinks.Where(l => !IsExcluded(l, guarded)).ToList();
-            var excludedCount = beforeExclude - contentLinks.Count;
-            if (excludedCount > 0)
-            {
-                _logger.LogInformation(
-                    "Excluded {Count} content link(s) via durable rules ({Selectors} selectors, {UrlPatterns} url-patterns)",
-                    excludedCount,
-                    guarded.ExcludeSelectors.Count,
-                    guarded.ExcludeUrlPatterns.Count);
-            }
-        }
+        // workspace-dhddt: this runs over ALL content links, BEFORE the
+        // MaxContentLinks cap — capping first let excluded links in the first 100
+        // eat cap slots, so real stories past #100 never appeared.
+        var eligibleLinks = ApplyDurableExclusions(links, hierarchyConfig, "AI hierarchy");
+        var allContentLinks = eligibleLinks.Where(l => l.Type == LinkType.Content).ToList();
+        var nonContentLinks = eligibleLinks.Where(l => l.Type != LinkType.Content).ToList();
 
         // workspace-t1ok.3: menu-labeled content links leave the section pool
         // BEFORE greedy assignment (a broad river selector must not claim them
@@ -553,6 +553,7 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
         // stale-coverage floor below is computed over the remaining pool, so a
         // menu-heavy page doesn't read as stale.
         var moreContent = new List<LinkInfo>();
+        var contentLinks = allContentLinks;
         if (hierarchyConfig.MoreSelectors.Count > 0 || hierarchyConfig.MoreUrlPatterns.Count > 0)
         {
             moreContent = contentLinks.Where(l => MatchesMore(l, hierarchyConfig)).ToList();
@@ -563,6 +564,17 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                     "Routed {Count} content link(s) to the More menu via durable rules (workspace-t1ok.3)",
                     moreContent.Count);
             }
+        }
+
+        // workspace-dhddt: cap LAST, over the links that will actually be
+        // sectioned (excluded and More-routed links no longer spend slots).
+        if (contentLinks.Count > MaxContentLinks)
+        {
+            _logger.LogInformation(
+                "Capped content links from {Total} to {Max} (AI hierarchy)",
+                contentLinks.Count,
+                MaxContentLinks);
+            contentLinks = contentLinks.Take(MaxContentLinks).ToList();
         }
 
         for (var sectionIdx = 0; sectionIdx < orderedSections.Count; sectionIdx++)
@@ -656,7 +668,11 @@ public class NavigationTreeBuilder : INavigationTreeBuilder
                 matchedLinks.Count,
                 contentLinks.Count,
                 SiteHierarchyConfig.StaleCoverageFraction);
-            var fallback = BuildGroupedTree(links);
+
+            // workspace-dhddt: build from the links with the durable exclusions
+            // applied — the raw list resurrected every 'x'-dropped ad exactly when
+            // the layout was already flagged stale.
+            var fallback = BuildGroupedTree(eligibleLinks);
             fallback.HierarchyConfigStale = true;
             return fallback;
         }

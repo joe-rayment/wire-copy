@@ -420,4 +420,79 @@ public class NavigationTreeBuilderHierarchyTests
         lead.Children.Should().HaveCount(3, "the cap is lifted when the overflow would otherwise be dropped");
         nodes.Count(n => !n.IsGroupHeader).Should().Be(3, "no story is ever lost — now verified per-visit, not just at save time");
     }
+
+    [Fact]
+    public async Task BuildTreeAsync_StaleConfig_FallbackStillHonorsExcludeRules()
+    {
+        // Guards:   a link the user dropped with 'x' (saved as an exclude rule) stays hidden even
+        //           when the layout is flagged stale and the tree falls back to document order.
+        // Fails if: the stale fallback is built from the raw links, so the dropped ad reappears
+        //           exactly when the saved layout stops matching the page.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~StaleConfig_FallbackStillHonorsExcludeRules"
+        var links = Enumerable.Range(0, 20)
+            .Select(i => CreateContentLink(
+                url: $"https://example.com/story{i}",
+                text: $"Story {i}",
+                parentSelector: "div.newLayout2026 a"))
+            .ToList();
+        links.Insert(
+            5,
+            CreateContentLink(
+                url: "https://example.com/sponsored/ad1",
+                text: "Dropped Ad",
+                parentSelector: "div.newLayout2026 a"));
+
+        // Sections match nothing (old layout) -> stale; the exclude rule must still apply.
+        var config = CreateConfig(
+            new HierarchySection { Name = "Lead", SortOrder = 0, ParentSelectors = new() { "div.oldLayout a" } }) with
+        {
+            ExcludeUrlPatterns = new List<string> { "/sponsored/" },
+        };
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        tree.HierarchyConfigStale.Should().BeTrue("no saved section matched — the config is stale");
+        var texts = tree.GetAllNodes().Where(n => !n.IsGroupHeader).Select(n => n.Link.DisplayText).ToList();
+        texts.Should().NotContain("Dropped Ad", "the user's 'x'-dropped link must not be resurrected by the stale fallback");
+        texts.Should().HaveCount(20, "every real story is still shown in document order");
+    }
+
+    [Fact]
+    public async Task BuildTreeAsync_ExcludedLinksInFirst100_DoNotEatCapSlots()
+    {
+        // Guards:   the 100-link cap counts only links that survive the exclude rules, so stories
+        //           past position 100 still appear when excluded links sit in the first 100.
+        // Fails if: the cap is applied before the exclusions, so 40 excluded links in the first
+        //           100 leave only 60 stories and everything past #100 is silently lost.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExcludedLinksInFirst100_DoNotEatCapSlots"
+        var links = new List<LinkInfo>();
+        for (var i = 0; i < 130; i++)
+        {
+            // 40 of the first 100 are ads (i % 5 is 0 or 1); everything past #100 is a real story.
+            var isAd = i < 100 && i % 5 < 2;
+            links.Add(isAd
+                ? CreateContentLink(
+                    url: $"https://example.com/sponsored/ad{i}",
+                    text: $"Ad {i}",
+                    parentSelector: "main .feed a") with { ImportanceScore = 50 }
+                : CreateContentLink(
+                    url: $"https://example.com/story{i}",
+                    text: $"Story {i}",
+                    parentSelector: "main .feed a"));
+        }
+
+        var config = CreateConfig(
+            new HierarchySection { Name = "Feed", SortOrder = 0, ParentSelectors = new() { ".feed" } }) with
+        {
+            ExcludeUrlPatterns = new List<string> { "/sponsored/" },
+        };
+
+        var tree = await _builder.BuildTreeAsync(links, config);
+
+        tree.HierarchyConfigStale.Should().BeFalse();
+        var texts = tree.GetAllNodes().Where(n => !n.IsGroupHeader).Select(n => n.Link.DisplayText).ToList();
+        texts.Should().NotContain(t => t.StartsWith("Ad ", StringComparison.Ordinal), "excluded links never appear");
+        texts.Should().HaveCount(90, "130 links minus 40 excluded = 90 stories, all under the 100 cap");
+        texts.Should().Contain("Story 129", "stories past position 100 must not be lost to the cap");
+    }
 }
