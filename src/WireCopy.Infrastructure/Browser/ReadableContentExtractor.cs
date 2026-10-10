@@ -774,27 +774,12 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
                 }
 
                 using var jsonDoc = JsonDocument.Parse(json);
-                var root = jsonDoc.RootElement;
 
-                // JSON-LD can be wrapped in an array
-                if (root.ValueKind == JsonValueKind.Array)
+                // Roots may be an object, an array of nodes, or carry nodes under "@graph".
+                var name = JsonLdAuthor.Find(jsonDoc.RootElement);
+                if (name != null)
                 {
-                    foreach (var item in root.EnumerateArray())
-                    {
-                        var name = ExtractAuthorFromJsonLdElement(item);
-                        if (name != null)
-                        {
-                            return name;
-                        }
-                    }
-                }
-                else
-                {
-                    var name = ExtractAuthorFromJsonLdElement(root);
-                    if (name != null)
-                    {
-                        return name;
-                    }
+                    return name;
                 }
             }
             catch (JsonException)
@@ -804,44 +789,6 @@ public partial class ReadableContentExtractor : IReadableContentExtractor
         }
 
         return null;
-    }
-
-    private static string? ExtractAuthorFromJsonLdElement(JsonElement element)
-    {
-        if (!element.TryGetProperty("author", out var authorElement))
-        {
-            return null;
-        }
-
-        return authorElement.ValueKind switch
-        {
-            JsonValueKind.String => authorElement.GetString(),
-            JsonValueKind.Object => authorElement.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null,
-            JsonValueKind.Array => ExtractAuthorNamesFromArray(authorElement),
-            _ => null
-        };
-    }
-
-    private static string? ExtractAuthorNamesFromArray(JsonElement array)
-    {
-        var names = new List<string>();
-
-        foreach (var item in array.EnumerateArray())
-        {
-            string? name = item.ValueKind switch
-            {
-                JsonValueKind.String => item.GetString(),
-                JsonValueKind.Object => item.TryGetProperty("name", out var nameEl) ? nameEl.GetString() : null,
-                _ => null
-            };
-
-            if (!string.IsNullOrWhiteSpace(name))
-            {
-                names.Add(name);
-            }
-        }
-
-        return names.Count > 0 ? string.Join(", ", names) : null;
     }
 
     private static bool IsUrl(string text)

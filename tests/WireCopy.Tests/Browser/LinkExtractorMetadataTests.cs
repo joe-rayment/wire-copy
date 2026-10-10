@@ -370,6 +370,91 @@ public class LinkExtractorMetadataTests
         links[0].Author.Should().Be("Link Author", "per-link metadata takes precedence");
     }
 
+    // Guards:   a page whose first JSON-LD block is an ARRAY (e.g. [NewsArticle, BreadcrumbList]) must not
+    //           abort link extraction: duplicate links are still merged and no error is logged.
+    // Fails if: the page-author lookup calls TryGetProperty on the array root (InvalidOperationException
+    //           escapes to the outer catch, which returns the raw, un-deduplicated link list).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractLinksAsync_JsonLdArrayRoot_StillDedupesAndLogsNoError"
+    [Fact]
+    public async Task ExtractLinksAsync_JsonLdArrayRoot_StillDedupesAndLogsNoError()
+    {
+        var logger = Substitute.For<ILogger<LinkExtractor>>();
+        var extractor = new LinkExtractor(logger);
+
+        var html = @"<html><head>
+            <script type='application/ld+json'>
+            [{""@type"":""NewsArticle"",""author"":{""name"":""Array Author""}},
+             {""@type"":""BreadcrumbList"",""itemListElement"":[]}]
+            </script>
+        </head><body>
+            <div><a href=""https://example.com/story"">A Very Long Story Title That Exceeds Thirty Characters</a></div>
+            <div><a href=""https://example.com/story"">A Very Long Story Title That Exceeds Thirty Characters</a></div>
+        </body></html>";
+
+        var links = await extractor.ExtractLinksAsync(html, "https://example.com");
+
+        links.Count(l => l.Url == "https://example.com/story").Should().Be(1, "the same story link must be deduplicated");
+        links.Single(l => l.Url == "https://example.com/story").Author.Should().Be("Array Author");
+        logger.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == nameof(ILogger.Log) && (LogLevel)c.GetArguments()[0]! == LogLevel.Error)
+            .Should().BeEmpty("extraction must not fall into its outer catch");
+    }
+
+    // Guards:   the page-level author is found inside a top-level "@graph" (Yoast/WordPress layout) and
+    //           applied to the page's content link.
+    // Fails if: the JSON-LD walk ignores "@graph" so the byline stays empty.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractLinksAsync_JsonLdGraph_AuthorAppliedToContentLinks"
+    [Fact]
+    public async Task ExtractLinksAsync_JsonLdGraph_AuthorAppliedToContentLinks()
+    {
+        var extractor = new LinkExtractor(Substitute.For<ILogger<LinkExtractor>>());
+
+        var html = @"<html><head>
+            <script type='application/ld+json'>
+            {""@context"":""https://schema.org"",""@graph"":[
+                {""@type"":""WebSite"",""name"":""Example News""},
+                {""@type"":""Article"",""author"":{""@type"":""Person"",""name"":""Ada""}}
+            ]}
+            </script>
+        </head><body>
+            <article>
+                <a href=""https://example.com/story"">A Very Long Story Title That Exceeds Thirty Characters</a>
+            </article>
+        </body></html>";
+
+        var links = await extractor.ExtractLinksAsync(html, "https://example.com");
+
+        links.Should().ContainSingle();
+        links[0].Author.Should().Be("Ada");
+    }
+
+    // Guards:   a JSON-LD author whose "name" is an object (e.g. {"@value":"Jo"}) must not abort link
+    //           extraction: duplicates are still merged and no error is logged.
+    // Fails if: the name is read with GetString() without a kind check (throws, outer catch returns raw links).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractLinksAsync_JsonLdNameIsObject_StillDedupesAndLogsNoError"
+    [Fact]
+    public async Task ExtractLinksAsync_JsonLdNameIsObject_StillDedupesAndLogsNoError()
+    {
+        var logger = Substitute.For<ILogger<LinkExtractor>>();
+        var extractor = new LinkExtractor(logger);
+
+        var html = @"<html><head>
+            <script type='application/ld+json'>
+            {""@type"":""NewsArticle"",""author"":{""name"":{""@value"":""Jo""}}}
+            </script>
+        </head><body>
+            <div><a href=""https://example.com/story"">A Very Long Story Title That Exceeds Thirty Characters</a></div>
+            <div><a href=""https://example.com/story"">A Very Long Story Title That Exceeds Thirty Characters</a></div>
+        </body></html>";
+
+        var links = await extractor.ExtractLinksAsync(html, "https://example.com");
+
+        links.Count(l => l.Url == "https://example.com/story").Should().Be(1);
+        logger.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == nameof(ILogger.Log) && (LogLevel)c.GetArguments()[0]! == LogLevel.Error)
+            .Should().BeEmpty();
+    }
+
     #endregion
 
     [Fact]

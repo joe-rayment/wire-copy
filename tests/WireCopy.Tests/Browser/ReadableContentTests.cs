@@ -389,6 +389,58 @@ public class ReadableContentTests
         author.Should().Be("Sarah Connor");
     }
 
+    // Guards:   Yoast/WordPress put the Article (and its author) under a top-level "@graph"; the reader
+    //           byline must come from there, skipping the non-author nodes listed before it.
+    // Fails if: the JSON-LD walk only looks at the root object / array items and ignores "@graph".
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~Extractor_JsonLd_GraphArticle_ReturnsAuthorName"
+    [Fact]
+    public async Task Extractor_JsonLd_GraphArticle_ReturnsAuthorName()
+    {
+        var html = BuildArticleHtml(@"<script type='application/ld+json'>
+            {""@context"":""https://schema.org"",""@graph"":[
+                {""@type"":""WebSite"",""name"":""Example News""},
+                {""@type"":""Article"",""author"":{""@type"":""Person"",""name"":""Ada""}}
+            ]}
+        </script>");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Ada");
+    }
+
+    // Guards:   an array-root JSON-LD holding non-object items (strings, numbers, null) must not abort the
+    //           reader; the author is still found in the object item after them.
+    // Fails if: TryGetProperty is called on an array item without checking it is an object (throws
+    //           InvalidOperationException, the reader returns null).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~Extractor_JsonLd_ArrayRootWithOddItems_StillFindsAuthor"
+    [Fact]
+    public async Task Extractor_JsonLd_ArrayRootWithOddItems_StillFindsAuthor()
+    {
+        var html = BuildArticleHtml(@"<script type='application/ld+json'>
+            [""stray string"", 42, null, {""@type"":""NewsArticle"",""author"":""Grace Hopper""}]
+        </script>");
+        var author = await ExtractAuthorFromHtml(html);
+        author.Should().Be("Grace Hopper");
+    }
+
+    // Guards:   a JSON-LD author whose "name" is an object (e.g. {"@value":"Jo"}) must not blank the whole
+    //           reader view; the article content is still returned (just without that author).
+    // Fails if: the name is read with GetString() without checking it is a string (throws, the reader
+    //           returns null and the user sees an empty article).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~Extractor_JsonLd_NameIsObject_StillReturnsContent"
+    [Fact]
+    public async Task Extractor_JsonLd_NameIsObject_StillReturnsContent()
+    {
+        var html = BuildArticleHtml(@"<script type='application/ld+json'>
+            {""@type"":""NewsArticle"",""author"":{""name"":{""@value"":""Jo""}}}
+        </script>");
+        var extractor = new ReadableContentExtractor(Substitute.For<ILogger<ReadableContentExtractor>>());
+
+        var result = await extractor.ExtractAsync(html, "https://example.com/article");
+
+        result.Should().NotBeNull("an odd author shape must not discard the readable content");
+        result!.Paragraphs.Should().NotBeEmpty();
+        result.Author.Should().BeNull();
+    }
+
     [Fact]
     public async Task Extractor_BylineElement_WithLink_ReturnsLinkText()
     {

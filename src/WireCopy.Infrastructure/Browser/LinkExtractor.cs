@@ -860,60 +860,18 @@ public class LinkExtractor : ILinkExtractor
             {
                 var json = script.InnerText.Trim();
                 using var jsonDoc = JsonDocument.Parse(json);
-                var root = jsonDoc.RootElement;
 
-                if (root.TryGetProperty("author", out var authorElement))
+                // Roots may be an object, an array of nodes, or carry nodes under "@graph".
+                var author = JsonLdAuthor.Find(jsonDoc.RootElement);
+                if (author != null)
                 {
-                    return ParseJsonLdAuthor(authorElement);
+                    return author;
                 }
             }
             catch (JsonException)
             {
                 // Malformed JSON-LD, skip
             }
-        }
-
-        return null;
-    }
-
-    private static string? ParseJsonLdAuthor(JsonElement authorElement)
-    {
-        if (authorElement.ValueKind == JsonValueKind.String)
-        {
-            return authorElement.GetString()?.Trim();
-        }
-
-        if (authorElement.ValueKind == JsonValueKind.Object &&
-            authorElement.TryGetProperty("name", out var nameEl))
-        {
-            return nameEl.GetString()?.Trim();
-        }
-
-        if (authorElement.ValueKind == JsonValueKind.Array)
-        {
-            var names = new List<string>();
-            foreach (var item in authorElement.EnumerateArray())
-            {
-                if (item.ValueKind == JsonValueKind.Object &&
-                    item.TryGetProperty("name", out var n))
-                {
-                    var name = n.GetString()?.Trim();
-                    if (!string.IsNullOrEmpty(name))
-                    {
-                        names.Add(name);
-                    }
-                }
-                else if (item.ValueKind == JsonValueKind.String)
-                {
-                    var name = item.GetString()?.Trim();
-                    if (!string.IsNullOrEmpty(name))
-                    {
-                        names.Add(name);
-                    }
-                }
-            }
-
-            return names.Count > 0 ? string.Join(", ", names) : null;
         }
 
         return null;
