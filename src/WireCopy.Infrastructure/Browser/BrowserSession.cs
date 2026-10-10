@@ -75,6 +75,14 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 }
             ";
 
+    /// <summary>
+    /// workspace-6jk65: the longest <see cref="CaptureScreenshotAsync(IReadOnlyList{ScreenshotMark}?)"/>
+    /// may hold <see cref="_lock"/>. Page.captureScreenshot has no timeout of its
+    /// own, so on a renderer that never paints it would hold the lock forever and
+    /// every later session call (lens read, navigation) would queue behind it.
+    /// </summary>
+    private static readonly TimeSpan CaptureLockBudget = TimeSpan.FromSeconds(8);
+
     private readonly ILogger<BrowserSession> _logger;
     private readonly ICookieManager _cookieManager;
 
@@ -650,6 +658,8 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 return null;
             }
 
+            using var budget = new CancellationTokenSource(CaptureLockBudget);
+
             // workspace-romy.3: draw Set-of-Marks badges before the shot so the
             // AI analyzer can map pixels to link indices. Best-effort — a failed
             // apply degrades to an unmarked screenshot.
@@ -660,12 +670,17 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 {
                     var drawn = await _page.EvaluateAsync<int>(
                         ScreenshotMarkScript.Apply,
-                        marks.Select(m => new { i = m.Index, url = m.Url }).ToArray()).ConfigureAwait(false);
+                        marks.Select(m => new { i = m.Index, url = m.Url }).ToArray()).WaitAsync(budget.Token).ConfigureAwait(false);
                     marked = true;
 
                     // Information level on purpose: badge alignment is the
                     // grounding contract — live gates assert on this line.
                     _logger.LogInformation("Set-of-Marks: drew {Drawn} of {Requested} badges", drawn, marks.Count);
+                }
+                catch (Exception) when (budget.IsCancellationRequested)
+                {
+                    _logger.LogInformation("Page capture exceeded {Budget}s; releasing the session", CaptureLockBudget.TotalSeconds);
+                    return null;
                 }
                 catch (Exception ex)
                 {
@@ -691,10 +706,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                         const vh = window.innerHeight || de.clientHeight || 800;
                         const sh = Math.max(de.scrollHeight || 0, document.body ? document.body.scrollHeight : 0, vh);
                         return [vw, Math.min(sh, vh * 3)];
-                    }").ConfigureAwait(false);
+                    }").WaitAsync(budget.Token).ConfigureAwait(false);
                 if (dims is { Length: 2 } && dims[0] > 0 && dims[1] > 0)
                 {
-                    var cdp = await _page.Context.NewCDPSessionAsync(_page).ConfigureAwait(false);
+                    var cdp = await _page.Context.NewCDPSessionAsync(_page).WaitAsync(budget.Token).ConfigureAwait(false);
                     var shot = await cdp.SendAsync("Page.captureScreenshot", new Dictionary<string, object>
                     {
                         ["format"] = "png",
@@ -707,7 +722,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                             ["height"] = dims[1],
                             ["scale"] = 1,
                         },
-                    }).ConfigureAwait(false);
+                    }).WaitAsync(budget.Token).ConfigureAwait(false);
                     var data = shot?.GetProperty("data").GetString();
                     if (!string.IsNullOrEmpty(data))
                     {
@@ -715,14 +730,19 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                     }
                 }
 
-                return await _page.ScreenshotAsync().ConfigureAwait(false);
+                return await _page.ScreenshotAsync().WaitAsync(budget.Token).ConfigureAwait(false);
+            }
+            catch (Exception) when (budget.IsCancellationRequested)
+            {
+                _logger.LogInformation("Page capture exceeded {Budget}s; releasing the session", CaptureLockBudget.TotalSeconds);
+                return null;
             }
             catch (Exception ex)
             {
                 _logger.LogInformation(ex, "Beyond-viewport screenshot failed, retrying viewport-only (non-fatal)");
                 try
                 {
-                    return await _page.ScreenshotAsync().ConfigureAwait(false);
+                    return await _page.ScreenshotAsync().WaitAsync(budget.Token).ConfigureAwait(false);
                 }
                 catch (Exception ex2)
                 {
@@ -736,7 +756,7 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 {
                     try
                     {
-                        await _page.EvaluateAsync<bool>(ScreenshotMarkScript.Remove).ConfigureAwait(false);
+                        await _page.EvaluateAsync<bool>(ScreenshotMarkScript.Remove).WaitAsync(TimeSpan.FromSeconds(2)).ConfigureAwait(false);
                     }
                     catch (Exception ex)
                     {
