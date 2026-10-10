@@ -213,6 +213,81 @@ internal static class StrategyChooserHandler
     }
 
     /// <summary>
+    /// workspace-wylw: lens hooks for the wizard — evaluates
+    /// <see cref="TunerScript"/> (dialect css, link-list sections) on the
+    /// dedicated lens tab. Every failure degrades to no-highlight; the wizard
+    /// cards still show identifiers and match counts as text.
+    /// </summary>
+    internal static SetupWizard.Lens? BuildWizardLens(IBrowserSession? session, List<LinkInfo> links, ILogger logger)
+    {
+        if (session == null)
+        {
+            return null;
+        }
+
+        return new SetupWizard.Lens(
+            ArmClickAsync: async _ =>
+            {
+                // workspace-p2qo: arm the SAME PickScript the legacy lead-pick used,
+                // now so label mode can select a row by clicking its story on the
+                // docked page. Non-fatal — keyboard labeling still works if arming fails.
+                var lensPage = await ArmLensPickAsync(session, logger).ConfigureAwait(false);
+                if (lensPage == null)
+                {
+                    logger.LogInformation("Label-mode click: no lens page to arm (keyboard labeling only)");
+                }
+            },
+            PollClickAsync: async _ =>
+            {
+                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                var pick = await PollLensPickAsync(lensPage, logger).ConfigureAwait(false);
+                return pick?.ToLinkInfo(links);
+            },
+            DisarmClickAsync: async _ =>
+            {
+                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                await DisarmLensPickAsync(lensPage, logger).ConfigureAwait(false);
+            },
+            HighlightCssAsync: async (css, _) =>
+            {
+                try
+                {
+                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                    if (lensPage == null)
+                    {
+                        logger.LogInformation("Wizard lens: no lens page; cannot highlight {Selector}", css);
+                        return -1;
+                    }
+
+                    var count = await lensPage.EvaluateAsync<int>(
+                        TunerScript.Highlight, new { selector = css, dialect = "css" }).ConfigureAwait(false);
+                    logger.LogInformation("Wizard lens: {Selector} highlighted {Count} match(es)", css, count);
+                    return count;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogInformation(ex, "Wizard lens: highlight failed for {Selector}", css);
+                    return -1;
+                }
+            },
+            ClearAsync: async _ =>
+            {
+                try
+                {
+                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
+                    if (lensPage != null)
+                    {
+                        await lensPage.EvaluateAsync<string>(TunerScript.Clear).ConfigureAwait(false);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Cosmetic.
+                }
+            });
+    }
+
+    /// <summary>
     /// workspace-6yb7.7: free-text steering for the wizard's adjust / failure
     /// loop ("Tell the AI what to change"). Returns:
     ///   <list type="bullet">
@@ -694,81 +769,6 @@ internal static class StrategyChooserHandler
                 await lens.ClearAsync(CancellationToken.None).ConfigureAwait(false);
             }
         }
-    }
-
-    /// <summary>
-    /// workspace-wylw: lens hooks for the wizard — evaluates
-    /// <see cref="TunerScript"/> (dialect css, link-list sections) on the
-    /// dedicated lens tab. Every failure degrades to no-highlight; the wizard
-    /// cards still show identifiers and match counts as text.
-    /// </summary>
-    private static SetupWizard.Lens? BuildWizardLens(IBrowserSession? session, List<LinkInfo> links, ILogger logger)
-    {
-        if (session == null)
-        {
-            return null;
-        }
-
-        return new SetupWizard.Lens(
-            ArmClickAsync: async _ =>
-            {
-                // workspace-p2qo: arm the SAME PickScript the legacy lead-pick used,
-                // now so label mode can select a row by clicking its story on the
-                // docked page. Non-fatal — keyboard labeling still works if arming fails.
-                var lensPage = await ArmLensPickAsync(session, logger).ConfigureAwait(false);
-                if (lensPage == null)
-                {
-                    logger.LogInformation("Label-mode click: no lens page to arm (keyboard labeling only)");
-                }
-            },
-            PollClickAsync: async _ =>
-            {
-                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                var pick = await PollLensPickAsync(lensPage, logger).ConfigureAwait(false);
-                return pick?.ToLinkInfo(links);
-            },
-            DisarmClickAsync: async _ =>
-            {
-                var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                await DisarmLensPickAsync(lensPage, logger).ConfigureAwait(false);
-            },
-            HighlightCssAsync: async (css, _) =>
-            {
-                try
-                {
-                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                    if (lensPage == null)
-                    {
-                        logger.LogInformation("Wizard lens: no lens page; cannot highlight {Selector}", css);
-                        return -1;
-                    }
-
-                    var count = await lensPage.EvaluateAsync<int>(
-                        TunerScript.Highlight, new { selector = css, dialect = "css" }).ConfigureAwait(false);
-                    logger.LogInformation("Wizard lens: {Selector} highlighted {Count} match(es)", css, count);
-                    return count;
-                }
-                catch (Exception ex)
-                {
-                    logger.LogInformation(ex, "Wizard lens: highlight failed for {Selector}", css);
-                    return -1;
-                }
-            },
-            ClearAsync: async _ =>
-            {
-                try
-                {
-                    var lensPage = await session.GetLensPageAsync().ConfigureAwait(false);
-                    if (lensPage != null)
-                    {
-                        await lensPage.EvaluateAsync<string>(TunerScript.Clear).ConfigureAwait(false);
-                    }
-                }
-                catch (Exception)
-                {
-                    // Cosmetic.
-                }
-            });
     }
 
     /// <summary>
