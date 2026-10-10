@@ -99,6 +99,16 @@ internal static class SearchCommandHandler
         var parts = input.Split(' ', 2, StringSplitOptions.RemoveEmptyEntries);
         var command = parts[0].ToLowerInvariant();
 
+        // workspace-zh1o1: the switch below dispatches on the FIRST word only, so the two-word
+        // verbs ("layout clear", "layout reset") could never match their case labels and the bare
+        // "layout" case (the chooser card) always won. Fold an exact "<verb> <sub>" pair into one
+        // key; any other second word ("layout clearance") keeps the one-word behaviour.
+        if (parts.Length > 1 && command == "layout"
+            && parts[1].Trim().ToLowerInvariant() is "clear" or "reset")
+        {
+            command = $"layout {parts[1].Trim().ToLowerInvariant()}";
+        }
+
         switch (command)
         {
             case "q" or "quit":

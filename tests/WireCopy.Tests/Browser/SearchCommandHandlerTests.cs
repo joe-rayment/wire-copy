@@ -242,6 +242,68 @@ public class SearchCommandHandlerTests
         _navigatedUrl.Should().BeNull("':layout' opens the chooser, it is not a URL");
     }
 
+    // Guards:   ':layout clear' (and its spaced / upper-case spellings) runs the clear-layout command
+    //           for the current page instead of opening the bare ':layout' chooser card.
+    // Fails if: the command line dispatches on the first word only, so the two-word "layout clear"
+    //           case label can never match and 'layout' always wins (the bug workspace-zh1o1 found).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~LayoutClear_Clears"
+    [Theory]
+    [InlineData("layout clear")]
+    [InlineData("layout   clear")]
+    [InlineData("LAYOUT Clear")]
+    public async Task HandleCommandLineInput_LayoutClear_ClearsSavedLayout_InsteadOfOpeningChooser(string input)
+    {
+        var store = Substitute.For<IHierarchyConfigStore>();
+        store.DeleteConfigAsync(Arg.Any<string>()).Returns(true);
+        var provider = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
+        _ctx.ScopeFactory.CreateScope().Returns(_ => provider.CreateScope());
+
+        var handled = await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, input, _options, CancellationToken.None);
+
+        handled.Should().BeTrue();
+        await store.Received(1).DeleteConfigAsync("https://example.com");
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Layout config cleared");
+    }
+
+    // Guards:   ':layout reset' forgets the saved ARTICLE layout for the current site instead of
+    //           opening the bare ':layout' chooser card.
+    // Fails if: the two-word "layout reset" case label is unreachable (first-word-only dispatch).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~LayoutReset_Resets"
+    [Fact]
+    public async Task HandleCommandLineInput_LayoutReset_ResetsArticleLayout_InsteadOfOpeningChooser()
+    {
+        var store = Substitute.For<IArticleLayoutStore>();
+        var provider = new ServiceCollection().AddSingleton(store).BuildServiceProvider();
+        _ctx.ScopeFactory.CreateScope().Returns(_ => provider.CreateScope());
+
+        var handled = await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "layout reset", _options, CancellationToken.None);
+
+        handled.Should().BeTrue();
+        await store.Received(1).SaveAsync(Arg.Is<ArticleSelectorConfig>(c => c.Domain == "example.com" && c.PageTypes.Count == 0));
+        _navigationService.CurrentContext.StatusMessage.Should().Be("Article layout reset for example.com");
+    }
+
+    // Guards:   a bare ':layout' (or ':layout' with an unknown word) still opens the strategy
+    //           chooser and never clears or resets anything by accident.
+    // Fails if: the two-word matching is loosened so ':layout <anything>' runs a destructive verb.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~Layout_WithOtherWord"
+    [Fact]
+    public async Task HandleCommandLineInput_Layout_WithOtherWord_DoesNotClearOrReset()
+    {
+        var hierarchyStore = Substitute.For<IHierarchyConfigStore>();
+        var articleStore = Substitute.For<IArticleLayoutStore>();
+        var provider = new ServiceCollection().AddSingleton(hierarchyStore).AddSingleton(articleStore).BuildServiceProvider();
+        _ctx.ScopeFactory.CreateScope().Returns(_ => provider.CreateScope());
+
+        await SearchCommandHandler.HandleCommandLineInput(
+            _ctx, "layout clearance", _options, CancellationToken.None);
+
+        await hierarchyStore.DidNotReceiveWithAnyArgs().DeleteConfigAsync(default!);
+        await articleStore.DidNotReceiveWithAnyArgs().SaveAsync(default!);
+    }
+
     [Fact]
     public async Task HandleCommandLineInput_GoCommand_NavigatesToUrl()
     {
