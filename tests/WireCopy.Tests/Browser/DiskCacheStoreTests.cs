@@ -626,6 +626,63 @@ public class DiskCacheStoreTests : IDisposable
         config.MaxDiskSizeBytes.Should().Be(500L * 1024 * 1024);
     }
 
+    [Fact]
+    public void LoadAllBuildCaches_RedirectedUrl_KeysByRequestUrlNotFinalUrl()
+    {
+        // Guards:   a build cache written for request URL A that redirected to B comes back from disk keyed by A
+        //           (the key it was written under), so the request-URL lookup still hits after a restart.
+        // Fails if: the loader re-derives the key from FinalUrl and ignores the key stored in the file.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter LoadAllBuildCaches_RedirectedUrl_KeysByRequestUrlNotFinalUrl
+        var requestUrl = "https://example.com/news";
+        var finalUrl = "https://www.example.com/news/";
+        var requestKey = UrlNormalizer.Normalize(requestUrl);
+
+        _store.WriteBuildCache(requestKey, CreateRedirectedBuildCache(finalUrl));
+
+        var loaded = _store.LoadAllBuildCaches();
+        loaded.Should().ContainKey(requestKey);
+        loaded.Should().NotContainKey(UrlNormalizer.Normalize(finalUrl));
+    }
+
+    [Fact]
+    public void LoadAllBuildCaches_FileWithoutStoredKey_FallsBackToFinalUrl()
+    {
+        // Guards:   build cache files written before the key was persisted (no "normalizedUrl" field) still load,
+        //           keyed by their normalized FinalUrl as before.
+        // Fails if: the loader requires the new field and drops (or crashes on) older files.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter LoadAllBuildCaches_FileWithoutStoredKey_FallsBackToFinalUrl
+        var requestKey = UrlNormalizer.Normalize("https://example.com/news");
+        var finalUrl = "https://www.example.com/news/";
+
+        _store.WriteBuildCache(requestKey, CreateRedirectedBuildCache(finalUrl));
+
+        // Turn the file into a legacy one: strip the persisted key, leaving everything else as-is.
+        var path = _store.GetBuildCacheFilePath(requestKey);
+        var node = System.Text.Json.Nodes.JsonNode.Parse(File.ReadAllText(path))!.AsObject();
+        node.Remove("normalizedUrl");
+        File.WriteAllText(path, node.ToJsonString());
+
+        var loaded = _store.LoadAllBuildCaches();
+        loaded.Should().ContainKey(UrlNormalizer.Normalize(finalUrl));
+        loaded.Should().HaveCount(1);
+    }
+
+    private static PageBuildCache CreateRedirectedBuildCache(string finalUrl)
+    {
+        return new PageBuildCache
+        {
+            Links = new List<LinkInfo>
+            {
+                new LinkInfo { Url = finalUrl + "a", DisplayText = "A", Type = LinkType.Content, ImportanceScore = 50 },
+            },
+            Metadata = new PageMetadata { Title = "News" },
+            FinalUrl = finalUrl,
+            Classification = PageClassification.LinkList,
+            ClassificationVersion = 1,
+            CachedAt = DateTime.UtcNow,
+        };
+    }
+
     private static (PageLoadResult Result, CacheEntryMetadata Metadata) CreateEntry(string url, string html)
     {
         var result = PageLoadResult.Successful(url, html, new PageMetadata { Title = "Test" });

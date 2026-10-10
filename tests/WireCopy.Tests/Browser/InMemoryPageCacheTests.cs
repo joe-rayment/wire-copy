@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.Threading;
+using System.Threading.Tasks;
 using FluentAssertions;
 using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
@@ -518,6 +519,146 @@ public class InMemoryPageCacheTests : IDisposable
         cache.GetExpiresAtUtc(url).Should().Be(
             originalExpiry,
             "a longer TTL apply must clamp (shrink-only), never extend an entry past its original cap (workspace-hv8n)");
+    }
+
+    [Fact]
+    public void BuildCache_ForRedirectedUrl_StillHitsUnderRequestUrlAfterRestart()
+    {
+        // Guards:   a build cache saved for a URL that redirected (request A -> final B) is found again under A
+        //           after the app restarts, so a preloaded redirected page is not needlessly rebuilt.
+        // Fails if: the on-disk build cache is re-keyed by its FinalUrl on load (the request-URL key is lost).
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter BuildCache_ForRedirectedUrl_StillHitsUnderRequestUrlAfterRestart
+        var dir = Path.Combine(Path.GetTempPath(), "wirecopy-test-cache-" + Guid.NewGuid().ToString("N"));
+        var requestUrl = "https://example.com/news";
+        var finalUrl = "https://www.example.com/news/";
+        try
+        {
+            var config = Options.Create(new CacheConfiguration { EvictionSweepIntervalSeconds = 3600 });
+            var store = new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance);
+            using (var first = new InMemoryPageCache(config, NullLogger<InMemoryPageCache>.Instance, store))
+            {
+                first.PutBuildCache(requestUrl, new PageBuildCache
+                {
+                    Links = [new LinkInfo { Url = "https://www.example.com/news/a", DisplayText = "A", Type = Domain.Enums.Browser.LinkType.Content, ImportanceScore = 50 }],
+                    Metadata = new PageMetadata { Title = "News" },
+                    FinalUrl = finalUrl,
+                    CachedAt = DateTime.UtcNow,
+                });
+
+                // PutBuildCache persists on the thread pool; the file appears atomically (tmp + move).
+                SpinWait.SpinUntil(
+                    () => File.Exists(store.GetBuildCacheFilePath(UrlNormalizer.Normalize(requestUrl))),
+                    TimeSpan.FromSeconds(10)).Should().BeTrue("the build cache must reach disk before the simulated restart");
+            }
+
+            // Simulated restart: a brand-new cache over the same directory.
+            using var second = new InMemoryPageCache(
+                config,
+                NullLogger<InMemoryPageCache>.Instance,
+                new DiskCacheStore(dir, NullLogger<InMemoryPageCache>.Instance));
+
+            second.TryGetBuildCache(requestUrl).Should().NotBeNull(
+                "the build cache was stored under the request URL; a redirect to a different FinalUrl must not change its key across a restart");
+        }
+        finally
+        {
+            if (Directory.Exists(dir))
+            {
+                Directory.Delete(dir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public void Put_RefreshingCachedUrl_AtMaxEntries_KeepsOtherPages()
+    {
+        // Guards:   re-caching a page that is already cached (refresh) replaces it in place and does not push
+        //           an unrelated page out of a full cache.
+        // Fails if: Put makes room (evicts the least-recently-used page) before noticing the key already exists.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter Put_RefreshingCachedUrl_AtMaxEntries_KeepsOtherPages
+        var config = new CacheConfiguration { MaxEntries = 2, EvictionSweepIntervalSeconds = 3600 };
+        using var cache = new InMemoryPageCache(
+            Options.Create(config), NullLogger<InMemoryPageCache>.Instance);
+        var x = "https://example.com/x";
+        var y = "https://example.com/y";
+        cache.Put(x, CreateResult(x, "<html>x1</html>"));
+        cache.Put(y, CreateResult(y, "<html>y1</html>"));
+
+        // Touch X so Y is the least-recently-used entry: the cache must not sacrifice it to make room for a refresh.
+        cache.TryGet(x);
+        cache.Put(x, CreateResult(x, "<html>x2 refreshed</html>"));
+
+        cache.TryGet(y).Should().NotBeNull("refreshing X replaces X in place; Y is unrelated and must stay cached");
+        cache.TryGet(x)!.Html.Should().Be("<html>x2 refreshed</html>");
+        cache.GetStats().EntryCount.Should().Be(2);
+    }
+
+    [Fact]
+    public void Put_RefreshingCachedUrl_NearSizeLimit_KeepsOtherPages()
+    {
+        // Guards:   a refresh is charged only for the size it adds over the old copy, so a same-size refresh of a
+        //           nearly-full cache does not evict an unrelated page.
+        // Fails if: Put counts the full new size on top of the old copy when deciding whether the cache is full.
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter Put_RefreshingCachedUrl_NearSizeLimit_KeepsOtherPages
+        // Each entry costs html bytes + 1024 overhead; 3 one-char entries = 3 * 1025 = 3075 bytes.
+        var config = new CacheConfiguration { MaxSizeBytes = 3200, MaxEntries = 100, EvictionSweepIntervalSeconds = 3600 };
+        using var cache = new InMemoryPageCache(
+            Options.Create(config), NullLogger<InMemoryPageCache>.Instance);
+        cache.Put("https://example.com/1", CreateResult("https://example.com/1", "a"));
+        cache.Put("https://example.com/2", CreateResult("https://example.com/2", "b"));
+        cache.Put("https://example.com/3", CreateResult("https://example.com/3", "c"));
+        cache.GetStats().EntryCount.Should().Be(3, "precondition: all three fit under the size limit");
+
+        // Touch entry 1 so entry 2 is the least-recently-used one: a refresh of 1 must not evict it.
+        cache.TryGet("https://example.com/1");
+        cache.Put("https://example.com/1", CreateResult("https://example.com/1", "A"));
+
+        cache.GetStats().EntryCount.Should().Be(3, "a same-size refresh adds 0 bytes and must not evict anything");
+        cache.TryGet("https://example.com/2").Should().NotBeNull();
+        cache.TryGet("https://example.com/3").Should().NotBeNull();
+        cache.GetStats().TotalSizeBytes.Should().Be(3075, "replacing an entry swaps its size rather than adding to it");
+    }
+
+    [Fact]
+    public async Task Put_RacingWithTtlUpdates_NewestPutAlwaysLands()
+    {
+        // Guards:   a Put is never silently dropped because another thread swapped the same entry (TTL update /
+        //           build-cache attach) between Put's read and its write - memory always holds the newest Put.
+        // Fails if: Put does a single TryUpdate/TryAdd and ignores the failure (retry loop removed).
+        // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter Put_RacingWithTtlUpdates_NewestPutAlwaysLands
+        // Probabilistic on the old code (the race window is tiny); deterministic green on the fixed code.
+        var config = new CacheConfiguration { EvictionSweepIntervalSeconds = 3600 };
+        using var cache = new InMemoryPageCache(
+            Options.Create(config), NullLogger<InMemoryPageCache>.Instance);
+        var url = "https://example.com/hot";
+        cache.Put(url, CreateResult(url, "<html>v0</html>"));
+
+        using var stop = new CancellationTokenSource();
+        var interferers = Enumerable.Range(0, 3).Select(_ => Task.Run(() =>
+        {
+            while (!stop.IsCancellationRequested)
+            {
+                cache.UpdateTtl(url, 3000);
+            }
+        })).ToArray();
+
+        var firstStale = (int?)null;
+        for (var i = 1; i <= 20000 && firstStale is null; i++)
+        {
+            var html = $"<html>v{i}</html>";
+            cache.Put(url, CreateResult(url, html));
+            if (cache.TryGet(url)!.Html != html)
+            {
+                firstStale = i;
+            }
+        }
+
+        stop.Cancel();
+        await Task.WhenAll(interferers);
+
+        firstStale.Should().BeNull("every Put must be visible right after it returns, even when a TTL update races it");
+        cache.GetStats().EntryCount.Should().Be(1);
+        cache.GetStats().TotalSizeBytes.Should().BeGreaterThan(0);
     }
 
     private static PageLoadResult CreateResult(string url, string html)

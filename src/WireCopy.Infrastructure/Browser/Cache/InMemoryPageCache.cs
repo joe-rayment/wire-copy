@@ -108,8 +108,9 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
             return;
         }
 
-        // Evict entries to make room
-        EvictToFit(entrySize);
+        // Evict entries to make room. Pass the key so a refresh of an already-cached URL is charged only for
+        // the size it adds over the old copy and is not counted as a new entry (workspace-o9g9i).
+        EvictToFit(entrySize, key);
 
         var metadata = new CacheEntryMetadata
         {
@@ -122,19 +123,22 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
 
         var entry = new CacheEntry(result, metadata);
 
-        if (_entries.TryGetValue(key, out var existing))
+        // Retry until the newest Put lands: a concurrent PutBuildCache/UpdateTtl/eviction can swap or remove the
+        // entry between our read and our write; a failed TryUpdate/TryAdd must not drop the fresh result.
+        while (true)
         {
-            // Replacing existing entry: subtract old size first
-            if (_entries.TryUpdate(key, entry, existing))
+            if (_entries.TryGetValue(key, out var existing))
             {
-                Interlocked.Add(ref _totalSizeBytes, entrySize - existing.Metadata.SizeBytes);
+                if (_entries.TryUpdate(key, entry, existing))
+                {
+                    Interlocked.Add(ref _totalSizeBytes, entrySize - existing.Metadata.SizeBytes);
+                    break;
+                }
             }
-        }
-        else
-        {
-            if (_entries.TryAdd(key, entry))
+            else if (_entries.TryAdd(key, entry))
             {
                 Interlocked.Add(ref _totalSizeBytes, entrySize);
+                break;
             }
         }
 
@@ -357,16 +361,32 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         return false;
     }
 
-    private void EvictToFit(long requiredBytes)
+    private void EvictToFit(long requiredBytes, string? replacingKey = null)
     {
         // Evict expired entries first
         EvictExpired();
 
-        // Evict LRU entries if still over size limit
-        while (Interlocked.Read(ref _totalSizeBytes) + requiredBytes > _config.MaxSizeBytes ||
-               _entries.Count >= _config.MaxEntries)
+        // Evict LRU entries if still over size limit. When replacingKey is already cached the write swaps that
+        // entry: only the size delta counts, it is not a new entry for the MaxEntries check, and it is never
+        // the eviction victim (workspace-o9g9i).
+        while (true)
         {
-            var lruKey = FindLruKey();
+            long replacedBytes = 0;
+            var replacing = false;
+            if (replacingKey != null && _entries.TryGetValue(replacingKey, out var replaced))
+            {
+                replacing = true;
+                replacedBytes = replaced.Metadata.SizeBytes;
+            }
+
+            var overSize = Interlocked.Read(ref _totalSizeBytes) + requiredBytes - replacedBytes > _config.MaxSizeBytes;
+            var overCount = !replacing && _entries.Count >= _config.MaxEntries;
+            if (!overSize && !overCount)
+            {
+                break;
+            }
+
+            var lruKey = FindLruKey(replacingKey);
             if (lruKey == null)
             {
                 break;
@@ -381,13 +401,18 @@ public sealed class InMemoryPageCache : IPageCache, IDisposable
         }
     }
 
-    private string? FindLruKey()
+    private string? FindLruKey(string? excludeKey = null)
     {
         string? oldestKey = null;
         var oldestTime = DateTime.MaxValue;
 
         foreach (var kvp in _entries)
         {
+            if (excludeKey != null && kvp.Key == excludeKey)
+            {
+                continue;
+            }
+
             var accessed = kvp.Value.Metadata.LastAccessedAtUtc;
             if (accessed < oldestTime)
             {

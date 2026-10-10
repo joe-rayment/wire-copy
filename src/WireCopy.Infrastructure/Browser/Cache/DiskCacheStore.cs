@@ -303,6 +303,9 @@ internal sealed class DiskCacheStore
 
             var persisted = new PersistedBuildCache
             {
+                // The key this file was written under (the request URL, which can differ from FinalUrl after a
+                // redirect); loading re-keys by it so the request-URL lookup survives a restart (workspace-o9g9i).
+                NormalizedUrl = normalizedUrl,
                 FinalUrl = buildCache.FinalUrl,
                 Classification = (int)buildCache.Classification,
                 ClassificationVersion = buildCache.ClassificationVersion,
@@ -508,9 +511,11 @@ internal sealed class DiskCacheStore
                     continue;
                 }
 
-                // Derive the normalized URL from the file name by looking up
-                // the corresponding HTML cache entry, or use FinalUrl as key
-                var key = UrlNormalizer.Normalize(persisted.FinalUrl ?? string.Empty);
+                // Key by the persisted request-URL key; files written before it was stored
+                // fall back to the normalized FinalUrl.
+                var key = !string.IsNullOrEmpty(persisted.NormalizedUrl)
+                    ? persisted.NormalizedUrl
+                    : UrlNormalizer.Normalize(persisted.FinalUrl ?? string.Empty);
                 if (!string.IsNullOrEmpty(key))
                 {
                     results[key] = buildCache;
@@ -639,6 +644,9 @@ internal sealed class DiskCacheStore
 
     internal sealed class PersistedBuildCache
     {
+        // Normalized request URL this build cache is keyed under. Null for files written before it was stored.
+        public string? NormalizedUrl { get; set; }
+
         public string? FinalUrl { get; set; }
 
         public int Classification { get; set; }
