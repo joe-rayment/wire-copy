@@ -323,3 +323,22 @@ html, body {
 .kbd .key { color: var(--tr-cyan); }
 #footer-right { flex: none; }
 #footer-right .docked { color: var(--tr-muted); }
+
+/* ':' / '/' prompt line (workspace-up3zx): replaces the footer row while the TUI's prompt is
+   open (paintPromptLine sets #footer.prompting and pins the height to the footer row's, so
+   the grid's admission budget never moves). */
+#promptline {
+  display: none;
+  font-size: clamp(11.5px, 0.95vw, 13.5px);
+  white-space: pre;
+  overflow: hidden;
+}
+#footer.prompting #footer-row { display: none; }
+#footer.prompting #promptline { display: block; }
+#promptline .prefix { color: var(--tr-cyan); }
+#promptline .typed { color: var(--tr-green); }
+/* Inverse-video block cursor sitting on the character at the cursor index. */
+#promptline .cursor {
+  background: var(--tr-green);
+  color: var(--tr-bg-pure);
+}

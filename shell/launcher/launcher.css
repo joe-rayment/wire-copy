@@ -344,3 +344,21 @@ html, body {
   white-space: nowrap;
 }
 #footer-right .count { color: var(--tr-muted); }
+
+/* ':' / '/' prompt line (workspace-up3zx): replaces the hint row while the TUI's prompt is
+   open (paintPromptLine sets #footer.prompting and pins the height to the hint row's). */
+#promptline {
+  display: none;
+  font-size: 15px;
+  white-space: pre;
+  overflow: hidden;
+}
+#footer.prompting #footer-row { display: none; }
+#footer.prompting #promptline { display: block; }
+#promptline .prefix { color: var(--tr-cyan); }
+#promptline .typed { color: var(--tr-green); }
+/* Inverse-video block cursor sitting on the character at the cursor index. */
+#promptline .cursor {
+  background: var(--tr-green);
+  color: var(--tr-bg-pure);
+}

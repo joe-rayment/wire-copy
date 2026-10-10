@@ -42,6 +42,7 @@
           <div id="footer-hints"></div>
           <div id="footer-right"></div>
         </div>
+        <div id="promptline"></div>
       </div>
     </div>
   </div>
@@ -190,6 +191,36 @@ function paintFooter (state) {
   $('footer-right').innerHTML = `<span class="count">${esc(count)}</span>`
 }
 
+// ':' / '/' prompt line (workspace-up3zx). The TUI draws its command / search prompt on the
+// terminal's bottom row — which this pane COVERS, so the typed text was invisible. The TUI
+// mirrors it as state.promptLine = { prefix, buffer, cursor } (null when no prompt is open);
+// while set, #promptline replaces the footer's key-hint row, in the same url-bar idiom:
+// prefix in cyan, buffer in phosphor green, inverse-video block cursor on the char at
+// `cursor` (a trailing space when the cursor is past the end). Display-only like the rest.
+function paintPromptLine (state) {
+  const footer = $('footer')
+  const pl = $('promptline')
+  const p = state.promptLine
+  if (!p) {
+    footer.classList.remove('prompting')
+    pl.textContent = ''
+    return
+  }
+  // Pin the prompt row to the hint row's height so swapping them never moves the grid.
+  if (!footer.classList.contains('prompting')) pl.style.height = $('footer-row').offsetHeight + 'px'
+  footer.classList.add('prompting')
+  const buf = String(p.buffer == null ? '' : p.buffer)
+  const cur = Math.max(0, Math.min(p.cursor ?? buf.length, buf.length))
+  const before = buf.slice(0, cur)
+  const at = cur < buf.length ? buf[cur] : ' '
+  const after = cur < buf.length ? buf.slice(cur + 1) : ''
+  pl.innerHTML =
+    `<span class="prefix">${esc(p.prefix)}</span>` +
+    `<span class="typed">${esc(before)}</span>` +
+    `<span class="cursor">${esc(at)}</span>` +
+    `<span class="typed">${esc(after)}</span>`
+}
+
 function paintSetupHint (state) {
   const el = $('setuphint')
   if (state.setupHint) {
@@ -212,6 +243,7 @@ window.__renderLauncher = function (msg) {
   paintGrid(state)
   paintPaging(state)
   paintFooter(state)
+  paintPromptLine(state)
   window.__launcherReady = true
 }
 
@@ -279,6 +311,9 @@ function demoMsg (kind) {
     case 'typing':
       s.selectedIndex = -1
       s.urlTyping = { buffer: 'example.co', cursor: 10 }
+      break
+    case 'prompt':
+      s.promptLine = { prefix: ':', buffer: 'hel', cursor: 3 }
       break
     case 'setuphint':
       s.selectedIndex = -1
