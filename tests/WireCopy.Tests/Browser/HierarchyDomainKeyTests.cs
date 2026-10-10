@@ -56,7 +56,8 @@ public class HierarchyDomainKeyTests
 
         // workspace-42q8.1: the escaped host is www-stripped so the (www\.)? prefix
         // makes the SAME pattern match both host variants of the page.
-        pattern.Should().Be("^https?://(www\\.)?nytimes\\.com/section/todayspaper");
+        // workspace-zh1o1: non-root paths end on a segment boundary so /news never matches /newsletter.
+        pattern.Should().Be("^https?://(www\\.)?nytimes\\.com/section/todayspaper(?=[/?#]|$)");
         System.Text.RegularExpressions.Regex.IsMatch("https://www.nytimes.com/section/todayspaper", pattern).Should().BeTrue();
         System.Text.RegularExpressions.Regex.IsMatch("https://nytimes.com/section/todayspaper", pattern).Should().BeTrue();
     }
@@ -66,7 +67,47 @@ public class HierarchyDomainKeyTests
     {
         var pattern = DocumentOrderStrategy.BuildUrlPattern("https://nytimes.com/section/todayspaper");
 
-        pattern.Should().Be("^https?://(www\\.)?nytimes\\.com/section/todayspaper");
+        pattern.Should().Be("^https?://(www\\.)?nytimes\\.com/section/todayspaper(?=[/?#]|$)");
         System.Text.RegularExpressions.Regex.IsMatch("https://www.nytimes.com/section/todayspaper", pattern).Should().BeTrue();
     }
+
+    // Guards:   A saved layout for a section (x.com/news) covers that section, its
+    //           sub-pages and query strings, but no longer leaks onto look-alike paths
+    //           such as /newsletter.
+    // Fails if: BuildUrlPattern leaves the path un-bounded (plain prefix), so /news
+    //           matches /newsletter and /newsroom.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~DocumentOrderStrategy_BuildUrlPattern_SectionPath_StopsAtSegmentBoundary"
+    [Fact]
+    public void DocumentOrderStrategy_BuildUrlPattern_SectionPath_StopsAtSegmentBoundary()
+    {
+        var pattern = DocumentOrderStrategy.BuildUrlPattern("https://x.com/news");
+
+        Matches("https://x.com/news", pattern).Should().BeTrue();
+        Matches("https://x.com/news/", pattern).Should().BeTrue();
+        Matches("https://x.com/news/world", pattern).Should().BeTrue();
+        Matches("https://x.com/news?page=2", pattern).Should().BeTrue();
+        Matches("https://x.com/news#top", pattern).Should().BeTrue();
+        Matches("https://www.x.com/news/world", pattern).Should().BeTrue("the www variant still matches");
+        Matches("https://x.com/newsletter", pattern).Should().BeFalse();
+        Matches("https://x.com/newsroom/today", pattern).Should().BeFalse();
+    }
+
+    // Guards:   A section saved with a trailing slash (x.com/news/) still covers its
+    //           sub-pages (the slash already is the segment boundary).
+    // Fails if: the boundary is appended after the trailing slash, so /news/world stops
+    //           matching a pattern built from /news/.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~DocumentOrderStrategy_BuildUrlPattern_TrailingSlashPath_CoversSubPages"
+    [Fact]
+    public void DocumentOrderStrategy_BuildUrlPattern_TrailingSlashPath_CoversSubPages()
+    {
+        var pattern = DocumentOrderStrategy.BuildUrlPattern("https://x.com/news/");
+
+        Matches("https://x.com/news/", pattern).Should().BeTrue();
+        Matches("https://x.com/news/world", pattern).Should().BeTrue();
+        Matches("https://x.com/newsletter", pattern).Should().BeFalse();
+    }
+
+    private static bool Matches(string url, string pattern) =>
+        System.Text.RegularExpressions.Regex.IsMatch(
+            url, pattern, System.Text.RegularExpressions.RegexOptions.IgnoreCase);
 }

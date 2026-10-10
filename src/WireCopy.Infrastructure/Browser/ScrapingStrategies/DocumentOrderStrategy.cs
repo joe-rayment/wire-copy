@@ -90,9 +90,26 @@ public sealed class DocumentOrderStrategy : IScrapingStrategy
             // workspace-felb: keep a non-default port in the pattern so local
             // sites on different ports never match each other's configs.
             var portPattern = uri.IsDefaultPort ? string.Empty : $":{uri.Port}";
-            var pathPattern = uri.AbsolutePath == "/" || string.IsNullOrEmpty(uri.AbsolutePath)
-                ? "/?"
-                : Regex.Escape(uri.AbsolutePath);
+
+            // workspace-zh1o1: a non-root path ends at a segment boundary so /news no
+            // longer matches /newsletter but still matches /news/world and /news?page=2.
+            // A trailing "/" is already a boundary (appending would stop /news/world
+            // matching a /news/ pattern). The root keeps "/?" and matches the whole site.
+            var path = uri.AbsolutePath;
+            string pathPattern;
+            if (path == "/" || string.IsNullOrEmpty(path))
+            {
+                pathPattern = "/?";
+            }
+            else if (path.EndsWith('/'))
+            {
+                pathPattern = Regex.Escape(path);
+            }
+            else
+            {
+                pathPattern = Regex.Escape(path) + "(?=[/?#]|$)";
+            }
+
             return $"^https?://(www\\.)?{escapedDomain}{portPattern}{pathPattern}";
         }
         catch

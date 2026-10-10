@@ -20,6 +20,9 @@ public class HierarchyConfigStore : IHierarchyConfigStore
         PropertyNamingPolicy = JsonNamingPolicy.CamelCase,
     };
 
+    private static readonly Regex CorruptAsideFileName =
+        new(@"\.corrupt-\d{14}(-\d+)?\.json$", RegexOptions.Compiled | RegexOptions.IgnoreCase | RegexOptions.CultureInvariant);
+
     private readonly string _storagePath;
     private readonly ILogger<HierarchyConfigStore> _logger;
     private readonly object _lock = new();
@@ -43,14 +46,11 @@ public class HierarchyConfigStore : IHierarchyConfigStore
             // that only matches the www-toggled variant (workspace-42q8.1: legacy
             // patterns captured the literal saved host, so a layout saved on
             // www.x.com never matched x.com/... and vice versa).
-            foreach (var candidate in new[] { url, WwwToggledUrl(url) })
+            var match = SelectMatch(configs, url);
+            if (match != null)
             {
-                var match = candidate == null ? null : configs.Find(c => PatternMatches(candidate, c));
-                if (match != null)
-                {
-                    _logger.LogDebug("Found hierarchy config for {Url} (pattern: {Pattern})", url, match.UrlPattern);
-                    return Task.FromResult<SiteHierarchyConfig?>(match);
-                }
+                _logger.LogDebug("Found hierarchy config for {Url} (pattern: {Pattern})", url, match.UrlPattern);
+                return Task.FromResult<SiteHierarchyConfig?>(match);
             }
 
             return Task.FromResult<SiteHierarchyConfig?>(null);
@@ -127,10 +127,19 @@ public class HierarchyConfigStore : IHierarchyConfigStore
     {
         try
         {
-            var toggled = WwwToggledUrl(url);
             var removedAny = false;
             lock (_lock)
             {
+                // workspace-zh1o1: remove only the config GetConfigAsync would have selected
+                // for this URL (plus its exact-same-pattern copy in the sibling www/non-www
+                // file) — never every config whose pattern merely prefix-matches, which
+                // used to take the homepage layout down with a section's.
+                var selected = SelectMatch(LoadConfigsForSite(url), url);
+                if (selected == null)
+                {
+                    return Task.FromResult(false);
+                }
+
                 foreach (var filePath in CandidateFilePaths(url))
                 {
                     if (!File.Exists(filePath))
@@ -140,7 +149,7 @@ public class HierarchyConfigStore : IHierarchyConfigStore
 
                     var configs = LoadConfigsFromFile(filePath);
                     var originalCount = configs.Count;
-                    configs.RemoveAll(c => PatternMatches(url, c) || (toggled != null && PatternMatches(toggled, c)));
+                    configs.RemoveAll(c => string.Equals(c.UrlPattern, selected.UrlPattern, StringComparison.Ordinal));
                     if (configs.Count == originalCount)
                     {
                         continue;
@@ -185,7 +194,7 @@ public class HierarchyConfigStore : IHierarchyConfigStore
             }
 
             var count = 0;
-            foreach (var file in Directory.GetFiles(_storagePath, "*.json"))
+            foreach (var file in Directory.GetFiles(_storagePath, "*.json").Where(f => !IsCorruptAsideFile(f)))
             {
                 try
                 {
@@ -220,7 +229,7 @@ public class HierarchyConfigStore : IHierarchyConfigStore
 
             lock (_lock)
             {
-                foreach (var file in Directory.GetFiles(_storagePath, "*.json"))
+                foreach (var file in Directory.GetFiles(_storagePath, "*.json").Where(f => !IsCorruptAsideFile(f)))
                 {
                     var configs = LoadConfigsFromFile(file);
                     var kept = configs.Where(c => !ConfigMigration.IsLegacySnapshot(c)).ToList();
@@ -309,6 +318,62 @@ public class HierarchyConfigStore : IHierarchyConfigStore
     }
 
     private static string? ExtractDomain(string url) => HierarchyDomainKey.TryFromUrl(url);
+
+    /// <summary>True for a file a previous corrupt-load moved aside (<c>name.corrupt-yyyyMMddHHmmss[-n].json</c>).</summary>
+    private static bool IsCorruptAsideFile(string filePath) =>
+        CorruptAsideFileName.IsMatch(Path.GetFileName(filePath));
+
+    private static string MoveCorruptFileAside(string filePath)
+    {
+        var directory = Path.GetDirectoryName(filePath) ?? string.Empty;
+        var baseName = Path.GetFileNameWithoutExtension(filePath);
+        var stamp = DateTime.UtcNow.ToString("yyyyMMddHHmmss", System.Globalization.CultureInfo.InvariantCulture);
+
+        var target = Path.Combine(directory, $"{baseName}.corrupt-{stamp}.json");
+        var suffix = 0;
+        while (File.Exists(target))
+        {
+            suffix++;
+            target = Path.Combine(directory, $"{baseName}.corrupt-{stamp}-{suffix}.json");
+        }
+
+        File.Move(filePath, target);
+        return target;
+    }
+
+    /// <summary>
+    /// The config that applies to a URL: URL as typed first, then its www-toggled twin
+    /// (workspace-42q8.1). Within a pass the MOST SPECIFIC match (longest UrlPattern) wins
+    /// so a section layout is never shadowed by the homepage's site-wide pattern
+    /// (workspace-zh1o1); ties keep file (= save) order.
+    /// </summary>
+    private static SiteHierarchyConfig? SelectMatch(List<SiteHierarchyConfig> configs, string url)
+    {
+        foreach (var candidate in new[] { url, WwwToggledUrl(url) })
+        {
+            if (candidate == null)
+            {
+                continue;
+            }
+
+            SiteHierarchyConfig? best = null;
+            foreach (var config in configs)
+            {
+                if (PatternMatches(candidate, config)
+                    && (best == null || config.UrlPattern.Length > best.UrlPattern.Length))
+                {
+                    best = config;
+                }
+            }
+
+            if (best != null)
+            {
+                return best;
+            }
+        }
+
+        return null;
+    }
 
     /// <summary>
     /// Removes any config with the given UrlPattern from the OTHER host-variant file
@@ -427,7 +492,12 @@ public class HierarchyConfigStore : IHierarchyConfigStore
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Corrupt hierarchy config file {Path}, starting fresh", filePath);
+            // workspace-zh1o1: the file holds the user's other saved layouts for this
+            // domain. Move it aside BEFORE starting fresh so the next save can't
+            // overwrite those bytes. If the move fails we throw: every caller catches
+            // Exception, so the save/delete is abandoned and the corrupt bytes stay put.
+            var asidePath = MoveCorruptFileAside(filePath);
+            _logger.LogWarning(ex, "Corrupt hierarchy config file {Path} moved aside to {AsidePath}, starting fresh", filePath, asidePath);
             return new List<SiteHierarchyConfig>();
         }
     }

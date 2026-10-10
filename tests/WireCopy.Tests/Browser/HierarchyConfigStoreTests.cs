@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using NSubstitute;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser;
+using WireCopy.Infrastructure.Browser.ScrapingStrategies;
 using Xunit;
 
 namespace WireCopy.Tests.Browser;
@@ -44,6 +45,11 @@ public class HierarchyConfigStoreTests : IDisposable
                 "www.test-hierarchy-wwwsave.example.com.json",
                 "test-hierarchy-domainlist.example.com.json",
                 "www.test-hierarchy-domainlist.example.com.json",
+                "test-hierarchy-specific.example.com.json",
+                "test-hierarchy-specificrev.example.com.json",
+                "test-hierarchy-clearone.example.com.json",
+                "test-hierarchy-corruptsave.example.com.json",
+                "test-hierarchy-corruptread.example.com.json",
             };
 
             foreach (var file in testFiles)
@@ -53,6 +59,12 @@ public class HierarchyConfigStoreTests : IDisposable
                 {
                     File.Delete(path);
                 }
+            }
+
+            // Corrupt files the store moved aside during the corrupt-file tests.
+            foreach (var aside in Directory.GetFiles(_storagePath, "test-hierarchy-corrupt*.corrupt-*.json"))
+            {
+                File.Delete(aside);
             }
         }
         catch
@@ -439,5 +451,137 @@ public class HierarchyConfigStoreTests : IDisposable
         var opinion = result.Sections[1];
         opinion.ParentSelectors.Should().Contain("section.opinion");
         opinion.StartCollapsed.Should().BeTrue();
+    }
+
+    // Guards:   A layout saved for a specific section (x.com/news/world) is used on that
+    //           section even after a homepage layout was saved first, and the homepage
+    //           layout still serves the homepage.
+    // Fails if: GetConfigAsync returns the FIRST pattern match in save order, so the
+    //           homepage's catch-all pattern shadows every later, more specific layout.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~GetConfigAsync_SectionLayoutSavedAfterHomepage_WinsOnThatSection"
+    [Fact]
+    public async Task GetConfigAsync_SectionLayoutSavedAfterHomepage_WinsOnThatSection()
+    {
+        const string domain = "test-hierarchy-specific.example.com";
+        var homepage = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/"))
+            with { ModelVersion = "homepage" };
+        var world = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/news/world"))
+            with { ModelVersion = "news-world" };
+        var news = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/news"))
+            with { ModelVersion = "news" };
+        (await _store.SaveConfigAsync(homepage)).Should().BeTrue();
+        (await _store.SaveConfigAsync(world)).Should().BeTrue();
+        (await _store.SaveConfigAsync(news)).Should().BeTrue();
+
+        (await _store.GetConfigAsync($"https://{domain}/news/world"))!.ModelVersion
+            .Should().Be("news-world", "the /news/world layout is more specific than the homepage and /news ones");
+        (await _store.GetConfigAsync($"https://{domain}/news/world?page=2"))!.ModelVersion
+            .Should().Be("news-world");
+        (await _store.GetConfigAsync($"https://{domain}/news/sport"))!.ModelVersion
+            .Should().Be("news", "/news is the most specific layout that covers /news/sport");
+        (await _store.GetConfigAsync($"https://{domain}/"))!.ModelVersion
+            .Should().Be("homepage", "the homepage keeps its own layout");
+        (await _store.GetConfigAsync($"https://{domain}/newsletter"))!.ModelVersion
+            .Should().Be("homepage", "/news must not claim /newsletter");
+    }
+
+    // Guards:   Which layout wins does not depend on the order they were saved in: a
+    //           section layout saved BEFORE the homepage one still wins on its section.
+    // Fails if: selection falls back to file order and returns the first match.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~GetConfigAsync_SectionLayoutSavedBeforeHomepage_StillWinsOnThatSection"
+    [Fact]
+    public async Task GetConfigAsync_SectionLayoutSavedBeforeHomepage_StillWinsOnThatSection()
+    {
+        const string domain = "test-hierarchy-specificrev.example.com";
+        var world = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/news/world"))
+            with { ModelVersion = "news-world" };
+        var homepage = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/"))
+            with { ModelVersion = "homepage" };
+        await _store.SaveConfigAsync(world);
+        await _store.SaveConfigAsync(homepage);
+
+        (await _store.GetConfigAsync($"https://{domain}/news/world"))!.ModelVersion.Should().Be("news-world");
+        (await _store.GetConfigAsync($"https://{domain}/"))!.ModelVersion.Should().Be("homepage");
+    }
+
+    // Guards:   Clearing the layout on a section (x.com/news/world) removes only that
+    //           section's layout; the homepage and /news layouts that merely prefix-match
+    //           the URL survive.
+    // Fails if: DeleteConfigAsync removes every pattern that matches the URL instead of
+    //           just the one layout GetConfigAsync would have chosen.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~DeleteConfigAsync_SectionUrl_LeavesHomepageAndParentLayouts"
+    [Fact]
+    public async Task DeleteConfigAsync_SectionUrl_LeavesHomepageAndParentLayouts()
+    {
+        const string domain = "test-hierarchy-clearone.example.com";
+        var homepage = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/"))
+            with { ModelVersion = "homepage" };
+        var news = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/news"))
+            with { ModelVersion = "news" };
+        var world = CreateTestConfig(domain, DocumentOrderStrategy.BuildUrlPattern($"https://{domain}/news/world"))
+            with { ModelVersion = "news-world" };
+        await _store.SaveConfigAsync(homepage);
+        await _store.SaveConfigAsync(news);
+        await _store.SaveConfigAsync(world);
+
+        var deleted = await _store.DeleteConfigAsync($"https://{domain}/news/world");
+
+        deleted.Should().BeTrue();
+        var remaining = await _store.GetConfigsForDomainAsync($"https://{domain}/");
+        remaining.Select(c => c.ModelVersion).Should().BeEquivalentTo(new[] { "homepage", "news" });
+        (await _store.GetConfigAsync($"https://{domain}/"))!.ModelVersion.Should().Be("homepage");
+        (await _store.GetConfigAsync($"https://{domain}/news/world"))!.ModelVersion
+            .Should().Be("news", "with its own layout gone the section falls back to the next most specific one");
+    }
+
+    // Guards:   An unreadable (corrupt) layout file is moved aside intact before a new
+    //           layout is saved, so saving never destroys the user's other saved layouts.
+    // Fails if: the corrupt file is just replaced by a file holding only the new config
+    //           (its bytes gone), or the aside copy differs from the original bytes.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~SaveConfigAsync_CorruptFile_IsMovedAsideNotOverwritten"
+    [Fact]
+    public async Task SaveConfigAsync_CorruptFile_IsMovedAsideNotOverwritten()
+    {
+        const string domain = "test-hierarchy-corruptsave.example.com";
+        var corruptBytes = System.Text.Encoding.UTF8.GetBytes(
+            "[{\"domain\":\"" + domain + "\",\"urlPattern\":\"^abc\",\"sections\":[{\"na");
+        Directory.CreateDirectory(_storagePath);
+        var filePath = Path.Combine(_storagePath, domain + ".json");
+        await File.WriteAllBytesAsync(filePath, corruptBytes);
+
+        var saved = await _store.SaveConfigAsync(
+            CreateTestConfig(domain, "^https?://test-hierarchy-corruptsave\\.example\\.com/?$"));
+
+        saved.Should().BeTrue();
+        var asides = Directory.GetFiles(_storagePath, domain + ".corrupt-*.json");
+        asides.Should().HaveCount(1, "the unreadable file is kept as <name>.corrupt-<timestamp>.json");
+        (await File.ReadAllBytesAsync(asides[0])).Should().Equal(corruptBytes, "the user's bytes are preserved exactly");
+        (await _store.GetConfigAsync($"https://{domain}/")).Should().NotBeNull("the new layout was still saved");
+    }
+
+    // Guards:   Merely reading layouts from a corrupt file also keeps its bytes (moved
+    //           aside, not deleted), and later bulk operations do not re-process the
+    //           aside copy again and again.
+    // Fails if: the read path drops the corrupt bytes, or ClearLegacySnapshotsAsync
+    //           treats the aside file as a live layout file and shuffles it into
+    //           .corrupt-....corrupt-....json chains.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~GetConfigAsync_CorruptFile_KeepsBytesAndAsideFileIsLeftAlone"
+    [Fact]
+    public async Task GetConfigAsync_CorruptFile_KeepsBytesAndAsideFileIsLeftAlone()
+    {
+        const string domain = "test-hierarchy-corruptread.example.com";
+        var corruptBytes = System.Text.Encoding.UTF8.GetBytes("this is not json at all {{{");
+        Directory.CreateDirectory(_storagePath);
+        await File.WriteAllBytesAsync(Path.Combine(_storagePath, domain + ".json"), corruptBytes);
+
+        (await _store.GetConfigAsync($"https://{domain}/")).Should().BeNull();
+        await _store.ClearLegacySnapshotsAsync();
+        await _store.GetConfigCountAsync();
+
+        var asides = Directory.GetFiles(_storagePath, "test-hierarchy-corruptread*.json");
+        asides.Should().HaveCount(1, "exactly one aside copy, no chained .corrupt-....corrupt-.... renames");
+        Path.GetFileName(asides[0]).Should().MatchRegex(
+            @"^test-hierarchy-corruptread\.example\.com\.corrupt-\d{14}\.json$");
+        (await File.ReadAllBytesAsync(asides[0])).Should().Equal(corruptBytes);
     }
 }

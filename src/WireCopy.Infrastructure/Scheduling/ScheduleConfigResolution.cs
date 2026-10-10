@@ -95,7 +95,10 @@ internal static class ScheduleConfigResolution
             return "the site";
         }
 
+        // workspace-zh1o1: drop the segment-boundary lookahead BuildUrlPattern now appends
+        // to non-root paths, before the backslash/$ trimming below mangles it.
         var cleaned = urlPattern
+            .Replace("(?=[/?#]|$)", string.Empty, StringComparison.Ordinal)
             .Replace("\\", string.Empty, StringComparison.Ordinal)
             .TrimStart('^')
             .TrimEnd('$')
