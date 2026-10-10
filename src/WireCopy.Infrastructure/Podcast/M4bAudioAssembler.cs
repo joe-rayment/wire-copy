@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.ComponentModel;
 using ATL;
 using FFMpegCore;
 using FFMpegCore.Enums;
@@ -31,9 +32,13 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
 
     public async Task<bool> ValidatePrerequisitesAsync(CancellationToken cancellationToken = default)
     {
+        // A caller that already backed out must see a cancellation, never a
+        // misleading "ffmpeg is not installed".
+        cancellationToken.ThrowIfCancellationRequested();
+
         try
         {
-            using var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+            var psi = new System.Diagnostics.ProcessStartInfo
             {
                 FileName = "ffmpeg",
                 Arguments = "-version",
@@ -41,21 +46,28 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
                 RedirectStandardError = true,
                 UseShellExecute = false,
                 CreateNoWindow = true,
-            });
+            };
 
-            if (process != null)
+            var result = await RunFfmpegAsync(psi, cancellationToken).ConfigureAwait(false);
+            if (result.ExitCode == 0)
             {
-                await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-                return process.ExitCode == 0;
+                return true;
             }
-        }
-        catch
-        {
-            // FFmpeg is not installed
-        }
 
-        _logger.LogError("FFmpeg is not installed or not found in PATH");
-        return false;
+            _logger.LogError("ffmpeg -version exited with code {ExitCode}: {StdErr}", result.ExitCode, result.StdErr);
+            return false;
+        }
+        catch (Win32Exception)
+        {
+            // Process.Start throws Win32Exception when the binary cannot be found.
+            _logger.LogError("FFmpeg is not installed or not found in PATH");
+            return false;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogError(ex, "Could not run 'ffmpeg -version': {Message}", ex.Message);
+            return false;
+        }
     }
 
     public async Task<AssemblyResult> AssembleAsync(
@@ -345,6 +357,47 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
         }
     }
 
+    /// <summary>
+    /// Runs an ffmpeg process to completion with both redirected streams drained
+    /// asynchronously (an undrained pipe blocks ffmpeg once it fills). On
+    /// cancellation the whole process tree is killed before the cancellation is
+    /// rethrown, so an abandoned run never keeps writing its output file.
+    /// </summary>
+    private static async Task<(int ExitCode, string StdOut, string StdErr)> RunFfmpegAsync(
+        System.Diagnostics.ProcessStartInfo psi,
+        CancellationToken cancellationToken)
+    {
+        using var process = System.Diagnostics.Process.Start(psi)
+            ?? throw new InvalidOperationException("ffmpeg process failed to start");
+
+        // Deliberately not cancellable: the pipes close when the process exits
+        // (or is killed), which is what ends these reads.
+        var stdoutTask = process.StandardOutput.ReadToEndAsync(CancellationToken.None);
+        var stderrTask = process.StandardError.ReadToEndAsync(CancellationToken.None);
+
+        try
+        {
+            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            try
+            {
+                process.Kill(entireProcessTree: true);
+            }
+            catch (Exception ex) when (ex is InvalidOperationException or Win32Exception)
+            {
+                // Already exited (or exiting) — nothing left to kill.
+            }
+
+            throw;
+        }
+
+        var stdout = await stdoutTask.ConfigureAwait(false);
+        var stderr = await stderrTask.ConfigureAwait(false);
+        return (process.ExitCode, stdout, stderr);
+    }
+
     private static int ParseBitrate(string bitrate)
     {
         // Parse "64k" -> 64, "128k" -> 128
@@ -466,15 +519,11 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
             psi.ArgumentList.Add("+faststart");
             psi.ArgumentList.Add(withChaptersPath);
 
-            using var process = System.Diagnostics.Process.Start(psi)
-                ?? throw new InvalidOperationException("ffmpeg process failed to start");
-            var stderrTask = process.StandardError.ReadToEndAsync(cancellationToken);
-            await process.WaitForExitAsync(cancellationToken).ConfigureAwait(false);
-            if (process.ExitCode != 0)
+            var result = await RunFfmpegAsync(psi, cancellationToken).ConfigureAwait(false);
+            if (result.ExitCode != 0)
             {
-                var stderr = await stderrTask.ConfigureAwait(false);
                 throw new InvalidOperationException(
-                    $"ffmpeg chapter-injection pass failed (exit {process.ExitCode}): {stderr}");
+                    $"ffmpeg chapter-injection pass failed (exit {result.ExitCode}): {result.StdErr}");
             }
 
             // Atomic replace: overwrite the original m4b with the chaptered copy.
