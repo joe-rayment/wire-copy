@@ -32,6 +32,9 @@ public sealed record LauncherViewState
     /// <summary>The URL bar's typed buffer + cursor while go-to-URL input is active; null otherwise.</summary>
     public LauncherUrlTyping? UrlTyping { get; init; }
 
+    /// <summary>The ':' / '/' prompt line while one is active over this pane (workspace-up3zx); null otherwise.</summary>
+    public PromptLineState? PromptLine { get; init; }
+
     /// <summary>The "add API keys" setup-hint copy when shown; null otherwise.</summary>
     public string? SetupHint { get; init; }
 

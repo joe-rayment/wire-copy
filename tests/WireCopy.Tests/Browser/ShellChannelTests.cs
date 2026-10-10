@@ -141,6 +141,68 @@ public sealed class ShellChannelTests : IAsyncLifetime
         Assert.Equal(JsonValueKind.Null, p.GetProperty("state").ValueKind);
     }
 
+    // Guards:   the ':' / '/' prompt line mirrored into the HTML panes (workspace-up3zx) arrives at the shell
+    //           under the camelCase name `promptLine` as { prefix, buffer, cursor } on BOTH the launcherState and
+    //           the linkTreeState messages, and a pane with no prompt active sends `promptLine: null`.
+    // Fails if: the property is renamed or dropped from LauncherViewState / LinkTreeViewState, the wire casing
+    //           changes (e.g. PromptLine / Prefix), or a missing prompt serialises as an empty object, not null.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PromptLine_SerialisesCamelCase"
+    [Fact]
+    public async Task PromptLine_SerialisesCamelCase_OnLauncherAndLinkTreeState()
+    {
+        _server = await MiniShellServer.StartAsync(_socketPath);
+        await using var channel = ShellChannel.TryConnect(_socketPath, NullLogger.Instance);
+
+        var prompt = new PromptLineState { Prefix = ":", Buffer = "hel", Cursor = 3 };
+        await channel!.SendLauncherStateAsync(true, new LauncherViewState
+        {
+            Slots = new List<LauncherSlot>(),
+            Paging = new LauncherPaging { Offset = 0, Visible = 0, Total = 0 },
+            Footer = new LauncherFooter(),
+            Tagline = "t",
+            Version = "v",
+            PromptLine = prompt,
+        });
+        await channel.SendLinkTreeStateAsync(true, new LinkTreeViewState
+        {
+            Title = "Wire",
+            Items = new List<LinkTreeItem>(),
+            PromptLine = prompt,
+        });
+
+        for (var i = 0; i < 100 && (_server.LastLauncherState is null || _server.LastLinkTreeState is null); i++)
+        {
+            await Task.Delay(20);
+        }
+
+        foreach (var sent in new[] { _server.LastLauncherState!.Value, _server.LastLinkTreeState!.Value })
+        {
+            var line = sent.GetProperty("state").GetProperty("promptLine");
+            Assert.Equal(":", line.GetProperty("prefix").GetString());
+            Assert.Equal("hel", line.GetProperty("buffer").GetString());
+            Assert.Equal(3, line.GetProperty("cursor").GetInt32());
+        }
+
+        // No prompt active: the key is present and null (the pane's "hide the prompt row" signal).
+        await channel.SendLauncherStateAsync(true, new LauncherViewState
+        {
+            Slots = new List<LauncherSlot>(),
+            Paging = new LauncherPaging { Offset = 0, Visible = 0, Total = 0 },
+            Footer = new LauncherFooter(),
+            Tagline = "t",
+            Version = "v",
+        });
+
+        for (var i = 0; i < 100 && _server.LastLauncherState!.Value.GetProperty("state").GetProperty("promptLine").ValueKind != JsonValueKind.Null; i++)
+        {
+            await Task.Delay(20);
+        }
+
+        Assert.Equal(
+            JsonValueKind.Null,
+            _server.LastLauncherState!.Value.GetProperty("state").GetProperty("promptLine").ValueKind);
+    }
+
     [Fact]
     public async Task ServerError_ReturnsFalse_NotThrow()
     {
@@ -207,6 +269,8 @@ public sealed class ShellChannelTests : IAsyncLifetime
 
         public JsonElement? LastLauncherState { get; private set; }
 
+        public JsonElement? LastLinkTreeState { get; private set; }
+
         public static Task<MiniShellServer> StartAsync(string socketPath)
         {
             var listener = new Socket(AddressFamily.Unix, SocketType.Stream, ProtocolType.Unspecified);
@@ -267,6 +331,10 @@ public sealed class ShellChannelTests : IAsyncLifetime
                             break;
                         case "launcherState":
                             LastLauncherState = msg.GetProperty("params").Clone();
+                            reply = new { id, ok = true, result = new { } };
+                            break;
+                        case "linkTreeState":
+                            LastLinkTreeState = msg.GetProperty("params").Clone();
                             reply = new { id, ok = true, result = new { } };
                             break;
                         case "createPage" when msg.GetProperty("params").GetProperty("tag").GetString() == "boom":

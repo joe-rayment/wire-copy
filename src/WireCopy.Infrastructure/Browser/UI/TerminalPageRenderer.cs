@@ -59,6 +59,16 @@ public class TerminalPageRenderer : IPageRenderer
     // so leaving the link list hides the shell's HTML link-tree pane exactly once.
     private bool _linkTreeStateVisible;
 
+    // workspace-up3zx: the ':' / '/' prompt line currently mirrored into the HTML
+    // panes, plus the last state pushed for each pane so a keystroke can re-send
+    // it with the new prompt text without re-running the render. _promptLock keeps
+    // the (prompt, cached state, send) triple coherent between the render thread
+    // and the input thread.
+    private readonly object _promptLock = new();
+    private PromptLineState? _promptLine;
+    private LauncherViewState? _lastLauncherState;
+    private LinkTreeViewState? _lastLinkTreeState;
+
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
         : this(themeProvider, logger, podcastJobManager: null, shellChannel: null)
     {
@@ -123,8 +133,12 @@ public class TerminalPageRenderer : IPageRenderer
             {
                 var linkState = LinkTreeRenderer.BuildViewState(
                     page, context, options, remainingHeight, linkCount, sectionCount);
-                _ = _shellChannel.SendLinkTreeStateAsync(true, linkState);
-                _linkTreeStateVisible = true;
+                lock (_promptLock)
+                {
+                    _lastLinkTreeState = linkState;
+                    _ = _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine });
+                    _linkTreeStateVisible = true;
+                }
             }
         }
         else
@@ -541,8 +555,47 @@ public class TerminalPageRenderer : IPageRenderer
         if (_shellChannel.IsConnected)
         {
             var state = LauncherRenderer.BuildViewState(bookmarks, selectedIndex, options);
-            _ = _shellChannel.SendLauncherStateAsync(true, state);
-            _launcherStateVisible = true;
+            lock (_promptLock)
+            {
+                _lastLauncherState = state;
+                _ = _shellChannel.SendLauncherStateAsync(true, state with { PromptLine = _promptLine });
+                _launcherStateVisible = true;
+            }
+        }
+    }
+
+    /// <summary>
+    /// workspace-up3zx: mirrors the terminal's ':' / '/' prompt line into whichever
+    /// HTML pane (link tree or launcher) is currently up, by re-sending that pane's
+    /// last state with <see cref="LauncherViewState.PromptLine"/> set (null clears
+    /// it). The prompt is remembered so later pane re-renders keep carrying it.
+    /// Nothing is sent when no pane is visible or the shell channel is not
+    /// connected (terminal mode — the prompt is already visible on the terminal).
+    /// Fire-and-forget: a lost channel fails soft.
+    /// </summary>
+    /// <param name="line">The prompt prefix/buffer/cursor, or null when the prompt closed.</param>
+    /// <returns>A task that completes once the state has been handed to the channel.</returns>
+    public Task SetPromptLineAsync(PromptLineState? line)
+    {
+        lock (_promptLock)
+        {
+            _promptLine = line;
+            if (!_shellChannel.IsConnected)
+            {
+                return Task.CompletedTask;
+            }
+
+            if (_linkTreeStateVisible && _lastLinkTreeState is { } linkState)
+            {
+                return _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = line });
+            }
+
+            if (_launcherStateVisible && _lastLauncherState is { } launcherState)
+            {
+                return _shellChannel.SendLauncherStateAsync(true, launcherState with { PromptLine = line });
+            }
+
+            return Task.CompletedTask;
         }
     }
 

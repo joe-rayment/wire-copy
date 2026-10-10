@@ -30,8 +30,13 @@ internal static class SearchCommandHandler
         // workspace-8fkv: start the search prompt at the docked content origin so a
         // left-docked browser doesn't sit over it. Only override the default column when a
         // left dock actually shifts the origin, so the undocked / right-dock call is unchanged.
-        var query = await ctx.InputHandler.PromptForInputAsync(
-            "/", ct, col: options.ContentLeftOffset > 0 ? options.ContentLeftOffset : null).ConfigureAwait(false);
+        // workspace-up3zx: with an HTML pane up the terminal-drawn prompt is invisible, so
+        // on the real terminal handler mirror the '/' prompt into the pane's state.
+        var searchCol = options.ContentLeftOffset > 0 ? options.ContentLeftOffset : (int?)null;
+        var query = PromptLineMirror.CanMirror(ctx, out var searchInput)
+            ? await PromptLineMirror.RunAsync(
+                ctx.ExportPromptLine, "/", onChange => searchInput.PromptForInputMirroredAsync("/", null, ct, searchCol, onChange)).ConfigureAwait(false)
+            : await ctx.InputHandler.PromptForInputAsync("/", ct, col: searchCol).ConfigureAwait(false);
         if (!string.IsNullOrWhiteSpace(query))
         {
             ctx.NavigationService.SetSearchQuery(query);
@@ -80,9 +85,21 @@ internal static class SearchCommandHandler
         // hint after the ':' so the command line is discoverable; substitutes fall back
         // to the plain 7-arg prompt.
         var promptCol = options.ContentLeftOffset > 0 ? options.ContentLeftOffset : (int?)null;
-        var input = ctx.InputHandler is UI.TerminalInputHandler terminalInput
-            ? await terminalInput.PromptForInputWithHintAsync(":", " (:help)", ct, promptCol).ConfigureAwait(false)
-            : await ctx.InputHandler.PromptForInputAsync(":", ct, col: promptCol).ConfigureAwait(false);
+
+        // workspace-up3zx: when an HTML pane is up, also mirror the typed ':' line into it.
+        string? input;
+        if (PromptLineMirror.CanMirror(ctx, out var mirrorInput))
+        {
+            input = await PromptLineMirror.RunAsync(
+                ctx.ExportPromptLine, ":", onChange => mirrorInput.PromptForInputMirroredAsync(":", " (:help)", ct, promptCol, onChange)).ConfigureAwait(false);
+        }
+        else
+        {
+            input = ctx.InputHandler is UI.TerminalInputHandler terminalInput
+                ? await terminalInput.PromptForInputWithHintAsync(":", " (:help)", ct, promptCol).ConfigureAwait(false)
+                : await ctx.InputHandler.PromptForInputAsync(":", ct, col: promptCol).ConfigureAwait(false);
+        }
+
         if (!string.IsNullOrWhiteSpace(input))
         {
             return await HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false);

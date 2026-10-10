@@ -273,7 +273,11 @@ internal static class LauncherCommandHandler
 
             case CommandType.OpenCommandLine:
             {
-                var input = await ctx.InputHandler.PromptForInputAsync(":", ct).ConfigureAwait(false);
+                // workspace-up3zx: mirror the ':' prompt into the HTML launcher pane (invisible otherwise).
+                var input = PromptLineMirror.CanMirror(ctx, out var cmdInput)
+                    ? await PromptLineMirror.RunAsync(
+                        ctx.ExportPromptLine, ":", onChange => cmdInput.PromptForInputMirroredAsync(":", null, ct, null, onChange)).ConfigureAwait(false)
+                    : await ctx.InputHandler.PromptForInputAsync(":", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(input))
                 {
                     if (!await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false))
@@ -291,7 +295,11 @@ internal static class LauncherCommandHandler
 
             case CommandType.Search:
             {
-                var query = await ctx.InputHandler.PromptForInputAsync("/", ct).ConfigureAwait(false);
+                // workspace-up3zx: mirror the '/' prompt into the HTML launcher pane.
+                var query = PromptLineMirror.CanMirror(ctx, out var searchInput)
+                    ? await PromptLineMirror.RunAsync(
+                        ctx.ExportPromptLine, "/", onChange => searchInput.PromptForInputMirroredAsync("/", null, ct, null, onChange)).ConfigureAwait(false)
+                    : await ctx.InputHandler.PromptForInputAsync("/", ct).ConfigureAwait(false);
                 if (!string.IsNullOrWhiteSpace(query) && ctx.Bookmarks != null)
                 {
                     var matchIdx = ctx.Bookmarks

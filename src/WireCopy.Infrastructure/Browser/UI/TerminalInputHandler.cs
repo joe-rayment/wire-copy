@@ -156,6 +156,22 @@ public class TerminalInputHandler : IInputHandler
         return PromptForInputCoreAsync(prompt, cancellationToken, isSecret: false, row: row, col: col, initialInput: initialInput, interceptKey: null, clearWidth: null, ghostHint: null, onChange: onChange);
     }
 
+    /// <summary>
+    /// workspace-up3zx — the ':' / '/' prompt entry point that does BOTH of
+    /// <see cref="PromptForInputWithHintAsync"/> (optional faint ghost
+    /// <paramref name="hint"/>) and <see cref="PromptForInputWithChangeAsync"/>
+    /// (<paramref name="onChange"/> fires with the buffer + cursor after every
+    /// edit), so the prompt line can be mirrored into the shell's HTML pane while
+    /// it covers the terminal. Terminal echo is unchanged — the callback only
+    /// observes. Lives on the concrete class so the <see cref="IInputHandler"/>
+    /// signature and its NSubstitute mocks stay untouched.
+    /// </summary>
+    public Task<string?> PromptForInputMirroredAsync(
+        string prompt, string? hint, CancellationToken cancellationToken, int? col, Action<string, int>? onChange)
+    {
+        return PromptForInputCoreAsync(prompt, cancellationToken, isSecret: false, row: null, col: col, initialInput: null, interceptKey: null, clearWidth: null, ghostHint: hint, onChange: onChange);
+    }
+
 #pragma warning disable SA1202 // private core kept adjacent to the two public wrappers that delegate to it
     private async Task<string?> PromptForInputCoreAsync(string prompt, CancellationToken cancellationToken, bool isSecret, int? row, int? col, string? initialInput, Func<char, bool>? interceptKey, int? clearWidth, string? ghostHint = null, Action<string, int>? onChange = null)
     {

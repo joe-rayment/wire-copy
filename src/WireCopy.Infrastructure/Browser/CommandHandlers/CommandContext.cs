@@ -135,6 +135,14 @@ internal class CommandContext
     /// </summary>
     public Func<string, int, Task>? ExportLauncherUrlTyping { get; init; }
 
+    /// <summary>
+    /// Mirrors the bottom-row ':' / '/' prompt (prefix + typed buffer + cursor)
+    /// into the shell's HTML launcher / link-tree pane while it covers the
+    /// terminal (workspace-up3zx); null clears it. Null / no-op without a live
+    /// shell or an HTML pane up.
+    /// </summary>
+    public Func<PromptLineState?, Task>? ExportPromptLine { get; init; }
+
     public required Func<CancellationToken, Task> RefreshCollectionsAsync { get; init; }
 
     public required Func<CancellationToken, Task> RefreshBookmarksAsync { get; init; }

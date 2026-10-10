@@ -59,6 +59,9 @@ public sealed record LinkTreeViewState
 
     /// <summary>True when the browser sidecar is docked (the footer's ⇉ marker).</summary>
     public bool Docked { get; init; }
+
+    /// <summary>The ':' / '/' prompt line while one is active over this pane (workspace-up3zx); null otherwise.</summary>
+    public PromptLineState? PromptLine { get; init; }
 }
 
 /// <summary>
