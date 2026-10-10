@@ -674,13 +674,25 @@ internal static class StrategyChooserHandler
 
         // workspace-6jk65: paint the wizard NOW so the screenshot wait (up to the
         // cap) shows "Reading the page…" instead of the stale chooser card.
-        overlay.AnalyzingLabel = "Reading the page…";
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        // The painter is now up before the try/finally below that clears it, so a
+        // cancel during the wait must clear it here or the card stays on screen.
+        byte[]? screenshot;
+        try
+        {
+            overlay.AnalyzingLabel = "Reading the page…";
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-        var screenshot = await ScreenshotCapture.WithCapAsync(
-            () => captureTask,
-            ScreenshotCapture.WizardCap,
-            ct).ConfigureAwait(false);
+            screenshot = await ScreenshotCapture.WithCapAsync(
+                () => captureTask,
+                ScreenshotCapture.WizardCap,
+                ct).ConfigureAwait(false);
+        }
+        catch
+        {
+            ClearOverlay(ctx);
+            throw;
+        }
+
         if (screenshot != null)
         {
             var size = ScreenshotCapture.TryReadPngSize(screenshot);
