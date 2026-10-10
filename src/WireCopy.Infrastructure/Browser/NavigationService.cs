@@ -16,6 +16,14 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 public class NavigationService : INavigationService
 {
+    /// <summary>
+    /// workspace-2ojw1: each history stack keeps at most this many entries;
+    /// past it the OLDEST is dropped. Entries hold whole pages (link tree +
+    /// readable content), so an unbounded stack kept every page of a long
+    /// session in memory.
+    /// </summary>
+    public const int MaxHistoryEntries = 100;
+
     private static readonly TimeSpan StatusMessageDuration = TimeSpan.FromSeconds(3);
 
     /// <summary>
@@ -27,8 +35,9 @@ public class NavigationService : INavigationService
     private static readonly TimeSpan ToastDuration = TimeSpan.FromSeconds(4);
 
     private readonly ILogger<NavigationService> _logger;
-    private readonly Stack<HistoryEntry> _backHistory = new();
-    private readonly Stack<HistoryEntry> _forwardHistory = new();
+
+    private readonly BoundedHistory _backHistory = new(MaxHistoryEntries);
+    private readonly BoundedHistory _forwardHistory = new(MaxHistoryEntries);
     private Page? _currentPage;
     private ViewMode _currentViewMode = ViewMode.Hierarchical;
     private int _selectedLinkIndex;
@@ -142,9 +151,10 @@ public class NavigationService : INavigationService
 
     public void NavigateTo(Page page)
     {
-        if (_currentPage != null)
+        // workspace-2ojw1: a skeleton is a loading placeholder, not a visited page.
+        if (_currentPage is { IsSkeleton: false })
         {
-            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode, _selectedLinkIndex, _scrollOffset));
+            _backHistory.Push(SnapshotCurrent(_currentPage));
             _logger.LogDebug("Pushed {Title} to back history (count: {Count})",
                 _currentPage.Metadata.Title,
                 _backHistory.Count);
@@ -193,16 +203,18 @@ public class NavigationService : INavigationService
             return null;
         }
 
-        if (_currentPage != null)
+        // workspace-2ojw1: never park a skeleton on the forward stack (Esc
+        // mid-load) — Shift+B would land on a blank page that never loads.
+        if (_currentPage is { IsSkeleton: false })
         {
-            _forwardHistory.Push(new HistoryEntry(_currentPage, _currentViewMode, _selectedLinkIndex, _scrollOffset));
+            _forwardHistory.Push(SnapshotCurrent(_currentPage));
         }
 
         var entry = _backHistory.Pop();
         _currentPage = entry.Page;
         _selectedLinkIndex = Math.Max(0, entry.SelectedLinkIndex);
         _scrollOffset = Math.Max(0, entry.ScrollOffset);
-        _readerCursorLine = 0;
+        _readerCursorLine = Math.Max(0, entry.ReaderCursorLine);
         _speedReadActive = false;
         _currentViewMode = entry.ViewMode;
 
@@ -221,16 +233,16 @@ public class NavigationService : INavigationService
             return null;
         }
 
-        if (_currentPage != null)
+        if (_currentPage is { IsSkeleton: false })
         {
-            _backHistory.Push(new HistoryEntry(_currentPage, _currentViewMode, _selectedLinkIndex, _scrollOffset));
+            _backHistory.Push(SnapshotCurrent(_currentPage));
         }
 
         var entry = _forwardHistory.Pop();
         _currentPage = entry.Page;
         _selectedLinkIndex = Math.Max(0, entry.SelectedLinkIndex);
         _scrollOffset = Math.Max(0, entry.ScrollOffset);
-        _readerCursorLine = 0;
+        _readerCursorLine = Math.Max(0, entry.ReaderCursorLine);
         _speedReadActive = false;
         _currentViewMode = entry.ViewMode;
 
@@ -1043,5 +1055,51 @@ public class NavigationService : INavigationService
 
     // workspace-xx61: carry the selection + scroll so back/forward restores the
     // user's place instead of dumping them at the top of the list.
-    private record struct HistoryEntry(Page Page, ViewMode ViewMode, int SelectedLinkIndex, int ScrollOffset);
+    private HistoryEntry SnapshotCurrent(Page page)
+        => new(page, _currentViewMode, _selectedLinkIndex, _scrollOffset, _readerCursorLine);
+
+    private record struct HistoryEntry(
+        Page Page,
+        ViewMode ViewMode,
+        int SelectedLinkIndex,
+        int ScrollOffset,
+        int ReaderCursorLine);
+
+    /// <summary>
+    /// A stack (newest first) that silently drops its OLDEST entry once it
+    /// holds more than <c>capacity</c>. <see cref="Stack{T}"/> cannot drop its
+    /// bottom, hence the linked list: head = top of stack.
+    /// </summary>
+    private sealed class BoundedHistory : IEnumerable<HistoryEntry>
+    {
+        private readonly LinkedList<HistoryEntry> _entries = new();
+        private readonly int _capacity;
+
+        public BoundedHistory(int capacity) => _capacity = capacity;
+
+        public int Count => _entries.Count;
+
+        public void Push(HistoryEntry entry)
+        {
+            _entries.AddFirst(entry);
+            if (_entries.Count > _capacity)
+            {
+                _entries.RemoveLast();
+            }
+        }
+
+        public HistoryEntry Pop()
+        {
+            var top = _entries.First?.Value
+                ?? throw new InvalidOperationException("History is empty.");
+            _entries.RemoveFirst();
+            return top;
+        }
+
+        public void Clear() => _entries.Clear();
+
+        public IEnumerator<HistoryEntry> GetEnumerator() => _entries.GetEnumerator();
+
+        System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+    }
 }

@@ -57,6 +57,15 @@ public class Page
     /// </summary>
     public DateTime LoadedAt { get; private set; }
 
+    /// <summary>
+    /// workspace-2ojw1: true for the empty "Loading..." placeholder shown while
+    /// a page loads in the background. A skeleton is a stand-in, never a page
+    /// the user visited, so navigation history must not keep it: pushing it
+    /// onto the forward stack on Esc would make Shift+B land on a blank page
+    /// that never loads.
+    /// </summary>
+    public bool IsSkeleton { get; private set; }
+
     private Page(string url, string rawHtml, PageMetadata metadata)
     {
         Id = Guid.NewGuid();
@@ -94,6 +103,14 @@ public class Page
     public void SetReadableContent(ReadableContent content)
     {
         ReadableContent = content ?? throw new ArgumentNullException(nameof(content));
+    }
+
+    /// <summary>
+    /// Marks this page as a loading placeholder (see <see cref="IsSkeleton"/>).
+    /// </summary>
+    public void MarkAsSkeleton()
+    {
+        IsSkeleton = true;
     }
 
     /// <summary>

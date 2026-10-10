@@ -977,6 +977,11 @@ public partial class BrowserOrchestrator : IBrowserService
             var metadata = new PageMetadata { Title = host };
             var skeletonPage = Page.Create(url, "<html></html>", metadata);
 
+            // workspace-2ojw1: mark it so NavigationService never keeps this
+            // placeholder on the back/forward stacks (Esc mid-load used to
+            // leave an empty "Loading..." page on the forward stack).
+            skeletonPage.MarkAsSkeleton();
+
             // Set as LinkList with empty tree so the hierarchical view renders
             // the page frame (header, status bar) with a loading status instead
             // of a blank "Loading..." screen. User sees the page structure immediately.
