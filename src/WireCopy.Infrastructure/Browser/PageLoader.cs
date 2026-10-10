@@ -363,7 +363,8 @@ public class PageLoader : IPageLoader
     private static string? ExtractCanonicalUrl(HtmlDocument doc)
     {
         var node = doc.DocumentNode.SelectSingleNode("//link[@rel='canonical']");
-        return node?.GetAttributeValue("href", null!);
+        var href = node?.GetAttributeValue("href", null!);
+        return href is null ? null : HtmlEntity.DeEntitize(href);
     }
 
     private static DateTime? ParsePublishedDate(HtmlDocument doc)
@@ -376,7 +377,7 @@ public class PageLoader : IPageLoader
         var node = doc.DocumentNode.SelectSingleNode("//link[@rel='icon']") ??
                    doc.DocumentNode.SelectSingleNode("//link[@rel='shortcut icon']");
 
-        var href = node?.GetAttributeValue("href", null!);
+        var href = node is null ? null : HtmlEntity.DeEntitize(node.GetAttributeValue("href", null!));
 
         if (string.IsNullOrWhiteSpace(href))
         {

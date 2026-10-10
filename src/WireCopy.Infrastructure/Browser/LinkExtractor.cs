@@ -154,7 +154,9 @@ public class LinkExtractor : ILinkExtractor
             {
                 cancellationToken.ThrowIfCancellationRequested();
 
-                var href = anchor.GetAttributeValue("href", string.Empty);
+                // GetAttributeValue returns the RAW attribute text; Chromium's serialized DOM writes
+                // '&' as '&amp;' inside attributes, so decode once or multi-param URLs carry a literal "amp;".
+                var href = HtmlEntity.DeEntitize(anchor.GetAttributeValue("href", string.Empty));
                 if (string.IsNullOrWhiteSpace(href) || href.StartsWith('#') || href.StartsWith("javascript:", StringComparison.OrdinalIgnoreCase))
                 {
                     skippedNoHref++;

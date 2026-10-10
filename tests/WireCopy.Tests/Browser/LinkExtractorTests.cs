@@ -1137,4 +1137,72 @@ public class LinkExtractorTests
     }
 
     #endregion
+
+    #region Entity-Encoded Href Attributes (workspace-gwb62)
+
+    // Chromium's serialized DOM (what the app parses) always writes '&' inside attribute
+    // values as '&amp;'. HtmlAgilityPack hands that back raw, so the href must be decoded once.
+
+    private const string MultiParamHeadline = "A long enough story headline here";
+
+    private async Task<string> ExtractSingleUrlAsync(string rawHref)
+    {
+        var html = $"<html><body><a href=\"{rawHref}\">{MultiParamHeadline}</a></body></html>";
+
+        var links = await _sut.ExtractLinksAsync(html, "https://example.com/");
+
+        links.Should().HaveCount(1);
+        return links[0].Url;
+    }
+
+    // Guards:   a link whose href has 2+ query params (serialized as &amp;) is stored with a plain '&'
+    // Fails if: the href is used raw, giving "?id=1&amp;sec=world" (server sees a param named "amp;sec")
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractLinksAsync_HrefWithEncodedAmpersand"
+    [Fact]
+    public async Task ExtractLinksAsync_HrefWithEncodedAmpersand_DecodesToPlainAmpersand()
+    {
+        var url = await ExtractSingleUrlAsync("/story?id=1&amp;sec=world");
+
+        url.Should().Be("https://example.com/story?id=1&sec=world");
+    }
+
+    // Guards:   a percent-encoded ampersand (%26) inside a query value is left alone by the decode
+    // Fails if: the decode step also unescapes %26 (turning one parameter into two)
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractLinksAsync_HrefWithPercentEncodedAmpersand"
+    [Fact]
+    public async Task ExtractLinksAsync_HrefWithPercentEncodedAmpersand_KeepsPercentEscape()
+    {
+        var url = await ExtractSingleUrlAsync("/story?q=a%26b&amp;sec=world");
+
+        url.Should().Be("https://example.com/story?q=a%26b&sec=world");
+    }
+
+    // Guards:   the href is entity-decoded exactly ONCE (a literal "&amp;amp;" ends as "&amp;", not "&")
+    // Fails if: the decode is applied twice, or a plain "&" href is changed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractLinksAsync_HrefDecodedExactlyOnce"
+    [Fact]
+    public async Task ExtractLinksAsync_HrefDecodedExactlyOnce()
+    {
+        var doubleEncoded = await ExtractSingleUrlAsync("/story?id=1&amp;amp;sec=world");
+        var alreadyPlain = await ExtractSingleUrlAsync("/story?id=1&sec=world");
+
+        doubleEncoded.Should().Be("https://example.com/story?id=1&amp;sec=world");
+        alreadyPlain.Should().Be("https://example.com/story?id=1&sec=world");
+    }
+
+    // Guards:   the "#fragment" and "javascript:" skip rules still apply when the href is entity-encoded
+    // Fails if: the skip check runs on the raw "&#35;top" / "&#106;avascript:" text instead of the decoded one
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ExtractLinksAsync_EncodedFragmentAndJavascriptHrefs"
+    [Fact]
+    public async Task ExtractLinksAsync_EncodedFragmentAndJavascriptHrefs_AreStillSkipped()
+    {
+        var html = $"<html><body><a href=\"&#35;top\">{MultiParamHeadline}</a>" +
+                   $"<a href=\"&#106;avascript:void(0)\">{MultiParamHeadline} two</a></body></html>";
+
+        var links = await _sut.ExtractLinksAsync(html, "https://example.com/");
+
+        links.Should().BeEmpty();
+    }
+
+    #endregion
 }

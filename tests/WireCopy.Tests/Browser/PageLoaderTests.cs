@@ -255,6 +255,26 @@ public class PageLoaderTests
         result.Metadata.CanonicalUrl.Should().Be("https://example.com/canonical");
     }
 
+    // Guards:   canonical and favicon <link href> values with "&amp;" are stored with a plain "&".
+    // Fails if: those hrefs are kept raw, so metadata carries URLs with a literal "amp;" in the query.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~LoadAsync_CanonicalAndFaviconWithEncodedAmpersand"
+    [Fact]
+    public async Task LoadAsync_CanonicalAndFaviconWithEncodedAmpersand_AreDecoded()
+    {
+        var html = @"<html><head><title>T</title>
+            <link rel='canonical' href='https://example.com/story?id=1&amp;sec=world' />
+            <link rel='icon' href='https://example.com/icon.png?v=1&amp;s=32' />
+            </head><body><p>Content</p></body></html>";
+        var httpClient = CreateMockHttpClient(HttpStatusCode.OK, html);
+        var sut = CreateSut(httpClient);
+
+        var result = await sut.LoadAsync(new PageLoadRequest { Url = "https://example.com" });
+
+        result.Success.Should().BeTrue();
+        result.Metadata!.CanonicalUrl.Should().Be("https://example.com/story?id=1&sec=world");
+        result.Metadata.FaviconUrl.Should().Be("https://example.com/icon.png?v=1&s=32");
+    }
+
     [Fact]
     public async Task GetPageSourceAsync_SuccessfulLoad_ReturnsHtml()
     {

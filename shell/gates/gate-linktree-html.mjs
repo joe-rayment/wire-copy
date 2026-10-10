@@ -40,7 +40,19 @@ const story = (i, w, lead = '') =>
   `<li><a href="/a${i}.html">Dispatch ${w}: ${lead}a headline sized for the responsive grid gate number ${i}</a>` +
   ` <span class="byline">${AUTHOR}</span> <time datetime="2026-07-19T08:00:00Z">Jul 19</time></li>`
 const mainStory = (w, i) => story(i + 1, w, i + 1 === SPECIAL_I ? `${HTML_TITLE} ` : '')
+// workspace-gwb62: ONE story (in every article page's Related section) links to an address
+// with TWO query parameters. The page's SOURCE spells the separator `&amp;`; Chromium's
+// serialized DOM — what the TUI parses — ALWAYS spells it `&amp;` too, whatever the author
+// wrote. The user must land on `…?id=7&sec=world`, not on `…?id=7&amp;sec=world` (which the
+// server reads as a parameter literally named "amp;sec").
+const MULTI_TITLE = 'Dispatch multi: a headline whose address carries two query parameters'
+const MULTI_HREF_SRC = '/a7.html?id=7&amp;sec=world'
+const MULTI_URL_TAIL = '/a7.html?id=7&sec=world'
+const multiStory = `<li><a href="${MULTI_HREF_SRC}">${MULTI_TITLE}</a>` +
+  ` <span class="byline">${AUTHOR}</span> <time datetime="2026-07-19T08:00:00Z">Jul 19</time></li>`
+const served = []   // every request path the fixture server received, for U3
 const fixture = http.createServer((req, res) => {
+  served.push(req.url)
   res.setHeader('content-type', 'text/html; charset=utf-8')
   if (/^\/a\d+\.html/.test(req.url)) {
     // Real readable body + a small related-links section, so Tab back to the
@@ -50,7 +62,7 @@ const fixture = http.createServer((req, res) => {
       `<p>${'Readable body copy for the reader view to parse. '.repeat(30)}</p>`.repeat(6) +
       `</article>` +
       `<section><h2>Related</h2><ul>` +
-      [1, 2, 3].map(n => story(n, `related-${n}`)).join('\n') +
+      [1, 2, 3].map(n => story(n, `related-${n}`)).join('\n') + multiStory +
       `</ul></section>`)
     return
   }
@@ -498,6 +510,38 @@ try {
   const zoom = await lt.eval('document.documentElement.style.zoom')
   check('G0 Ctrl+= zooms the link pane to 19/18', Math.abs(parseFloat(zoom) - 19 / 18) < 0.002, `zoom=${zoom}`)
   env.key('ctrl+0'); await sleep(600)
+
+  // ── (h) workspace-gwb62: a link whose URL has TWO query params opens at the RIGHT
+  //    address. The pane is now the Related tree of the story page; select the multi-param
+  //    story with real arrow keys, press Enter, read where the live page really went. ──
+  const readSel = async () => { const s = JSON.parse(await lt.eval(STATE_JS)).state; return s.items[s.selectedIndex] }
+  let selU = await readSel()
+  for (let i = 0; i < 8 && !(selU && selU.title === MULTI_TITLE); i++) {
+    env.key(i % 2 === 0 ? 'Down' : 'Right'); await sleep(600)
+    selU = await readSel()
+  }
+  check('U0 selected the multi-query-param story with the arrow keys',
+    !!selU && selU.title === MULTI_TITLE, JSON.stringify(selU && { kind: selU.kind, title: selU.title }))
+  check(`U1 the link the pane holds ends ${MULTI_URL_TAIL} (plain &, no "amp;")`,
+    !!selU && typeof selU.url === 'string' && selU.url.endsWith(MULTI_URL_TAIL), `url=${selU && selU.url}`)
+  env.key('Return')
+  let navU = null
+  for (let i = 0; i < 40; i++) {
+    const list = await targets(env.cdpPort).catch(() => [])
+    navU = list.find(t => t.type === 'page' && t.url.includes('/a7.html?id=7'))
+    if (navU) break
+    await sleep(400)
+  }
+  check(`U2 live page URL after Enter ends ${MULTI_URL_TAIL}`,
+    !!navU && navU.url.endsWith(MULTI_URL_TAIL), `live page url=${navU ? navU.url : 'none'}`)
+  const reqsU = served.filter(u => u.startsWith('/a7.html?id=7'))
+  const paramsU = reqsU.map(u => [...new URL(u, 'http://x').searchParams.keys()].join(','))
+  check('U3 the server received param sec=world and NO param named "amp;sec"',
+    reqsU.length > 0 && reqsU.some(u => new URL(u, 'http://x').searchParams.get('sec') === 'world') &&
+      !reqsU.some(u => new URL(u, 'http://x').searchParams.has('amp;sec')),
+    `requests=${JSON.stringify(reqsU)} params=${JSON.stringify(paramsU)}`)
+  await sleep(3000)   // let the navigated page paint and the pane repopulate so the shot shows the settled state
+  env.shot('ltree-h-multiparam')
 
   const crashed = /Uncaught|TypeError|ReferenceError|A JavaScript error occurred in the main process/.test(shell.stderrText)
   check('Z0 no main-process crash in stderr', !crashed,

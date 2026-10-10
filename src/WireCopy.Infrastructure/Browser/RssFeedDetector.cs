@@ -77,7 +77,7 @@ public class RssFeedDetector : IRssFeedDetector
                 }
 
                 var type = node.GetAttributeValue("type", string.Empty);
-                var href = node.GetAttributeValue("href", string.Empty);
+                var href = HtmlEntity.DeEntitize(node.GetAttributeValue("href", string.Empty));
 
                 if (string.IsNullOrWhiteSpace(href))
                 {

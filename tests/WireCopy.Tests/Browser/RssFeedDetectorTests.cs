@@ -98,6 +98,24 @@ public class RssFeedDetectorTests
         feeds.Should().BeEmpty();
     }
 
+    // Guards:   a feed <link href> written by the browser with "&amp;" yields a URL with a plain "&".
+    // Fails if: the href is used raw, so the feed URL keeps a literal "amp;" and fetches the wrong feed.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~DetectFeeds_HrefWithEncodedAmpersand"
+    [Fact]
+    public void DetectFeeds_HrefWithEncodedAmpersand_DecodesToPlainAmpersand()
+    {
+        var html = """
+            <html><head>
+                <link rel="alternate" type="application/rss+xml" title="RSS" href="/feed?a=1&amp;b=2">
+            </head><body></body></html>
+            """;
+
+        var feeds = _detector.DetectFeeds(html, "https://example.com/");
+
+        feeds.Should().HaveCount(1);
+        feeds[0].Url.Should().Be("https://example.com/feed?a=1&b=2");
+    }
+
     [Fact]
     public void DetectFeeds_EmptyHtml_ReturnsEmpty()
     {
