@@ -600,4 +600,164 @@ public class PodcastPublisherTests : IDisposable
         await _storage.DidNotReceive().MakeBucketPublicAsync(
             Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
+
+    // ---- workspace-ianqr: publish integrity ------------------------------
+
+    // Guards:   A manifest.json that exists but can't be parsed aborts the publish before ANY upload
+    //           (the old code "started fresh" and overwrote every published episode).
+    // Fails if: LoadExistingEpisodesAsync swallows the JsonException and returns an empty list again.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PublishFeedAsync_UnparseableManifest_AbortsBeforeAnyUpload"
+    [Theory]
+    [InlineData("{ \"episodes\": [ { \"title\": \"half a manifest")] // truncated
+    [InlineData("{ \"episodes\": \"not-a-list\" }")] // schema drift: episodes is the wrong shape
+    public async Task PublishFeedAsync_UnparseableManifest_AbortsBeforeAnyUpload(string brokenManifest)
+    {
+        var feedIndex = "{\"Test Podcast\": {\"uuid\": \"abc123\", \"feedUrl\": \"https://example.com/feed.xml\"}}";
+        _storage.DownloadStringAsync("podcasts/feed-index.json", Arg.Any<CancellationToken>())
+            .Returns(feedIndex);
+        _storage.DownloadStringAsync("podcasts/abc123/manifest.json", Arg.Any<CancellationToken>())
+            .Returns(brokenManifest);
+
+        var result = await _publisher.PublishFeedAsync(CreateTestPodcast(), [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("manifest").And.Contain("not overwriting your published episodes");
+        await _storage.DidNotReceive().UploadStringAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _storage.DidNotReceive().UploadAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<long>?>(), Arg.Any<CancellationToken>());
+    }
+
+    // Guards:   manifest.json is uploaded before feed.xml, and the feed index last, so a failed manifest
+    //           upload can never leave feed.xml listing an episode the manifest doesn't know about.
+    // Fails if: Step 6/7 in PublishFeedAsync are swapped back (feed.xml first).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PublishFeedAsync_UploadsManifestBeforeFeedXml"
+    [Fact]
+    public async Task PublishFeedAsync_UploadsManifestBeforeFeedXml()
+    {
+        var order = new List<string>();
+        _storage.UploadStringAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                order.Add(callInfo.ArgAt<string>(1));
+                return $"https://storage.example.com/{callInfo.ArgAt<string>(1)}";
+            });
+
+        var result = await _publisher.PublishFeedAsync(CreateTestPodcast(), [CreateTestEpisode()]);
+
+        result.Success.Should().BeTrue();
+        var manifestAt = order.FindIndex(p => p.EndsWith("/manifest.json", StringComparison.Ordinal));
+        var feedAt = order.FindIndex(p => p.EndsWith("/feed.xml", StringComparison.Ordinal));
+        var indexAt = order.FindIndex(p => p == "podcasts/feed-index.json");
+        manifestAt.Should().BeGreaterThanOrEqualTo(0);
+        feedAt.Should().BeGreaterThan(manifestAt, "the manifest is the source of truth the next publish merges from");
+        indexAt.Should().BeGreaterThan(feedAt, "only a fully published feed is indexed");
+    }
+
+    // Guards:   If the manifest upload fails, feed.xml is never touched (so subscribers keep the old,
+    //           consistent feed) and the publish reports failure.
+    // Fails if: feed.xml is uploaded before (or regardless of) the manifest upload.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PublishFeedAsync_ManifestUploadFails_FeedXmlNotUploaded"
+    [Fact]
+    public async Task PublishFeedAsync_ManifestUploadFails_FeedXmlNotUploaded()
+    {
+        _storage.UploadStringAsync(Arg.Any<string>(), Arg.Is<string>(p => p.EndsWith("/manifest.json")), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns<string>(_ => throw new InvalidOperationException("network down"));
+
+        var result = await _publisher.PublishFeedAsync(CreateTestPodcast(), [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        await _storage.DidNotReceive().UploadStringAsync(
+            Arg.Any<string>(), Arg.Is<string>(p => p.EndsWith("/feed.xml")), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+    }
+
+    // Guards:   For a never-published title, the progress-screen footer URL (ResolveFeedUrlAsync) is the
+    //           same URL the following publish writes.
+    // Fails if: GetOrCreateFeedUuidAsync mints a fresh random UUID on every call instead of remembering it.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ResolveFeedUrlAsync_NeverPublished_MatchesFollowingPublish"
+    [Fact]
+    public async Task ResolveFeedUrlAsync_NeverPublished_MatchesFollowingPublish()
+    {
+        var footerUrl = await _publisher.ResolveFeedUrlAsync("Test Podcast");
+
+        var result = await _publisher.PublishFeedAsync(CreateTestPodcast(), [CreateTestEpisode()]);
+
+        result.Success.Should().BeTrue();
+        result.FeedUrl.Should().Be(footerUrl);
+    }
+
+    // Guards:   A first publish that fails after uploading audio retries into the SAME feed folder
+    //           (same UUID), instead of orphaning the uploads under a re-minted UUID.
+    // Fails if: the minted UUID is not remembered between PublishFeedAsync calls.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PublishFeedAsync_FirstPublishFailsThenRetries_ReusesMintedUuid"
+    [Fact]
+    public async Task PublishFeedAsync_FirstPublishFailsThenRetries_ReusesMintedUuid()
+    {
+        var episode = CreateTestEpisode();
+        var failFeedUpload = true;
+        _storage.UploadStringAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                if (failFeedUpload && callInfo.ArgAt<string>(1).EndsWith("/feed.xml", StringComparison.Ordinal))
+                {
+                    throw new InvalidOperationException("flaky network");
+                }
+
+                return $"https://storage.example.com/{callInfo.ArgAt<string>(1)}";
+            });
+
+        var first = await _publisher.PublishFeedAsync(CreateTestPodcast(), [episode]);
+        failFeedUpload = false;
+        var second = await _publisher.PublishFeedAsync(CreateTestPodcast(), [episode]);
+
+        first.Success.Should().BeFalse();
+        second.Success.Should().BeTrue();
+        var audioPaths = _storage.ReceivedCalls()
+            .Where(c => c.GetMethodInfo().Name == nameof(ICloudStorageClient.UploadAsync))
+            .Select(c => (string)c.GetArguments()[1]!)
+            .Where(p => p.EndsWith(".m4a", StringComparison.Ordinal))
+            .ToList();
+        audioPaths.Should().HaveCount(2);
+        audioPaths[0].Should().Be(audioPaths[1], "the retry must land in the same podcasts/<uuid>/episodes/ folder");
+    }
+
+    // Guards:   Feed URLs stay random and unguessable: two processes (publisher instances) minting a feed
+    //           for the same title get different URLs, and two titles in one process get different URLs.
+    // Fails if: the UUID is derived from the title (deterministic) instead of random.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~ResolveFeedUrlAsync_MintedUuidsStayRandom"
+    [Fact]
+    public async Task ResolveFeedUrlAsync_MintedUuidsStayRandom()
+    {
+        var other = new PodcastPublisher(_storage, _feedGenerator, NullLogger<PodcastPublisher>.Instance, _reachability);
+
+        var a1 = await _publisher.ResolveFeedUrlAsync("Title A");
+        var a2 = await _publisher.ResolveFeedUrlAsync("Title A");
+        var b = await _publisher.ResolveFeedUrlAsync("Title B");
+        var aOtherInstance = await other.ResolveFeedUrlAsync("Title A");
+
+        a1.Should().Be(a2);
+        b.Should().NotBe(a1);
+        aOtherInstance.Should().NotBe(a1);
+    }
+
+    // Guards:   A corrupt feed-index.json fails the publish with a clear message and uploads nothing
+    //           (never "starts fresh", which would re-mint UUIDs and break subscribers' feed URLs).
+    // Fails if: LoadFeedIndexAsync lets the raw JsonException escape, or swallows it and returns an empty index.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PublishFeedAsync_CorruptFeedIndex_FailsClearlyWithNoUploads"
+    [Fact]
+    public async Task PublishFeedAsync_CorruptFeedIndex_FailsClearlyWithNoUploads()
+    {
+        _storage.DownloadStringAsync("podcasts/feed-index.json", Arg.Any<CancellationToken>())
+            .Returns("{ not json at all");
+
+        var result = await _publisher.PublishFeedAsync(CreateTestPodcast(), [CreateTestEpisode()]);
+
+        result.Success.Should().BeFalse();
+        result.ErrorMessage.Should().Contain("feed index").And.Contain("existing feed URLs stay intact");
+        result.ErrorMessage.Should().NotContain("Publish failed:", "the message is already plain language");
+        await _storage.DidNotReceive().UploadStringAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string?>(), Arg.Any<CancellationToken>());
+        await _storage.DidNotReceive().UploadAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<long>?>(), Arg.Any<CancellationToken>());
+    }
 }

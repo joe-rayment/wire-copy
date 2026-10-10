@@ -1,5 +1,6 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.Collections.Concurrent;
 using System.Net.Http;
 using System.Security.Cryptography;
 using System.Text;
@@ -56,6 +57,17 @@ internal sealed class PodcastPublisher : IPodcastPublisher
     private readonly ILogger<PodcastPublisher> _logger;
     private readonly IFeedReachabilityProbe _reachability;
     private readonly Func<TimeSpan, CancellationToken, Task> _propagationDelay;
+
+    /// <summary>
+    /// workspace-ianqr: feed UUIDs minted in this process for titles that are not
+    /// in feed-index.json yet. The UUID must stay random (an unguessable feed URL
+    /// is deliberate), but <see cref="ResolveFeedUrlAsync"/> (progress-screen
+    /// footer) and the publish that follows must agree on it, and a first publish
+    /// that fails after uploading audio must retry into the same folder instead
+    /// of orphaning those uploads under a re-minted UUID. The publisher is a DI
+    /// singleton, so an instance field is process-wide.
+    /// </summary>
+    private readonly ConcurrentDictionary<string, string> _mintedFeedUuids = new(StringComparer.Ordinal);
 
     public PodcastPublisher(
         ICloudStorageClient storage,
@@ -276,7 +288,15 @@ internal sealed class PodcastPublisher : IPodcastPublisher
                 mergedEpisodes,
                 cancellationToken).ConfigureAwait(false);
 
-            // Step 6: Upload feed.xml
+            // Step 6: Upload manifest.json BEFORE feed.xml (workspace-ianqr).
+            // The manifest is the source of truth the next publish merges from.
+            // If feed.xml went first and the manifest upload then failed, the
+            // feed would list an episode the manifest doesn't know about, and
+            // the next publish would rebuild feed.xml from the stale manifest
+            // and silently drop it.
+            await UpdateManifestAsync(feedBasePath, podcast, mergedEpisodes, cancellationToken).ConfigureAwait(false);
+
+            // Step 7: Upload feed.xml
             // workspace-7m8d: no-cache so podcast clients pick up republishes
             // immediately (GCS bucket default is public, max-age=3600).
             await _storage.UploadStringAsync(
@@ -288,8 +308,7 @@ internal sealed class PodcastPublisher : IPodcastPublisher
 
             _logger.LogInformation("Published feed: {FeedUrl}", feedUrl);
 
-            // Step 7: Update manifest and feed index
-            await UpdateManifestAsync(feedBasePath, podcast, mergedEpisodes, cancellationToken).ConfigureAwait(false);
+            // Step 8: Update the feed index (last: only a fully published feed is indexed)
             await UpdateFeedIndexAsync(podcast.Title, feedUuid, feedUrl, cancellationToken).ConfigureAwait(false);
 
             // workspace-nb6b: anonymous HTTP GET of feed.xml so we catch any
@@ -385,6 +404,13 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         catch (OperationCanceledException)
         {
             throw;
+        }
+        catch (PublishIntegrityException ex)
+        {
+            // workspace-ianqr: refused on purpose, before anything was uploaded.
+            // The message is already plain-language; don't wrap it as "Publish failed: ...".
+            _logger.LogError(ex, "Aborting publish to protect published data: {Message}", ex.Message);
+            return FeedPublishResult.Failure(ex.Message);
         }
         catch (Exception ex)
         {
@@ -687,8 +713,10 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             return entry.Uuid;
         }
 
-        var newUuid = Guid.NewGuid().ToString("N");
-        _logger.LogInformation("Created new feed UUID for '{Title}': {Uuid}", title, newUuid);
+        // workspace-ianqr: remember the minted UUID so the footer's
+        // ResolveFeedUrlAsync, the publish, and any retry all share one.
+        var newUuid = _mintedFeedUuids.GetOrAdd(title, static _ => Guid.NewGuid().ToString("N"));
+        _logger.LogInformation("Using new feed UUID for '{Title}': {Uuid}", title, newUuid);
         return newUuid;
     }
 
@@ -700,7 +728,19 @@ internal sealed class PodcastPublisher : IPodcastPublisher
             return new Dictionary<string, FeedIndexEntry>();
         }
 
-        return JsonSerializer.Deserialize<Dictionary<string, FeedIndexEntry>>(json, JsonOptions) ?? [];
+        try
+        {
+            return JsonSerializer.Deserialize<Dictionary<string, FeedIndexEntry>>(json, JsonOptions) ?? [];
+        }
+        catch (JsonException ex)
+        {
+            // workspace-ianqr: never "start fresh" - that would re-mint UUIDs for
+            // every title and break every subscriber's feed URL.
+            throw new PublishIntegrityException(
+                $"The feed index ({FeedIndexPath}) couldn't be read — not publishing, so your existing feed URLs stay intact. "
+                + "Fix or restore that file in your bucket, then try again.",
+                ex);
+        }
     }
 
     private async Task UpdateFeedIndexAsync(
@@ -738,8 +778,14 @@ internal sealed class PodcastPublisher : IPodcastPublisher
         }
         catch (JsonException ex)
         {
-            _logger.LogWarning(ex, "Failed to parse existing manifest, starting fresh");
-            return [];
+            // workspace-ianqr: a manifest that EXISTS but can't be parsed is not a
+            // first publish. "Starting fresh" would overwrite manifest.json and
+            // feed.xml with only this run's episodes and silently erase every
+            // published episode. Abort before anything is uploaded.
+            throw new PublishIntegrityException(
+                $"The feed's manifest ({feedBasePath}/manifest.json) couldn't be read — not overwriting your published episodes. "
+                + "Fix or restore that file in your bucket, then try again.",
+                ex);
         }
     }
 
