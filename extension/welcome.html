@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wire Copy — setup</title>
+<link rel="icon" href="icons/icon32.png">
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="welcome.css">
+</head>
+<body>
+<main id="page">
+  <div class="eyebrow"><span class="tick">▌</span>Setup</div>
+  <div class="brand">Wire Copy</div>
+
+  <!-- Not connected yet: shown first and whenever the check fails. -->
+  <section id="waiting" class="panel warn" role="status">
+    <h1>Almost there</h1>
+    <p class="lead">Open Wire Copy and go to <strong>Settings → Browser extension</strong>; this page turns green by itself.</p>
+    <p id="waiting-detail" class="detail" hidden></p>
+    <button id="check-again" class="btn" type="button">Check again</button>
+  </section>
+
+  <section id="connected" class="panel ok" role="status" hidden>
+    <svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21"/><path d="M14 25.5l7.5 7.5L34.5 16"/></svg>
+    <h1>Wire Copy is connected</h1>
+    <p id="count" class="lead"></p>
+
+    <ol class="steps">
+      <li>
+        <span class="num">1</span>
+        <div>
+          <h2>Pin the button</h2>
+          <p><strong>Chrome, Brave, Edge:</strong> click the puzzle-piece icon in the toolbar, then the pin next to Wire Copy.</p>
+          <p><strong>Vivaldi:</strong> the Wire Copy button appears to the right of the address bar.</p>
+        </div>
+      </li>
+      <li>
+        <span class="num">2</span>
+        <div>
+          <h2>Save an article</h2>
+          <p>On any article, click the Wire Copy button to save it — it works offline too.</p>
+        </div>
+      </li>
+    </ol>
+  </section>
+</main>
+<script src="welcome.js"></script>
+</body>
+</html>

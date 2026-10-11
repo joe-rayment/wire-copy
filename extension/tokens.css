@@ -1,0 +1,79 @@
+/* Wire Copy brand tokens — the subset of shell/launcher/tokens.css (Phosphor 2.0)
+   this extension uses. The extension makes no network requests, so the one font it
+   needs (JetBrains Mono Bold, for headings) is bundled in fonts/. The palette is
+   dark-only, like the app: phosphor green on near-black. */
+
+:root {
+  color-scheme: dark;
+
+  --tr-bright:  #ff87d7; /* titles                          */
+  --tr-green:   #00d700; /* body text, the phosphor         */
+  --tr-med:     #00af00; /* metadata, secondary             */
+  --tr-muted:   #5f875f; /* hints, quiet labels             */
+  --tr-dim:     #005f00; /* borders, structural chrome      */
+  --tr-cyan:    #00ffff; /* interactive focus               */
+  --tr-white:   #e4e4e4; /* selected / emphasised text      */
+  --tr-success: #87ff5f; /* completion                      */
+  --tr-amber:   #ffaf00; /* warnings, progress              */
+  --tr-red:     #ff5f5f; /* errors                          */
+  --tr-bg:      #0a0a0a;
+  --tr-bg-pure: #000000;
+  --tr-sel-bg:  #005f00;
+
+  --wc-mono: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+  --wc-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  background: var(--tr-bg-pure);
+  color: var(--tr-green);
+  font-family: var(--wc-ui);
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+[hidden] { display: none !important; }
+
+h1, h2, .eyebrow {
+  font-family: var(--wc-mono);
+  font-weight: 700;
+}
+
+.eyebrow {
+  color: var(--tr-bright);
+  font-size: 11px;
+  letter-spacing: 0.28em;
+  text-transform: uppercase;
+}
+.eyebrow .tick { color: var(--tr-green); margin-right: 0.35em; letter-spacing: 0; }
+
+.btn {
+  appearance: none;
+  font-family: var(--wc-mono);
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--tr-green);
+  background: transparent;
+  border: 1px solid var(--tr-muted);
+  border-radius: 3px;
+  padding: 9px 18px;
+  cursor: pointer;
+}
+.btn:hover { background: var(--tr-sel-bg); color: var(--tr-white); border-color: var(--tr-green); }
+.btn:focus-visible { outline: 2px solid var(--tr-cyan); outline-offset: 2px; }
+
+@keyframes wc-spin { to { transform: rotate(360deg); } }
+@keyframes wc-pop { from { transform: scale(0.7); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+@media (prefers-reduced-motion: reduce) {
+  * { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; }
+}

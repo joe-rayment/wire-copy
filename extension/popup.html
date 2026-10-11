@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Wire Copy</title>
+<link rel="stylesheet" href="tokens.css">
+<link rel="stylesheet" href="popup.css">
+</head>
+<body>
+<main id="app">
+  <div class="eyebrow"><span class="tick">▌</span>Wire Copy</div>
+
+  <section id="saving" class="state" role="status">
+    <div class="spinner" aria-hidden="true"></div>
+    <h1>Saving…</h1>
+  </section>
+
+  <section id="saved" class="state ok" role="status" hidden>
+    <svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21"/><path d="M14 25.5l7.5 7.5L34.5 16"/></svg>
+    <h1>Saved to Reading List</h1>
+    <p id="saved-title" class="article"></p>
+    <p id="saved-words" class="meta"></p>
+    <p id="saved-note-already" class="note" hidden>Already in your Reading List — moved to the top</p>
+    <p id="saved-note-none" class="note" hidden>Saved the link — no article text found on this page</p>
+  </section>
+
+  <section id="cant-save" class="state warn" hidden>
+    <h1>Can’t save this page</h1>
+    <p id="cant-save-reason" class="detail"></p>
+  </section>
+
+  <section id="not-connected" class="state warn" hidden>
+    <h1>Wire Copy isn’t connected to this browser yet</h1>
+    <p class="detail">The Wire Copy app has to be installed on this computer.</p>
+    <button id="connect" class="btn" type="button">Connect</button>
+  </section>
+
+  <section id="error" class="state bad" hidden>
+    <h1>Couldn’t save</h1>
+    <p id="error-message" class="detail"></p>
+    <button id="retry" class="btn" type="button">Try again</button>
+  </section>
+</main>
+<script src="popup.js"></script>
+</body>
+</html>
