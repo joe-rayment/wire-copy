@@ -37,8 +37,6 @@ internal enum DriverStatus
 /// </summary>
 internal static class PlaywrightDriverBootstrapper
 {
-    private static readonly string[] CachePackageNames = ["patchright", "microsoft.playwright"];
-
     public static DriverStatus Ensure(ILogger logger) => Ensure(AppContext.BaseDirectory, logger);
 
     public static DriverStatus Ensure(string baseDir, ILogger logger)
@@ -115,24 +113,28 @@ internal static class PlaywrightDriverBootstrapper
 
     private static string? FindCachedDriverRoot(string rid, string nodeName)
     {
+        // Only the Patchright package: a stock microsoft.playwright driver lacks Patchright's patches.
+        // The version the app was built against wins (a driver from another version may not speak the
+        // same protocol); the highest cached version is the fallback.
+        var wanted = typeof(Microsoft.Playwright.IPlaywright).Assembly.GetName().Version;
         foreach (var packagesRoot in NugetPackageRoots())
         {
-            foreach (var package in CachePackageNames)
+            var packageDir = Path.Combine(packagesRoot, "patchright");
+            if (!Directory.Exists(packageDir))
             {
-                var packageDir = Path.Combine(packagesRoot, package);
-                if (!Directory.Exists(packageDir))
-                {
-                    continue;
-                }
+                continue;
+            }
 
-                // Highest version first so a driver matching the referenced package wins.
-                foreach (var versionDir in Directory.EnumerateDirectories(packageDir).OrderByDescending(d => d))
+            var candidates = Directory.EnumerateDirectories(packageDir)
+                .OrderByDescending(d => Version.TryParse(Path.GetFileName(d), out var v) && wanted is not null
+                    && v.Major == wanted.Major && v.Minor == wanted.Minor && v.Build == wanted.Build)
+                .ThenByDescending(d => Version.TryParse(Path.GetFileName(d), out var v) ? v : new Version(0, 0));
+            foreach (var versionDir in candidates)
+            {
+                var driverRoot = Path.Combine(versionDir, ".playwright");
+                if (File.Exists(Path.Combine(driverRoot, "node", rid, nodeName)))
                 {
-                    var driverRoot = Path.Combine(versionDir, ".playwright");
-                    if (File.Exists(Path.Combine(driverRoot, "node", rid, nodeName)))
-                    {
-                        return driverRoot;
-                    }
+                    return driverRoot;
                 }
             }
         }
