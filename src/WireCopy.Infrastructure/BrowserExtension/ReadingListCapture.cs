@@ -19,7 +19,7 @@ namespace WireCopy.Infrastructure.BrowserExtension;
 /// network request is made. The extracted article is written to the article cache so
 /// opening or narrating the row later needs no re-fetch.
 /// </summary>
-internal sealed class ReadingListCapture
+internal sealed class ReadingListCapture : IReadingListCapture
 {
     private readonly ILinkExtractor _linkExtractor;
     private readonly IReadableContentExtractor _contentExtractor;

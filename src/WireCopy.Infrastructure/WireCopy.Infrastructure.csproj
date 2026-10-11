@@ -52,6 +52,7 @@
 
   <ItemGroup>
     <InternalsVisibleTo Include="WireCopy.Tests" />
+    <InternalsVisibleTo Include="WireCopy.API" />
     <InternalsVisibleTo Include="DynamicProxyGenAssembly2" />
   </ItemGroup>
 

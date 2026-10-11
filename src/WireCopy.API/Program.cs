@@ -57,6 +57,16 @@ public class Program
 
     public static async Task<int> Main(string[] args)
     {
+        // workspace-m7aml: the browser extension's native-messaging host. Chrome-family
+        // browsers launch the host with the calling extension's origin as the first
+        // argument; the install flow's launcher script passes "native-messaging-host".
+        // Checked first: this mode owns stdout (framed protocol messages only).
+        if (args.Length > 0 &&
+            (args[0] == "native-messaging-host" || args[0].StartsWith("chrome-extension://", StringComparison.Ordinal)))
+        {
+            return await RunNativeMessagingHostAsync();
+        }
+
         BootMark("dotnet-main");
 
         // No arguments: launch browse mode with default URL
@@ -106,6 +116,62 @@ public class Program
         return await result.MapResult(
             async (BrowseOptions opts) => await RunBrowseAsync(opts),
             errs => Task.FromResult(1));
+    }
+
+    /// <summary>
+    /// workspace-m7aml — native-messaging host mode. stdout carries ONLY length-prefixed
+    /// protocol messages, so the real stdout stream is captured first and the Console's
+    /// writer is pointed at stderr; logs go to a file under LocalAppData. The host is built
+    /// but never started (no hosted services, no browser): only the database, the
+    /// extractors and the article cache are used.
+    /// </summary>
+    private static async Task<int> RunNativeMessagingHostAsync()
+    {
+        var stdout = Console.OpenStandardOutput();
+        var stdin = Console.OpenStandardInput();
+        Console.SetOut(Console.Error);
+
+        Log.Logger = new LoggerConfiguration()
+            .MinimumLevel.Information()
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
+            .WriteTo.File(
+                Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "WireCopy",
+                    "logs",
+                    "native-host-.log"),
+                rollingInterval: RollingInterval.Day,
+                retainedFileCountLimit: 7)
+            .CreateLogger();
+
+        try
+        {
+            using var host = CreateBrowseHostBuilder().Build();
+            using (var scope = host.Services.CreateScope())
+            {
+                await scope.ServiceProvider.GetRequiredService<AppDbContext>().InitializeDatabaseAsync();
+            }
+
+            host.Services.GetRequiredService<DatabaseReadySignal>().MarkReady();
+
+            var nativeHost = new NativeMessagingHost(
+                host.Services.GetRequiredService<IReadingListCapture>(),
+                BrowserExtensionPaths.ConnectionsPath(),
+                ParentBrowser.Detect(),
+                host.Services.GetRequiredService<ILoggerFactory>().CreateLogger("NativeMessagingHost"));
+            await nativeHost.RunAsync(stdin, stdout, CancellationToken.None);
+            return 0;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "Native-messaging host failed");
+            return 1;
+        }
+        finally
+        {
+            await Log.CloseAndFlushAsync();
+        }
     }
 
     private static async Task<int> RunRecipeAsync(string[] args)

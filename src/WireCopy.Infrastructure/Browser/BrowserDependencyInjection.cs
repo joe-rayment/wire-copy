@@ -189,6 +189,8 @@ public static class BrowserDependencyInjection
             sp.GetRequiredService<IOptions<BrowserConfiguration>>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
             sp.GetRequiredService<ILogger<BrowserExtension.ReadingListCapture>>()));
+        services.AddSingleton<BrowserExtension.IReadingListCapture>(
+            sp => sp.GetRequiredService<BrowserExtension.ReadingListCapture>());
 
         // workspace-frpl.11 (B8): opportunistic cookie freshness — a headless scheduled
         // load that renders a logged-in page refreshes cookies.json from the foreground
