@@ -36,6 +36,9 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
     {
         _config = config.Value;
         _logger = logger;
+
+        // Point FFMpegCore (FFProbe / FFMpegArguments) at an ffmpeg found outside a minimal PATH.
+        FfmpegLocator.Configure();
     }
 
     public async Task<bool> ValidatePrerequisitesAsync(CancellationToken cancellationToken = default)
@@ -48,7 +51,7 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
         {
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = FfmpegLocator.FfmpegPath,
                 Arguments = "-version",
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
@@ -96,6 +99,9 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
         {
             return AssemblyResult.Failure($"Audio file not found: {missingSegment.AudioFilePath}");
         }
+
+        // Re-resolve: PATH may have changed since construction.
+        FfmpegLocator.Configure();
 
         using var tempManager = new TempFileManager(_config.TempDirectory, _logger);
 
@@ -515,7 +521,7 @@ internal sealed class M4bAudioAssembler : IAudioAssembler
 
             var psi = new System.Diagnostics.ProcessStartInfo
             {
-                FileName = "ffmpeg",
+                FileName = FfmpegLocator.FfmpegPath,
                 RedirectStandardOutput = true,
                 RedirectStandardError = true,
                 UseShellExecute = false,

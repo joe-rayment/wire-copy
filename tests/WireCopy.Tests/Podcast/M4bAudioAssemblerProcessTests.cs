@@ -37,6 +37,7 @@ public sealed class M4bAudioAssemblerProcessTests : IDisposable
     public void Dispose()
     {
         Environment.SetEnvironmentVariable("PATH", _originalPath);
+        FfmpegLocator.WellKnownDirsOverride = null;
         try { Directory.Delete(_dir, true); }
         catch { /* best-effort cleanup */ }
     }
@@ -67,6 +68,10 @@ public sealed class M4bAudioAssemblerProcessTests : IDisposable
         var emptyDir = Path.Combine(_dir, "empty");
         Directory.CreateDirectory(emptyDir);
         Environment.SetEnvironmentVariable("PATH", emptyDir);
+
+        // FfmpegLocator also probes well-known install dirs; disable that so a machine with a real
+        // ffmpeg in /usr/bin or /opt/homebrew/bin does not rescue the "not installed" case.
+        FfmpegLocator.WellKnownDirsOverride = Array.Empty<string>();
 
         var result = await _sut.ValidatePrerequisitesAsync();
 

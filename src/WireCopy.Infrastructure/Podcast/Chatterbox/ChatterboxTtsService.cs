@@ -244,6 +244,7 @@ internal sealed class ChatterboxTtsService : ITtsService
         // OperationCanceledException. The token must already be live: a token cancelled
         // before registration never reaches FFMpegCore's cancel event.
         ct.ThrowIfCancellationRequested();
+        FfmpegLocator.Configure();
         await FFMpegArguments
             .FromDemuxConcatInput(wavPaths)
             .OutputToFile(outPath, overwrite: true, options => options

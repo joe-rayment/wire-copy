@@ -2509,6 +2509,7 @@ internal static class SettingsCommandHandler
     {
         try
         {
+            FfmpegLocator.Configure();
             var info = await FFMpegCore.FFProbe.AnalyseAsync(path).ConfigureAwait(false);
             var seconds = info.Duration.TotalSeconds;
             if (seconds is > 0 and (< 3 or > 30))
@@ -2632,6 +2633,7 @@ internal static class SettingsCommandHandler
                 var secondsNote = string.Empty;
                 try
                 {
+                    FfmpegLocator.Configure();
                     var probed = await FFMpegCore.FFProbe.AnalyseAsync(outcome.FilePath).ConfigureAwait(false);
                     secondsNote = $" ({probed.Duration.TotalSeconds:0.#}s of audio)";
                 }

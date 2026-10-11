@@ -673,6 +673,7 @@ internal sealed class OpenAiTtsService : ITtsService
         // OperationCanceledException. The token must already be live: a token cancelled
         // before registration never reaches FFMpegCore's cancel event.
         cancellationToken.ThrowIfCancellationRequested();
+        FfmpegLocator.Configure();
         await FFMpegArguments
             .FromDemuxConcatInput(chunkPaths)
             .OutputToFile(outputPath, overwrite: true, options => options
