@@ -28,7 +28,13 @@ internal static class SetupWizardOverlay
     }
 
     public static void Render(State state, ThemePalette palette, int terminalWidth, int terminalHeight)
+        => OverlayBox.Paint(BuildFrame(state, palette, terminalWidth, terminalHeight));
+
+    /// <summary>Lays the card out as positioned writes (no console access) — see <see cref="OverlayBox"/>.</summary>
+    internal static IReadOnlyList<OverlayBox.Op> BuildFrame(State state, ThemePalette palette, int terminalWidth, int terminalHeight)
     {
+        var ops = new List<OverlayBox.Op>();
+
         // workspace-f25j.4: the box must fit the terminal — title row + content
         // + bottom border + 1-row margins. Anything past this capacity is
         // windowed (scrolled to the focused option) instead of silently clipped.
@@ -36,7 +42,7 @@ internal static class SetupWizardOverlay
         var lines = BuildLines(state, maxContentLines, out var title);
         if (lines.Count == 0)
         {
-            return;
+            return ops;
         }
 
         var inner = lines.Select(PlainLength).DefaultIfEmpty(0).Max();
@@ -54,8 +60,7 @@ internal static class SetupWizardOverlay
 
         var titlePadded = $" {title} ";
         var rightDashes = Math.Max(0, innerWidth + 2 - titlePadded.Length - 1);
-        Console.SetCursorPosition(startCol, startRow);
-        Console.Write($"{border}╭─{Reset}{titleColor}{titlePadded}{Reset}{border}{new string('─', rightDashes)}╮{Reset}");
+        ops.Add(new(startCol, startRow, $"{border}╭─{Reset}{titleColor}{titlePadded}{Reset}{border}{new string('─', rightDashes)}╮{Reset}"));
 
         var row = startRow + 1;
         foreach (var (plain, styled) in lines)
@@ -66,16 +71,16 @@ internal static class SetupWizardOverlay
             }
 
             var pad = Math.Max(0, innerWidth - PlainWidth(plain));
-            Console.SetCursorPosition(startCol, row);
-            Console.Write($"{border}│{Reset} {styled}{new string(' ', pad)} {border}│{Reset}");
+            ops.Add(new(startCol, row, $"{border}│{Reset} {styled}{new string(' ', pad)} {border}│{Reset}"));
             row++;
         }
 
         if (row < terminalHeight - 1)
         {
-            Console.SetCursorPosition(startCol, row);
-            Console.Write($"{border}╰{new string('─', innerWidth + 2)}╯{Reset}");
+            ops.Add(new(startCol, row, $"{border}╰{new string('─', innerWidth + 2)}╯{Reset}"));
         }
+
+        return ops;
 
         // Local helpers capture the palette for styled segments.
         (string Plain, string Styled) PlainStyled(string plain, string styled) => (plain, styled);

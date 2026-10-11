@@ -65,10 +65,15 @@ internal static class StrategyChooserOverlay
     /// touching the rest of the screen.
     /// </summary>
     public static void Render(State state, ThemePalette palette, int terminalWidth, int terminalHeight)
+        => OverlayBox.Paint(BuildFrame(state, palette, terminalWidth, terminalHeight));
+
+    /// <summary>Lays the overlay out as positioned writes (no console access) — see <see cref="OverlayBox"/>.</summary>
+    internal static IReadOnlyList<OverlayBox.Op> BuildFrame(State state, ThemePalette palette, int terminalWidth, int terminalHeight)
     {
+        var ops = new List<OverlayBox.Op>();
         if (state.Rows.Count == 0)
         {
-            return;
+            return ops;
         }
 
         var title = state.CurrentPhase switch
@@ -129,16 +134,14 @@ internal static class StrategyChooserOverlay
         var rightDashCount = Math.Max(0, totalDashes - titlePadded.Length - 1);
         var topLine = $"{borderColor}╭─{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{new string('─', rightDashCount)}╮{Reset}";
 
-        Console.SetCursorPosition(startCol, startRow);
-        Console.Write(topLine);
+        ops.Add(new(startCol, startRow, topLine));
 
         var row = startRow + 1;
         for (var i = 0; i < prepared.Length && row < terminalHeight - 1; i++, row++)
         {
             var (plain, styled) = prepared[i];
             var pad = Math.Max(0, innerWidth - plain.Length);
-            Console.SetCursorPosition(startCol, row);
-            Console.Write($"{borderColor}│{Reset} {styled}{new string(' ', pad)} {borderColor}│{Reset}");
+            ops.Add(new(startCol, row, $"{borderColor}│{Reset} {styled}{new string(' ', pad)} {borderColor}│{Reset}"));
         }
 
         if (!string.IsNullOrEmpty(state.Footnote) && row < terminalHeight - 1)
@@ -150,8 +153,7 @@ internal static class StrategyChooserOverlay
             }
 
             var notePad = Math.Max(0, innerWidth - note.Length);
-            Console.SetCursorPosition(startCol, row);
-            Console.Write($"{borderColor}│{Reset} {Dim}{palette.SecondaryText.AnsiFg}{note}{Reset}{new string(' ', notePad)} {borderColor}│{Reset}");
+            ops.Add(new(startCol, row, $"{borderColor}│{Reset} {Dim}{palette.SecondaryText.AnsiFg}{note}{Reset}{new string(' ', notePad)} {borderColor}│{Reset}"));
             row++;
         }
 
@@ -164,16 +166,16 @@ internal static class StrategyChooserOverlay
             }
 
             var hintPad = Math.Max(0, innerWidth - hint.Length);
-            Console.SetCursorPosition(startCol, row);
-            Console.Write($"{borderColor}│{Reset} {palette.GetAccentFg().AnsiFg}{hint}{Reset}{new string(' ', hintPad)} {borderColor}│{Reset}");
+            ops.Add(new(startCol, row, $"{borderColor}│{Reset} {palette.GetAccentFg().AnsiFg}{hint}{Reset}{new string(' ', hintPad)} {borderColor}│{Reset}"));
             row++;
         }
 
         if (row < terminalHeight - 1)
         {
-            Console.SetCursorPosition(startCol, row);
-            Console.Write($"{borderColor}╰{new string('─', innerWidth + 2)}╯{Reset}");
+            ops.Add(new(startCol, row, $"{borderColor}╰{new string('─', innerWidth + 2)}╯{Reset}"));
         }
+
+        return ops;
     }
 
     private static (string Plain, string Styled) FormatRow(
