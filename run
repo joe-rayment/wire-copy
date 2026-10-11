@@ -75,7 +75,7 @@ BUILD_STAMP="$API_OUT/.wc-build-stamp"
 # the PreserveNewest content (assets/podcast-cover.png, demo/site/**, the chatterbox
 # worker), the shared props, .editorconfig (EnforceCodeStyleInBuild makes it a compile
 # input), and the toolchain wiring itself.
-BUILD_INPUTS=(src assets demo/site tools/chatterbox-worker \
+BUILD_INPUTS=(src assets demo/site extension tools/chatterbox-worker \
               Directory.Build.props .editorconfig dotnet scripts/bootstrap-dotnet.sh run)
 needs_build=1
 if [ "${WIRECOPY_FORCE_BUILD:-}" != "1" ] && [ -f "$BUILD_STAMP" ] && [ -f "$API_OUT/WireCopy.API.dll" ]; then
