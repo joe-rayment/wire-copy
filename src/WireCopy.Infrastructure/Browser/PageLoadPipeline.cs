@@ -1015,6 +1015,11 @@ public class PageLoadPipeline
 
         page.SetReadableContent(readable);
 
+        // A cached article is an article by construction. The reader auto-switch in
+        // BrowserOrchestrator.CompleteNavigation keys on Classification == Article, so
+        // without this a cache hit opens an empty link tree instead of the reader.
+        page.SetClassification(PageClassification.Article);
+
         _logger.LogDebug(
             "BuildPageFromCachedArticle: url={Url}, title={Title}, paragraphs={Count}",
             url,
