@@ -122,6 +122,52 @@ try {
   const c2hid = await paneShown(false)
   check('C2c pane is HIDDEN while the label card is up', c2hid.ok, `linkTreeShown=${c2hid.got}`)
   await sleep(600)
+  // ---- Card geometry (workspace-rgf1i): the card must FIT the docked terminal column. ----
+  // The docked terminal is only ~70 cols wide. A card laid out for a wider grid overruns the right
+  // border and xterm wraps each row's tail into col 0 of the NEXT row (stray glyphs at the far left,
+  // no right border). Read what the user sees: the last `cols` cells of each buffer row (the buffer
+  // keeps stale text beyond `cols` from before the dock resize; it is never drawn, so it is cut).
+  {
+    const st = await term.eval('window.__wc.state()')
+    const dims = await term.eval('window.__dims()')
+    const cols = dims.cols
+    const cellW = st.termBounds.width / cols
+    const all = (await term.eval('window.__termText()')).split('\n')
+    const rows = all.map(l => l.slice(0, cols)) // what is on screen
+    let top = -1
+    for (let i = all.length - 1; i >= 0; i--) if (all[i].includes('╭') && all[i].includes('Mark the links')) { top = i; break }
+    let bot = -1
+    if (top >= 0) for (let i = top + 1; i < all.length; i++) if (all[i].includes('╰')) { bot = i; break }
+    const dump = () => console.log(
+      `      card rows (cols=${cols}, termBounds.width=${st.termBounds.width}px, cell=${cellW.toFixed(2)}px; "|" marks col ${cols}):\n` +
+      rows.slice(Math.max(0, top), Math.min(rows.length, bot + 2)).map((r, k) =>
+        `      ${String(top + k).padStart(3)} ${JSON.stringify(r.padEnd(cols)).slice(0, -1)}|"  end=${JSON.stringify(r.trimEnd().slice(-1))}@${r.trimEnd().length - 1}  col0=${JSON.stringify(r[0] ?? '')}`).join('\n'))
+    if (top < 0 || bot < 0) {
+      check('C2e card found in the terminal buffer (top "╭ Mark the links", bottom "╰")', false, `top=${top} bottom=${bot}`)
+      console.log('--- terminal tail ---\n' + rows.slice(-18).join('\n'))
+    } else {
+      const BORDER_END = new Set(['│', '╮', '╯'])
+      const topEnd = rows[top].trimEnd().length - 1
+      const badEnd = []
+      for (let i = top; i <= bot; i++) {
+        const t = rows[i].trimEnd()
+        if (!(t.length - 1 === topEnd && BORDER_END.has(t[t.length - 1]))) badEnd.push(i)
+      }
+      const fits = topEnd < cols && (topEnd + 1) * cellW <= st.termBounds.width
+      check('C2e every card row ends in a border glyph (│ ╮ ╯) at the top row\'s right edge, inside the docked column',
+        badEnd.length === 0 && fits,
+        `rightEdgeCol=${topEnd} cols=${cols} rowsNotEndingInBorderAtEdge=[${badEnd.join(',')}]`)
+      // Col 0 is the card's left margin (a space) - or the text tree's gutter '▌' on rows the card does
+      // not cover. Any other glyph there is a tail wrapped from the end of the row above.
+      const topLeft = rows[top].indexOf('╭')
+      const okCol0 = new Set([' ', '▌'])
+      if (topLeft === 0) { okCol0.add('│'); okCol0.add('╰') } // card flush left: its own border is at col 0
+      const stray = []
+      for (let i = top; i <= bot + 1 && i < rows.length; i++) if (!okCol0.has(rows[i][0] ?? ' ')) stray.push(`${i}:${JSON.stringify(rows[i][0])}`)
+      check('C2f no stray glyph wrapped into col 0 of the card rows (or the row below the card)', stray.length === 0, `strayCol0=[${stray.join(' ')}]`)
+      if (badEnd.length || !fits || stray.length) dump()
+    }
+  }
   env.shotWindow('overlay-pane-label-up', wid) // the card itself, to be LOOKED at: painted, no HTML pane over it
   const c2gone = await escapeCard('Label the links')
   check('C2c2 the label card left the terminal after Escape', c2gone)
