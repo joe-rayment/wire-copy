@@ -18,6 +18,7 @@ internal static class BrowserExtensionCard
     private const string Reset = "\x1b[0m";
     private const string GenericBrowserKey = "browser";
     private const int TickMilliseconds = 1000;
+    private static readonly string[] VendorPrefixes = ["Google ", "Microsoft "];
 
     private static IReadOnlyList<BrowserRegistration>? _cachedRegistrations;
     private static int _warmUpStarted;
@@ -45,18 +46,12 @@ internal static class BrowserExtensionCard
     /// <summary>Short browser name for the Settings row: "Google Chrome" becomes "Chrome".</summary>
     internal static string ShortName(string displayName)
     {
-        foreach (var prefix in new[] { "Google ", "Microsoft " })
-        {
-            if (displayName.StartsWith(prefix, StringComparison.Ordinal))
-            {
-                return displayName[prefix.Length..];
-            }
-        }
-
-        return displayName;
+        var prefix = VendorPrefixes.FirstOrDefault(p => displayName.StartsWith(p, StringComparison.Ordinal));
+        return prefix is null ? displayName : displayName[prefix.Length..];
     }
 
-    private static string NameForId(string id) => id switch
+    /// <summary>Browser name for a connections.json id when no detection result names it.</summary>
+    internal static string NameForId(string id) => id switch
     {
         "chrome" => "Chrome",
         "chromium" => "Chromium",
@@ -173,7 +168,7 @@ internal static class BrowserExtensionCard
             {
                 if (registerTask is { IsCompleted: true })
                 {
-                    registrations = registerTask.IsCompletedSuccessfully ? registerTask.Result : registrations;
+                    registrations = (registerTask.IsCompletedSuccessfully ? registerTask.Result : null) ?? registrations;
                     registerTask = null;
                 }
 
