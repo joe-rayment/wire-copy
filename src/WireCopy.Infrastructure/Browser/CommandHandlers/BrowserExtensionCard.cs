@@ -326,7 +326,7 @@ internal static class BrowserExtensionCard
                 detected[i].DisplayName,
                 StatusText(connection, now),
                 connected ? palette.GetSuccessFg().AnsiFg : palette.GetDimFg().AnsiFg,
-                "Add");
+                connected ? "Manage" : "Add");
             helpers.WriteLine(mainLine);
         }
 
