@@ -21,6 +21,9 @@ function render (r) {
       $('saved-title').textContent = r.title
       $('saved-words').textContent = r.words > 0 ? wordsLabel(r.words) : ''
       $('saved-words').hidden = !(r.words > 0)
+      $('saved-heading').textContent = r.alreadySaved
+        ? 'Already in your Reading List'
+        : r.source === 'none' ? 'Saved the link' : 'Saved to Reading List'
       $('saved-note-already').hidden = !r.alreadySaved
       $('saved-note-none').hidden = r.source !== 'none'
       show('saved')

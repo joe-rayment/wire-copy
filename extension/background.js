@@ -65,13 +65,15 @@ function sendNative (message) {
   })
 }
 
-// The three errors Chrome raises when the app side simply is not there: host
-// manifest not registered, our extension not in its allowed_origins, or the
-// host process dying before it answered.
+// The errors Chrome raises when the app side simply is not there: host manifest
+// not registered, our extension not in its allowed_origins, the host failing to
+// launch (registered path points at nothing), or the host process dying before
+// it answered.
 function isAppMissing (transportError) {
   const t = transportError.toLowerCase()
   return t.includes('native messaging host not found') ||
          t.includes('native messaging host is forbidden') ||
+         t.includes('failed to start native messaging host') ||
          t.includes('native host has exited')
 }
 
@@ -108,6 +110,7 @@ async function hello () {
 // ── save ────────────────────────────────────────────────────────────────────
 
 const isWebUrl = url => /^https?:\/\//i.test(url || '')
+const NON_WEB_REASON = 'Wire Copy can only save pages from websites. Open an article and try again.'
 
 // Pages the scripting API refuses to touch even though they are https.
 function isRestrictedWebUrl (url) {
@@ -142,7 +145,7 @@ async function saveActiveTab () {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true })
   if (!tab || tab.id == null) return cantSave('There is no page open to save.')
   if (!isWebUrl(tab.url) || isRestrictedWebUrl(tab.url)) {
-    return cantSave('Wire Copy can only save web pages (http or https).')
+    return cantSave(NON_WEB_REASON)
   }
 
   let page
@@ -154,7 +157,7 @@ async function saveActiveTab () {
     return cantSave('The browser does not let extensions read this page.')
   }
   if (!page || typeof page.html !== 'string') return cantSave('The browser does not let extensions read this page.')
-  if (!isWebUrl(page.url)) return cantSave('Wire Copy can only save web pages (http or https).')
+  if (!isWebUrl(page.url)) return cantSave(NON_WEB_REASON)
   if (!/^(text\/html|application\/xhtml\+xml)$/i.test(page.contentType || '')) {
     return cantSave('This is not a web page Wire Copy can read (for example a PDF or an image).')
   }

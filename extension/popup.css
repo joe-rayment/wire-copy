@@ -27,7 +27,11 @@ h1 {
   overflow-wrap: anywhere;
 }
 
-.note { color: var(--tr-amber); font-size: 13px; }
+.note { color: var(--tr-white); font-size: 13px; }
+
+/* in the warn/error states the detail is the explanation, not an OK message:
+   keep it neutral rather than the success-looking green */
+.warn .detail, .bad .detail { color: var(--tr-white); }
 
 .state > .btn { margin-top: 14px; }
 

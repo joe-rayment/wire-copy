@@ -3,13 +3,13 @@ body { min-height: 100vh; }
 #page {
   max-width: 600px;
   margin: 0 auto;
-  padding: clamp(32px, 9vh, 96px) 24px 48px;
+  padding: clamp(24px, 6vh, 72px) 24px 40px;
 }
 
 .brand {
   font-family: var(--wc-mono);
   font-weight: 700;
-  font-size: clamp(36px, 9vw, 56px);
+  font-size: clamp(36px, 9vw, 52px);
   line-height: 1;
   letter-spacing: -0.015em;
   margin-top: 16px;
@@ -19,8 +19,8 @@ body { min-height: 100vh; }
 }
 
 .panel {
-  margin-top: 40px;
-  padding: 28px 28px 30px;
+  margin-top: 28px;
+  padding: 28px 28px 28px;
   border: 1px solid var(--tr-dim);
   background: var(--tr-bg);
 }
@@ -39,8 +39,8 @@ h1 { font-size: 22px; line-height: 1.25; }
 .ok { border-color: var(--tr-med); }
 .ok h1 { color: var(--tr-success); }
 .mark {
-  width: 76px;
-  height: 76px;
+  width: 60px;
+  height: 60px;
   display: block;
   fill: none;
   stroke: var(--tr-success);
@@ -55,13 +55,13 @@ h1 { font-size: 22px; line-height: 1.25; }
 .steps {
   list-style: none;
   padding: 0;
-  margin-top: 28px;
+  margin-top: 24px;
   border-top: 1px solid var(--tr-dim);
 }
 .steps li {
   display: flex;
   gap: 16px;
-  padding: 18px 0 4px;
+  padding: 16px 0 4px;
 }
 .steps li + li { margin-top: 0; }
 .num {
