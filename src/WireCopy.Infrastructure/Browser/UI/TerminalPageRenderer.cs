@@ -656,6 +656,21 @@ public class TerminalPageRenderer : IPageRenderer
         }
     }
 
+    /// <summary>
+    /// Hides both HTML panes (launcher and link tree) for a full-screen terminal
+    /// screen that is drawn without going through a Render* method, such as the
+    /// Settings screen. Each pane is hidden at most once and the next launcher /
+    /// link-tree render shows it again.
+    /// </summary>
+    public void LeaveHtmlPanes()
+    {
+        lock (_promptLock)
+        {
+            LeaveLauncherIfShown();
+            LeaveLinkTreeIfShown();
+        }
+    }
+
     public void RenderStatusBar(NavigationContext context, ViewMode mode)
     {
         _statusBarRenderer.RenderStatusBar(context, mode);

@@ -249,6 +249,90 @@ public sealed class PromptLinePaneWiringTests : IAsyncLifetime
         }
     }
 
+    // Guards:   a screen drawn straight into the terminal (Settings) can ask the renderer to hide the launcher HTML
+    //           pane (launcherState visible:false, sent once), and the next launcher render shows it again (visible:true).
+    // Fails if: LeaveHtmlPanes() stops hiding the launcher pane (Settings is then drawn under the launcher and looks
+    //           like nothing happened), re-sends the hide on every call, or the pane never comes back after a render.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PromptLinePaneWiringTests.Launcher_PaneIsHiddenForTerminalScreenThenComesBack"
+    [Fact]
+    public async Task Launcher_PaneIsHiddenForTerminalScreenThenComesBack()
+    {
+        _server = await RecordingShellServer.StartAsync(_socketPath);
+        await using var channel = ShellChannel.TryConnect(_socketPath, NullLogger.Instance);
+        Assert.NotNull(channel);
+        var renderer = CreateRenderer(channel);
+
+        var bookmarks = new List<Bookmark>
+        {
+            Bookmark.Create("Alpha", "https://alpha.example", 0),
+            Bookmark.Create("Bravo", "https://bravo.example", 1),
+        };
+        var options = new RenderOptions { TerminalWidth = 100, TerminalHeight = 35, LayoutVariant = "Grid" };
+
+        var originalOut = Console.Out;
+        Console.SetOut(TextWriter.Null);
+        try
+        {
+            renderer.RenderLauncher(bookmarks, selectedIndex: 0, scrollOffset: 0, options);
+            var shown = await _server.WaitForNextAsync("launcherState");
+            Assert.True(shown.GetProperty("visible").GetBoolean());
+
+            // Settings opens: the launcher pane is hidden (once, not re-sent while Settings redraws).
+            renderer.LeaveHtmlPanes();
+            var hidden = await _server.WaitForNextAsync("launcherState");
+            Assert.False(hidden.GetProperty("visible").GetBoolean());
+
+            renderer.LeaveHtmlPanes();
+            Assert.False(_server.TryTakeNext(TimeSpan.FromMilliseconds(300), out var extra), $"a second leave must not re-send anything (got {extra.Method})");
+
+            // Settings closes and the launcher is rendered again: the pane is back.
+            renderer.RenderLauncher(bookmarks, selectedIndex: 0, scrollOffset: 0, options);
+            var back = await _server.WaitForNextAsync("launcherState");
+            Assert.True(back.GetProperty("visible").GetBoolean());
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
+    // Guards:   the same hide-for-a-terminal-screen request also hides the link-tree HTML pane (linkTreeState visible:false),
+    //           so Settings opened from the link list is not drawn under the tree, and the next render brings the tree back.
+    // Fails if: LeaveHtmlPanes() only handles the launcher pane, or the link-tree pane stays hidden after the next render.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PromptLinePaneWiringTests.LinkTree_PaneIsHiddenForTerminalScreenThenComesBack"
+    [Fact]
+    public async Task LinkTree_PaneIsHiddenForTerminalScreenThenComesBack()
+    {
+        _server = await RecordingShellServer.StartAsync(_socketPath);
+        await using var channel = ShellChannel.TryConnect(_socketPath, NullLogger.Instance);
+        Assert.NotNull(channel);
+        var renderer = CreateRenderer(channel);
+
+        var page = CreateFlatPage(5);
+        var options = new RenderOptions { TerminalWidth = 121, TerminalHeight = 60, ShellPane = true };
+
+        var originalOut = Console.Out;
+        Console.SetOut(TextWriter.Null);
+        try
+        {
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            var shown = await _server.WaitForNextAsync("linkTreeState");
+            Assert.True(shown.GetProperty("visible").GetBoolean());
+
+            renderer.LeaveHtmlPanes();
+            var hidden = await _server.WaitForNextAsync("linkTreeState");
+            Assert.False(hidden.GetProperty("visible").GetBoolean());
+
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            var back = await _server.WaitForNextAsync("linkTreeState");
+            Assert.True(back.GetProperty("visible").GetBoolean());
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
     private static TerminalPageRenderer CreateRenderer(ShellChannel channel)
     {
         var themeProvider = Substitute.For<IThemeProvider>();

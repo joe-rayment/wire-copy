@@ -157,6 +157,12 @@ internal static class SettingsCommandHandler
             selectedIndex = Math.Min(selectedIndex, rows.Length - 1);
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
             var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+
+            // This screen is painted straight into the terminal, never through a
+            // Render* method, so the shell's HTML launcher / link-tree pane would
+            // keep covering it. Hide the panes (a no-op once hidden or in terminal
+            // mode); the render on exit shows the right pane again.
+            ctx.Renderer.LeaveHtmlPanes();
             helpers.Clear();
 
             var width = Math.Max(20, options.TerminalWidth - 2);

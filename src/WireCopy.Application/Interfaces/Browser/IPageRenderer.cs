@@ -132,6 +132,17 @@ public interface IPageRenderer
     void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options);
 
     /// <summary>
+    /// Hides the desktop shell's HTML launcher and link-tree panes so a screen
+    /// drawn straight into the terminal (e.g. the Settings screen) is visible
+    /// instead of sitting underneath a pane that still covers it. The next
+    /// launcher / link-tree render shows the matching pane again. Implementations
+    /// with no HTML panes (terminal mode) do nothing, which is the default.
+    /// </summary>
+    void LeaveHtmlPanes()
+    {
+    }
+
+    /// <summary>
     /// Clears the terminal screen.
     /// </summary>
     void Clear();
