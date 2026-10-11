@@ -122,6 +122,7 @@ try {
   const c2hid = await paneShown(false)
   check('C2c pane is HIDDEN while the label card is up', c2hid.ok, `linkTreeShown=${c2hid.got}`)
   await sleep(600)
+  env.shotWindow('overlay-pane-label-up', wid) // the card itself, to be LOOKED at: painted, no HTML pane over it
   const c2gone = await escapeCard('Label the links')
   check('C2c2 the label card left the terminal after Escape', c2gone)
   const c2back = await paneShown(true, 16) // no further keypress
