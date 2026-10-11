@@ -20,6 +20,13 @@ internal sealed class BrowserExtensionHostedService : IHostedService
 
     public Task StartAsync(CancellationToken cancellationToken)
     {
+        // Only the real desktop app registers: the manifest points browsers at THIS process's
+        // binary, so a test host or an unattended verb must never overwrite it.
+        if (string.IsNullOrEmpty(Environment.GetEnvironmentVariable(Browser.Shell.ShellChannel.EnvVar)))
+        {
+            return Task.CompletedTask;
+        }
+
         _ = Task.Run(
             () =>
             {
