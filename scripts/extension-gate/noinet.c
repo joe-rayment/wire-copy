@@ -1,6 +1,7 @@
 // LD_PRELOAD shim that simulates "the internet is off" for the extension gate.
 //
-// Interposes connect(), sendto(), sendmsg() (and sendmmsg()). For AF_INET /
+// Interposes getaddrinfo() (see below) plus connect(), sendto(), sendmsg() (and
+// sendmmsg()). For AF_INET /
 // AF_INET6 destinations that are NOT loopback (127.0.0.0/8, ::1, ::ffff:127.x)
 // the call fails with ENETUNREACH and returns -1. Loopback passes through.
 // AF_UNIX and everything else is untouched.
@@ -18,8 +19,10 @@
 #include <dlfcn.h>
 #include <errno.h>
 #include <fcntl.h>
+#include <netdb.h>
 #include <netinet/in.h>
 #include <stdlib.h>
+#include <strings.h>
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/types.h>
@@ -98,6 +101,78 @@ static void log_line(const char *call, const char *ip, unsigned port, int allowe
         (void)w;
         close(fd);
     }
+}
+
+// glibc resolves names through its own internal DNS client, which does not go
+// through our connect()/sendto() hooks, so name lookups would be invisible.
+// getaddrinfo() is therefore interposed too: only node == NULL, "localhost"
+// and numeric loopback literals resolve; everything else fails with EAI_FAIL.
+// Log line: pid=<pid> exe=<exe> call=getaddrinfo name=<node> verdict=<allow|block>
+static void log_name(const char *node, int allowed)
+{
+    const char *path = getenv("NOINET_LOG");
+    if (!path || !*path) {
+        return;
+    }
+    char exe[256] = "?";
+    ssize_t n = readlink("/proc/self/exe", exe, sizeof exe - 1);
+    if (n > 0) {
+        exe[n] = 0;
+    }
+    char line[640];
+    size_t p = 0;
+    const size_t cap = sizeof line;
+    p = append_str(line, p, cap, "pid=");
+    p = append_num(line, p, cap, (unsigned long)getpid());
+    p = append_str(line, p, cap, " exe=");
+    p = append_str(line, p, cap, exe);
+    p = append_str(line, p, cap, " call=getaddrinfo name=");
+    p = append_str(line, p, cap, node ? node : "(null)");
+    p = append_str(line, p, cap, allowed ? " verdict=allow\n" : " verdict=block\n");
+    int fd = open(path, O_WRONLY | O_APPEND | O_CREAT, 0644);
+    if (fd >= 0) {
+        ssize_t w = write(fd, line, p);
+        (void)w;
+        close(fd);
+    }
+}
+
+static int name_is_loopback(const char *node)
+{
+    if (!node) {
+        return 1;
+    }
+    if (strcasecmp(node, "localhost") == 0) {
+        return 1;
+    }
+    struct in_addr a4;
+    if (inet_pton(AF_INET, node, &a4) == 1) {
+        return (ntohl(a4.s_addr) >> 24) == 127;
+    }
+    struct in6_addr a6;
+    if (inet_pton(AF_INET6, node, &a6) == 1) {
+        if (IN6_IS_ADDR_LOOPBACK(&a6)) {
+            return 1;
+        }
+        return IN6_IS_ADDR_V4MAPPED(&a6) && a6.s6_addr[12] == 127;
+    }
+    return 0;
+}
+
+int getaddrinfo(const char *node, const char *service, const struct addrinfo *hints, struct addrinfo **res)
+{
+    static int (*real)(const char *, const char *, const struct addrinfo *, struct addrinfo **);
+    if (!real) {
+        real = dlsym(RTLD_NEXT, "getaddrinfo");
+    }
+    int allowed = name_is_loopback(node);
+    if (node) {
+        log_name(node, allowed);
+    }
+    if (!allowed) {
+        return EAI_FAIL;
+    }
+    return real(node, service, hints, res);
 }
 
 // Returns 1 if the call may proceed, 0 if it must be refused (errno set).
