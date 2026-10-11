@@ -23,6 +23,8 @@ public static class NativeHostRegistrar
         UnixFileMode.GroupRead | UnixFileMode.GroupExecute |
         UnixFileMode.OtherRead | UnixFileMode.OtherExecute;
 
+    private const string GuideResourceName = "WireCopy.BrowserExtension.add-extension.html";
+
     private static readonly UTF8Encoding Utf8NoBom = new(encoderShouldEmitUTF8Identifier: false);
 
     private static readonly JsonSerializerOptions ManifestJsonOptions = new()
@@ -50,6 +52,8 @@ public static class NativeHostRegistrar
             sourceExtensionDir ?? Path.Combine(AppContext.BaseDirectory, "browser-extension"),
             BrowserExtensionPaths.ExtensionDir(env.LocalAppData),
             env.Platform);
+
+        WriteGuidePage(Path.GetFullPath(BrowserExtensionPaths.GuidePath(env.LocalAppData)));
 
         var launcherPath = Path.GetFullPath(BrowserExtensionPaths.LauncherPath(env.LocalAppData));
         WriteLauncher(launcherPath, command, env.Platform);
@@ -127,6 +131,19 @@ public static class NativeHostRegistrar
         }
 
         return null;
+    }
+
+    /// <summary>
+    /// Writes the "Add Wire Copy" guide page (the embedded <c>add-extension.html</c>) beside the exported
+    /// extension; rewritten whenever it differs, so an app update refreshes it.
+    /// </summary>
+    private static void WriteGuidePage(string guidePath)
+    {
+        using var stream = typeof(NativeHostRegistrar).Assembly.GetManifestResourceStream(GuideResourceName)
+            ?? throw new InvalidOperationException("Missing embedded resource " + GuideResourceName);
+        using var buffer = new MemoryStream();
+        stream.CopyTo(buffer);
+        WriteIfChanged(guidePath, buffer.ToArray());
     }
 
     private static string BuildManifestJson(string launcherPath)

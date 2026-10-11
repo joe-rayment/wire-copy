@@ -39,6 +39,13 @@ public static class BrowserExtensionPaths
     public static string ExtensionDir(string? localAppData = null) =>
         Path.Combine(Root(localAppData), ExtensionFolderName);
 
+    /// <summary>
+    /// The local "Add Wire Copy to your browser" guide page, written next to the exported extension and
+    /// opened by the Settings card (Chromium drops <c>chrome://</c> URLs given on the command line).
+    /// </summary>
+    public static string GuidePath(string? localAppData = null) =>
+        Path.Combine(Root(localAppData), "add-extension.html");
+
     /// <summary>The script the host manifest points at; it starts the app in host mode.</summary>
     public static string LauncherPath(string? localAppData = null) =>
         Path.Combine(

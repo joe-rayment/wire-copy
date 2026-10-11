@@ -10,7 +10,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// <summary>
 /// Settings "Browser extension" card (workspace-m7aml.3): a 1Password-style install guide. Lists the
 /// browsers found on this computer with a live "connected" status, tells the user the two steps to add
-/// the extension, and on Enter opens the browser's extensions page plus the extension folder. The
+/// the extension, and on Enter opens a local step-by-step guide page in the browser plus the extension folder. The
 /// status text and row summary are pure functions so they are unit-testable.
 /// </summary>
 internal static class BrowserExtensionCard
@@ -265,10 +265,12 @@ internal static class BrowserExtensionCard
                 : "Couldn't open the extension folder: " + folder;
         }
 
-        var pageOpened = BrowserExtensionLauncher.OpenExtensionsPage(browser);
+        var shortName = ShortName(browser.DisplayName);
+        var guide = BrowserExtensionPaths.GuidePath();
+        var pageOpened = File.Exists(guide) && BrowserExtensionLauncher.OpenGuidePage(browser, shortName, guide, folder);
         return pageOpened && folderOpened
-            ? $"Opened {ShortName(browser.DisplayName)}'s extensions page and the extension folder."
-            : $"Couldn't open it — open chrome://extensions in {ShortName(browser.DisplayName)} yourself";
+            ? $"Opened {shortName} with the steps, and the extension folder."
+            : $"Couldn't open it — open chrome://extensions in {shortName} yourself";
     });
 
     private static void Render(
@@ -343,7 +345,7 @@ internal static class BrowserExtensionCard
         {
             var target = selectedBrowser is null ? "your browser" : ShortName(selectedBrowser.DisplayName);
             helpers.WriteLine($"  {palette.PrimaryText.AnsiFg}Add it to {target} — 2 steps{Reset}");
-            WriteStep(helpers, palette, width, "1. Turn on Developer mode (top-right of the extensions page)");
+            WriteStep(helpers, palette, width, "1. Open chrome://extensions and turn on Developer mode (top-right)");
             WriteStep(
                 helpers,
                 palette,
@@ -363,7 +365,7 @@ internal static class BrowserExtensionCard
 
         helpers.WriteLine();
         var nav = rowIds.Length > 1 ? $"{palette.GetAccentFg().AnsiFg}↑↓{Reset}{palette.GetDimFg().AnsiFg} browser   " : string.Empty;
-        var enter = detected.Count == 0 ? "open extension folder" : "open extensions page + folder";
+        var enter = detected.Count == 0 ? "open extension folder" : "open steps in browser + folder";
         helpers.WriteLine(
             $"  {nav}{palette.GetAccentFg().AnsiFg}Enter{Reset}{palette.GetDimFg().AnsiFg} {enter}   " +
             $"{palette.GetAccentFg().AnsiFg}Esc{Reset}{palette.GetDimFg().AnsiFg} back{Reset}");

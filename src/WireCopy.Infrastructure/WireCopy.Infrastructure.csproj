@@ -11,6 +11,11 @@
   </ItemGroup>
 
   <ItemGroup>
+    <!-- workspace-m7aml.5: the "Add Wire Copy" guide page the app writes next to the exported extension. -->
+    <EmbeddedResource Include="BrowserExtension\add-extension.html" LogicalName="WireCopy.BrowserExtension.add-extension.html" />
+  </ItemGroup>
+
+  <ItemGroup>
     <Content Include="..\..\tools\chatterbox-worker\chatterbox_worker.py"
              Link="chatterbox-worker\chatterbox_worker.py"
              CopyToOutputDirectory="PreserveNewest" />

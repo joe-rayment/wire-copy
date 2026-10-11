@@ -1,0 +1,153 @@
+<!doctype html>
+<!-- Licensed under the MIT License. See LICENSE in the repository root. -->
+<!-- Wire Copy "add the extension" guide: written by the app next to the exported extension and opened
+     by Settings > Browser extension. Chromium drops chrome:// URLs passed on the command line, so this
+     local file: page walks the user through the extensions page instead. Self-contained, no network.
+     Query: ?browser=<short browser name>&folder=<absolute path of the exported extension folder> -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Add Wire Copy to your browser</title>
+<style>
+:root {
+  color-scheme: dark;
+  --tr-bright: #ff87d7; --tr-green: #00d700; --tr-med: #00af00; --tr-muted: #5f875f;
+  --tr-dim: #005f00; --tr-cyan: #00ffff; --tr-white: #e4e4e4; --tr-success: #87ff5f;
+  --tr-bg: #0a0a0a; --tr-bg-pure: #000000; --tr-sel-bg: #005f00;
+  --wc-mono: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+  --wc-ui: system-ui, -apple-system, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  src: url('WireCopy-Extension/fonts/JetBrainsMono-Bold.woff2') format('woff2');
+  font-weight: 700;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--tr-bg-pure); color: var(--tr-green); font: 14px/1.45 var(--wc-ui); }
+#page { max-width: 640px; margin: 0 auto; padding: clamp(24px, 6vh, 72px) 24px 40px; }
+.eyebrow { font: 700 11px var(--wc-mono); letter-spacing: 0.28em; text-transform: uppercase; color: var(--tr-bright); }
+.tick { color: var(--tr-green); margin-right: 0.35em; letter-spacing: 0; }
+.brand {
+  font: 700 clamp(30px, 8vw, 46px)/1 var(--wc-mono); letter-spacing: -0.015em; margin-top: 16px; color: var(--tr-green);
+  text-shadow: 0 0 10px rgba(0, 215, 0, 0.55), 0 0 28px rgba(0, 215, 0, 0.3), 0 0 56px rgba(0, 215, 0, 0.14);
+}
+h1 { margin: 14px 0 0; font: 700 22px/1.25 var(--wc-mono); color: var(--tr-white); }
+.steps { list-style: none; padding: 0; margin: 24px 0 0; border-top: 1px solid var(--tr-dim); }
+.steps li { display: flex; gap: 16px; padding: 18px 0 6px; }
+.num {
+  flex: none; width: 28px; height: 28px; border: 1px solid var(--tr-muted); border-radius: 50%;
+  font: 700 13px/26px var(--wc-mono); text-align: center; color: var(--tr-bright);
+}
+.body { flex: 1; min-width: 0; }
+h2 { margin: 2px 0 8px; font: 700 15px var(--wc-mono); color: var(--tr-bright); }
+p { margin: 0 0 8px; color: var(--tr-med); }
+.copy-row { display: flex; align-items: stretch; gap: 8px; margin: 6px 0 10px; }
+code {
+  flex: 1; min-width: 0; padding: 8px 10px; border: 1px solid var(--tr-dim); background: var(--tr-bg);
+  font: 13px var(--wc-mono); color: var(--tr-white); overflow-wrap: anywhere; user-select: all;
+}
+.btn {
+  appearance: none; flex: none; min-width: 84px; font: 700 13px var(--wc-mono); color: var(--tr-green);
+  background: transparent; border: 1px solid var(--tr-muted); border-radius: 3px; padding: 8px 14px; cursor: pointer;
+}
+.btn:hover { background: var(--tr-sel-bg); color: var(--tr-white); border-color: var(--tr-green); }
+.btn:focus-visible { outline: 2px solid var(--tr-cyan); outline-offset: 2px; }
+.btn.done { color: var(--tr-success); border-color: var(--tr-success); }
+.hint { color: var(--tr-muted); font-size: 13px; }
+[hidden] { display: none !important; }
+</style>
+</head>
+<body>
+<main id="page">
+  <div class="eyebrow"><span class="tick">▌</span>Setup</div>
+  <div class="brand">Wire Copy</div>
+  <h1 id="heading">Add Wire Copy to your browser</h1>
+
+  <ol class="steps">
+    <li>
+      <span class="num">1</span>
+      <div class="body">
+        <h2>Open the extensions page</h2>
+        <p>Copy this address, then paste it into the address bar of <span class="browser-name">your browser</span> and press Enter. It works in Chrome, Chromium, Vivaldi, Brave and Edge.</p>
+        <div class="copy-row">
+          <code id="url">chrome://extensions</code>
+          <button class="btn" type="button" data-copy="url" id="copy-url">Copy</button>
+        </div>
+      </div>
+    </li>
+    <li>
+      <span class="num">2</span>
+      <div class="body">
+        <h2>Turn on Developer mode</h2>
+        <p>It is the switch at the top-right of the extensions page.</p>
+      </div>
+    </li>
+    <li>
+      <span class="num">3</span>
+      <div class="body">
+        <h2>Load the extension folder</h2>
+        <p>Click <strong>Load unpacked</strong> and choose this folder:</p>
+        <div class="copy-row">
+          <code id="folder">the WireCopy-Extension folder</code>
+          <button class="btn" type="button" data-copy="folder" id="copy-folder">Copy</button>
+        </div>
+        <p class="hint">Or drag the WireCopy-Extension folder (Wire Copy opened it for you) onto the extensions page.</p>
+      </div>
+    </li>
+  </ol>
+</main>
+<script>
+(function () {
+  'use strict';
+  // Everything from the query string goes in through textContent, never innerHTML.
+  var params = new URLSearchParams(window.location.search);
+  var browserName = (params.get('browser') || '').trim() || 'your browser';
+  var folder = (params.get('folder') || '').trim();
+
+  document.title = 'Add Wire Copy to ' + browserName;
+  document.getElementById('heading').textContent = 'Add Wire Copy to ' + browserName;
+  document.querySelectorAll('.browser-name').forEach(function (el) { el.textContent = browserName; });
+  if (folder) {
+    document.getElementById('folder').textContent = folder;
+  } else {
+    document.getElementById('copy-folder').hidden = true;
+  }
+
+  function fallbackCopy(text) {
+    var box = document.createElement('textarea');
+    box.value = text;
+    box.setAttribute('readonly', '');
+    box.style.position = 'fixed';
+    box.style.opacity = '0';
+    document.body.appendChild(box);
+    box.select();
+    var ok = false;
+    try { ok = document.execCommand('copy'); } catch (e) { ok = false; }
+    document.body.removeChild(box);
+    return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).catch(function () { return fallbackCopy(text); });
+    }
+    return fallbackCopy(text);
+  }
+
+  document.querySelectorAll('button[data-copy]').forEach(function (button) {
+    button.addEventListener('click', function () {
+      var text = document.getElementById(button.getAttribute('data-copy')).textContent;
+      copyText(text).then(function () {
+        button.textContent = 'Copied';
+        button.classList.add('done');
+      }, function () {
+        button.textContent = 'Select it';
+      }).then(function () {
+        setTimeout(function () { button.textContent = 'Copy'; button.classList.remove('done'); }, 2000);
+      });
+    });
+  });
+})();
+</script>
+</body>
+</html>

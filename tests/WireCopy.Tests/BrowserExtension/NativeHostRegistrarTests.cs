@@ -246,6 +246,32 @@ public sealed class NativeHostRegistrarTests : IDisposable
             "@echo off\r\n\"C:\\Apps\\Wire Copy\\WireCopy.API.exe\" native-messaging-host %*\r\n");
     }
 
+    // Guards:   Registering writes the "Add Wire Copy" guide page beside the exported extension, reads its
+    //           browser name / folder from the query string, and refreshes it if it was edited or stale.
+    // Fails if: The guide is not written, lands somewhere BrowserExtensionPaths.GuidePath does not point,
+    //           is not the shipped page (title logic, copy buttons), or a stale copy is not overwritten.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter Register_WritesAndRefreshesGuidePage
+    [Fact]
+    public void Register_WritesAndRefreshesGuidePage()
+    {
+        var command = new NativeHostCommand("/opt/wirecopy/WireCopy.API", null);
+        var guide = BrowserExtensionPaths.GuidePath(LocalAppData);
+
+        NativeHostRegistrar.Register(LinuxEnv(), command, SourceDir);
+
+        Path.GetFileName(guide).Should().Be("add-extension.html");
+        Path.GetDirectoryName(guide).Should().Be(BrowserExtensionPaths.Root(LocalAppData));
+        var html = File.ReadAllText(guide);
+        html.Should().Contain("Add Wire Copy to ").And.Contain("URLSearchParams")
+            .And.Contain("chrome://extensions").And.Contain("navigator.clipboard.writeText")
+            .And.Contain("Load unpacked").And.Contain("Developer mode");
+
+        File.WriteAllText(guide, "stale");
+        NativeHostRegistrar.Register(LinuxEnv(), command, SourceDir);
+
+        File.ReadAllText(guide).Should().Be(html);
+    }
+
     /// <summary>
     /// A Linux environment rooted in the temp folder. FileExists is false for anything outside it, so
     /// real browsers installed on this machine (/opt/..., /snap/...) never leak into a test.

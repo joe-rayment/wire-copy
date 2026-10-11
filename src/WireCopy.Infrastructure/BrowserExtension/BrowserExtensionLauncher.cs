@@ -5,20 +5,33 @@ using System.Diagnostics;
 namespace WireCopy.Infrastructure.BrowserExtension;
 
 /// <summary>
-/// Small "do the next step for the user" helpers for the Settings card (workspace-m7aml): open a
-/// browser's extensions page and reveal the exported extension folder. Never throws; each returns
-/// whether the process started.
+/// Small "do the next step for the user" helpers for the Settings card (workspace-m7aml): open the local
+/// "Add Wire Copy" guide page in a browser and reveal the exported extension folder. Never throws; each
+/// returns whether the process started.
 /// </summary>
 public static class BrowserExtensionLauncher
 {
-#pragma warning disable S1075 // The browser-internal page is a fixed scheme, not a configurable URL.
-    private const string ExtensionsUrl = "chrome://extensions";
-#pragma warning restore S1075
+    /// <summary>
+    /// The <c>file:</c> URL of the guide page with the browser name and extension folder in its query.
+    /// Chromium drops <c>chrome://</c> URLs passed on the command line but lets <c>file:</c> ones through,
+    /// so this page (not <c>chrome://extensions</c>) is what the browser is launched on.
+    /// </summary>
+    /// <param name="guidePath">Absolute path of <c>add-extension.html</c>.</param>
+    /// <param name="browserName">Short browser name shown in the page title.</param>
+    /// <param name="folder">Absolute path of the exported extension folder.</param>
+    /// <returns>An absolute <c>file:</c> URL; the query values are percent-escaped.</returns>
+    public static string BuildGuideUrl(string guidePath, string browserName, string folder) =>
+        new Uri(Path.GetFullPath(guidePath)).AbsoluteUri
+        + "?browser=" + Uri.EscapeDataString(browserName)
+        + "&folder=" + Uri.EscapeDataString(folder);
 
-    /// <summary>Opens <c>chrome://extensions</c> in the given browser, detached from this app.</summary>
+    /// <summary>Opens the guide page in the given browser, detached from this app.</summary>
     /// <param name="browser">A registration with a <see cref="BrowserRegistration.LaunchExecutable"/>.</param>
+    /// <param name="browserName">Short browser name shown in the page title.</param>
+    /// <param name="guidePath">Absolute path of <c>add-extension.html</c>.</param>
+    /// <param name="folder">Absolute path of the exported extension folder.</param>
     /// <returns>True when the browser process was started.</returns>
-    public static bool OpenExtensionsPage(BrowserRegistration browser)
+    public static bool OpenGuidePage(BrowserRegistration browser, string browserName, string guidePath, string folder)
     {
         if (string.IsNullOrEmpty(browser.LaunchExecutable))
         {
@@ -27,6 +40,7 @@ public static class BrowserExtensionLauncher
 
         try
         {
+            var url = BuildGuideUrl(guidePath, browserName, folder);
             if (OperatingSystem.IsWindows())
             {
                 var psi = new ProcessStartInfo(browser.LaunchExecutable)
@@ -37,11 +51,11 @@ public static class BrowserExtensionLauncher
                     RedirectStandardOutput = true,
                     RedirectStandardError = true,
                 };
-                psi.ArgumentList.Add(ExtensionsUrl);
+                psi.ArgumentList.Add(url);
                 return Start(psi);
             }
 
-            return StartDetachedUnix(browser.LaunchExecutable, ExtensionsUrl);
+            return StartDetachedUnix(browser.LaunchExecutable, url);
         }
         catch (Exception)
         {
