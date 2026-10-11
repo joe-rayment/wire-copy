@@ -12,6 +12,7 @@ using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Infrastructure.Bookmarks;
 using WireCopy.Infrastructure.Browser;
+using WireCopy.Infrastructure.BrowserExtension;
 using WireCopy.Infrastructure.Collections;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast;
@@ -465,6 +466,7 @@ public class Program
                 services.AddCollections();
                 services.AddBookmarks();
                 services.AddPodcast();
+                services.AddBrowserExtensionSupport(); // workspace-m7aml
                 services.AddScheduling();
 
                 // workspace-frpl.19 (B15): give the scheduler time to cancel an

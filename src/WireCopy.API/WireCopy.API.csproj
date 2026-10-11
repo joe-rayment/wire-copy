@@ -51,6 +51,9 @@
     <!-- workspace-kt19.2: ship the public-domain demo pack beside the binary
          so the loopback demo server finds it without a repo checkout. -->
     <Content Include="..\..\demo\site\**" LinkBase="demo-site" CopyToOutputDirectory="PreserveNewest" />
+    <!-- workspace-m7aml: ship the browser extension beside the binary; the app mirrors it to
+         {LocalAppData}/WireCopy/browser-extension/WireCopy-Extension on startup. -->
+    <Content Include="..\..\extension\**" LinkBase="browser-extension" CopyToOutputDirectory="PreserveNewest" />
   </ItemGroup>
 
 </Project>
