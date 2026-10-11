@@ -56,10 +56,11 @@ public class ChatterboxSettingsTests
             SettingsCommandHandler.SetupRow.ChatterboxExaggeration,
             SettingsCommandHandler.SetupRow.ChatterboxStatus,
         ]);
-        rows.TakeLast(3).Should().Equal(
+        rows.SkipLast(1).TakeLast(3).Should().Equal(
             SettingsCommandHandler.SetupRow.OutputFolder,
             SettingsCommandHandler.SetupRow.AutoPurgeHours,
             SettingsCommandHandler.SetupRow.CostGateAlwaysShow);
+        rows[^1].Should().Be(SettingsCommandHandler.SetupRow.BrowserExtension);
     }
 
     [Fact]

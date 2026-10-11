@@ -90,6 +90,9 @@ internal static class SettingsCommandHandler
         ChatterboxSample,
         ChatterboxExaggeration,
         ChatterboxStatus,
+
+        // workspace-m7aml.3: install guide for the browser extension.
+        BrowserExtension,
     }
 
     /// <summary>
@@ -139,6 +142,7 @@ internal static class SettingsCommandHandler
         bool showWelcomeBanner = false)
     {
         var selectedIndex = 0;
+        BrowserExtensionCard.WarmUp();
 
         while (!ct.IsCancellationRequested)
         {
@@ -470,6 +474,28 @@ internal static class SettingsCommandHandler
                 "Toggle",
                 helperText: "Pop the cost-gate modal even when the spend is below threshold");
 
+            // ---- Browser (workspace-m7aml.3) ----
+            helpers.WriteLine();
+            helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Browser{Reset}");
+            var extensionValue = BrowserExtensionCard.RowSummary(
+                BrowserExtensionCard.CachedRegistrations ?? Array.Empty<BrowserExtension.BrowserRegistration>(),
+                BrowserExtension.BrowserConnections.Read(BrowserExtension.BrowserExtensionPaths.ConnectionsPath()));
+            var extensionConnected = extensionValue != "Not set up";
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.BrowserExtension,
+                extensionConnected ? "●" : "○",
+                extensionConnected ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Browser extension",
+                extensionValue,
+                extensionConnected ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Set up",
+                helperText: "Save the article you're reading to your Reading List from Chrome, Vivaldi, Brave or Edge");
+
             // Bottom hint bar
             helpers.WriteLine();
             helpers.WriteLine(
@@ -642,6 +668,10 @@ internal static class SettingsCommandHandler
             case SetupRow.ChatterboxStatus:
                 await RunNarrationTestAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
+
+            case SetupRow.BrowserExtension:
+                await BrowserExtensionCard.RunAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
         }
     }
 
@@ -663,7 +693,10 @@ internal static class SettingsCommandHandler
         rowList.AddRange(engineIsChatterbox
             ? new[] { SetupRow.ChatterboxSample, SetupRow.ChatterboxExaggeration, SetupRow.ChatterboxStatus }
             : new[] { SetupRow.Voice, SetupRow.Model, SetupRow.TtsInstructions });
-        rowList.AddRange(new[] { SetupRow.OutputFolder, SetupRow.AutoPurgeHours, SetupRow.CostGateAlwaysShow });
+        rowList.AddRange(new[]
+        {
+            SetupRow.OutputFolder, SetupRow.AutoPurgeHours, SetupRow.CostGateAlwaysShow, SetupRow.BrowserExtension,
+        });
         return [.. rowList];
     }
 
