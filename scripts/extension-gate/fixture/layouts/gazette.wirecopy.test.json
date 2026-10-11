@@ -1,0 +1,42 @@
+{
+  "schemaVersion": 1,
+  "domain": "gazette.wirecopy.test",
+  "pageTypes": [
+    {
+      "name": "article",
+      "pageType": "article",
+      "priority": 10,
+      "matcher": {
+        "metaTags": {}
+      },
+      "selectors": {
+        "headline": [
+          "//h1"
+        ],
+        "byline": [
+          "//div[contains(@class,'byline')]//span[contains(@class,'author')]"
+        ],
+        "publishDate": [
+          "//div[contains(@class,'byline')]//time"
+        ],
+        "body": [
+          "//div[contains(@class,'story-body')]"
+        ],
+        "excludeRegions": [
+          "//aside[contains(@class,'inline-promo')]"
+        ]
+      },
+      "quality": {
+        "minWords": 100,
+        "minParagraphs": 3
+      },
+      "provenance": {
+        "model": "manual",
+        "generatedAt": "2026-10-11T00:00:00Z",
+        "sampleUrl": "http://gazette.wirecopy.test/2026/10/11/harbour-lights-return",
+        "consecutiveFailures": 0
+      }
+    }
+  ],
+  "updatedAt": "2026-10-11T00:00:00Z"
+}
