@@ -34,6 +34,7 @@ public class ArticleContentCacheBridgeTests
     private readonly IPageRenderer _renderer;
     private readonly NavigationService _navigationService;
     private readonly IArticleContentCache _articleContentCache;
+    private readonly PageLoadPipeline _pipeline;
     private readonly BrowserOrchestrator _sut;
 
     public ArticleContentCacheBridgeTests()
@@ -85,7 +86,7 @@ public class ArticleContentCacheBridgeTests
         var pageCache = Substitute.For<IPageCache>();
         var preloadService = Substitute.For<IPreloadService>();
 
-        var pipeline = BrowserOrchestratorTestHelper.CreatePipeline(
+        _pipeline = BrowserOrchestratorTestHelper.CreatePipeline(
             _pageLoader,
             _linkExtractor,
             _treeBuilder,
@@ -116,7 +117,7 @@ public class ArticleContentCacheBridgeTests
             Substitute.For<IHttpCookieRefresher>(),
             browserConfig,
             logger,
-            pipeline,
+            _pipeline,
             Substitute.For<ILayoutVariantProvider>(),
             BrowserOrchestratorTestHelper.CreateDockSpotlight());
     }
@@ -193,6 +194,35 @@ public class ArticleContentCacheBridgeTests
 
         // IPageLoader should NOT have been called
         await _pageLoader.DidNotReceive().LoadAsync(Arg.Any<PageLoadRequest>(), Arg.Any<CancellationToken>());
+    }
+
+    // Guards:   An article served from the article cache is classified as an Article, so the
+    //           reader auto-switch opens the reader (not an empty link tree) for Reading List items.
+    // Fails if: BuildPageFromCachedArticle stops calling page.SetClassification(PageClassification.Article).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter LoadAsync_CollectionContext_ArticleCacheHit_ClassifiesPageAsArticle
+    [Fact]
+    public async Task LoadAsync_CollectionContext_ArticleCacheHit_ClassifiesPageAsArticle()
+    {
+        // Arrange
+        SimulateCollectionContext();
+        var url = "https://example.com/article";
+
+        _articleContentCache.TryGetAsync(url, Arg.Any<CancellationToken>())
+            .Returns(new ExtractedArticle
+            {
+                Title = "Cached Article",
+                CleanedText = "This is cached article content from the reading list.",
+                Url = url,
+                WordCount = 9,
+            });
+
+        // Act — drive the pipeline directly, the layer that builds the page
+        var result = await _pipeline.LoadAsync(url, reportStage: null);
+
+        // Assert
+        result.FetchMethod.Should().Be(FetchMethod.Cached);
+        result.Page.Classification.Should().Be(PageClassification.Article);
+        result.Page.HasReadableContent().Should().BeTrue();
     }
 
     [Fact]
