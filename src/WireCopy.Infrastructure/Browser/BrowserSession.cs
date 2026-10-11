@@ -1091,6 +1091,11 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         try
         {
+            // Self-heal the Patchright Node driver before it is needed: a partial rebuild or a bundle
+            // that dropped the driver (or its +x bit) otherwise fails here with "Driver not found" and
+            // a blank web pane (workspace-ltre). Restores from the NuGet cache / fixes perms in place.
+            PlaywrightDriverBootstrapper.Ensure(_logger);
+
             var createTask = Playwright.CreateAsync();
             if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) != createTask)
             {
@@ -1214,6 +1219,10 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
 
         var endpoint = await _shell.GetCdpEndpointAsync().ConfigureAwait(false)
             ?? throw new InvalidOperationException("Shell channel is connected but provided no CDP endpoint");
+
+        // Same driver self-heal as the launch path (workspace-ltre): the shell attach path also
+        // spawns the Patchright Node driver, so a missing driver/+x bit must be repaired here too.
+        PlaywrightDriverBootstrapper.Ensure(_logger);
 
         var createTask = Playwright.CreateAsync();
         if (await Task.WhenAny(createTask, Task.Delay(TimeSpan.FromSeconds(15))).ConfigureAwait(false) != createTask)

@@ -107,6 +107,11 @@ public static class BrowserDependencyInjection
         services.AddHostedService<ShellChannelAnnouncer>();
         services.AddHostedService<ShellModeHintService>();
 
+        // Self-heal the Patchright Node driver at startup (workspace-ltre): restore it from the NuGet
+        // cache / fix its executable bit if a rebuild or bundle dropped it, so a missing driver becomes
+        // a working browser (or one clear error) instead of a blank web pane on every page.
+        services.AddHostedService<PlaywrightBootstrapHostedService>();
+
         // Register browser session (shared Playwright lifecycle)
         services.AddSingleton<BrowserSession>();
         services.AddSingleton<IBrowserSession>(sp => sp.GetRequiredService<BrowserSession>());
