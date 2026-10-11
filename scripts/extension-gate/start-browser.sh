@@ -46,10 +46,23 @@ args=(
   --window-size=1400,900 --window-position=0,0
   --password-store=basic
   --disable-features=DisableLoadExtensionCommandLineSwitch
+  # Without this, Vivaldi dies ~1 s after CDP comes up (measured, not guessed): the container's
+  # /dev/shm is 64 MB and Vivaldi's UI renderer / font-data service fills it (df showed 63628 KB
+  # used); the next allocation fails and the browser logs "FATAL ... font_data_service_impl.cc:373
+  # Check failed: No space left on device (28)", then "UI Process abnormally terminates with
+  # status 3" / "Quiting Vivaldi". Plain `vivaldi-bin` with NO shim, env or proxy dies the same way
+  # (0/5 survived); with this flag /dev/shm stays at 0 KB and 6/6 survived. Not a noinet.so issue.
+  # Harmless for Chromium (shared memory then lives under /tmp).
+  --disable-dev-shm-usage
 )
 
 # GOOGLE_* = "no" silences Chromium's "Google API keys are missing" infobar, which would
 # otherwise push the page down in every screenshot.
+# Vivaldi on a fresh profile opens its full-window "Let's get you set up!" welcome tab and DROPS
+# command-line URLs, so for Vivaldi the URLs are opened through CDP once it is up (see below).
+urls=("$@")
+[[ "$kind" != vivaldi ]] || set --
+
 DISPLAY="$display" LD_PRELOAD="$here/noinet.so" NOINET_LOG="$log" \
   GOOGLE_API_KEY=no GOOGLE_DEFAULT_CLIENT_ID=no GOOGLE_DEFAULT_CLIENT_SECRET=no \
   "$bin" "${args[@]}" "$@" >"$XDG_DATA_HOME/browser-$kind.out" 2>&1 &
@@ -58,6 +71,14 @@ pid=$!
 
 for _ in $(seq 1 120); do
   if curl -fs --noproxy '*' -m 2 "http://127.0.0.1:$cdp/json/version" >/dev/null 2>&1; then
+    if [[ "$kind" == vivaldi ]]; then
+      # Wait for Vivaldi's own UI document, then open each URL as a new (active) tab. The welcome
+      # tab stays behind it, in the background; nothing needs to be clicked through.
+      node "$here/cdp.mjs" "$cdp" wait-target components/welcome 30000 || node "$here/cdp.mjs" "$cdp" wait-target main.html 30000 || true
+      for u in "${urls[@]}"; do node "$here/cdp.mjs" "$cdp" new "$u" >/dev/null; done
+    fi
+    sleep 1.5
+    kill -0 "$pid" 2>/dev/null || { echo "$kind died right after CDP came up; see $XDG_DATA_HOME/browser-$kind.out" >&2; exit 1; }
     echo "$kind up: pid=$pid cdp=$cdp proxy=$proxy display=$display noinet-log=$log"
     exit 0
   fi
