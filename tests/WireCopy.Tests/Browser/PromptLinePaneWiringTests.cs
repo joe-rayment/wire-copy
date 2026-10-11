@@ -201,6 +201,54 @@ public sealed class PromptLinePaneWiringTests : IAsyncLifetime
         }
     }
 
+    // Guards:   when a wizard/chooser card is cancelled and the code clears the card WITHOUT repainting the page,
+    //           the link-tree HTML pane still comes straight back (linkTreeState visible:true) - the user is not left
+    //           looking at the terminal's plain text tree until the next keypress.
+    // Fails if: RestorePaneAfterOverlay() does nothing (the pane stays hidden after a cancel), or re-sends the pane
+    //           when it was never hidden for a card (a stray visible:true over the reader / launcher).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PromptLinePaneWiringTests.LinkTree_PaneComesBackWhenOverlayClearsWithoutARender"
+    [Fact]
+    public async Task LinkTree_PaneComesBackWhenOverlayClearsWithoutARender()
+    {
+        _server = await RecordingShellServer.StartAsync(_socketPath);
+        await using var channel = ShellChannel.TryConnect(_socketPath, NullLogger.Instance);
+        Assert.NotNull(channel);
+        var renderer = CreateRenderer(channel);
+
+        var page = CreateFlatPage(5);
+        var options = new RenderOptions { TerminalWidth = 121, TerminalHeight = 60, ShellPane = true };
+
+        var originalOut = Console.Out;
+        Console.SetOut(TextWriter.Null);
+        try
+        {
+            renderer.OverlayActive = false;
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            var shown = await _server.WaitForNextAsync("linkTreeState");
+            Assert.True(shown.GetProperty("visible").GetBoolean());
+
+            // A card is up: pane hidden.
+            renderer.OverlayActive = true;
+            renderer.RenderHierarchical(page, new NavigationContext(), options);
+            var hidden = await _server.WaitForNextAsync("linkTreeState");
+            Assert.False(hidden.GetProperty("visible").GetBoolean());
+
+            // The card is cancelled and NO render follows: the pane must still come back.
+            renderer.RestorePaneAfterOverlay();
+            var back = await _server.WaitForNextAsync("linkTreeState");
+            Assert.True(back.GetProperty("visible").GetBoolean());
+            Assert.False(renderer.OverlayActive);
+
+            // The pane is visible now, so a second restore is a no-op (nothing re-sent).
+            renderer.RestorePaneAfterOverlay();
+            Assert.False(_server.TryTakeNext(TimeSpan.FromMilliseconds(300), out var extra), $"a second restore must not re-send the pane (got {extra.Method})");
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
     private static TerminalPageRenderer CreateRenderer(ShellChannel channel)
     {
         var themeProvider = Substitute.For<IThemeProvider>();

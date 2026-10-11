@@ -68,6 +68,7 @@ public class TerminalPageRenderer : IPageRenderer
     private PromptLineState? _promptLine;
     private LauncherViewState? _lastLauncherState;
     private LinkTreeViewState? _lastLinkTreeState;
+    private bool _linkTreeHiddenForOverlay; // workspace-olkxx: the pane was hidden BECAUSE an overlay card is up
 
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
         : this(themeProvider, logger, podcastJobManager: null, shellChannel: null)
@@ -114,7 +115,37 @@ public class TerminalPageRenderer : IPageRenderer
     /// set the pane must be hidden or the card is invisible. Set by the orchestrator
     /// before every page render.
     /// </summary>
-    internal bool OverlayActive { get; set; }
+    public bool OverlayActive { get; set; }
+
+    /// <summary>
+    /// workspace-olkxx: called the moment the orchestrator's overlay painter goes away
+    /// (a wizard / chooser / schedule card closed). Several exits clear the painter
+    /// WITHOUT re-rendering (cancel paths), which would leave the link-tree pane hidden
+    /// and the terminal's own text tree showing until the next keypress. When the pane
+    /// was hidden for the card, re-send the last link-tree state as visible so it comes
+    /// back immediately; the render that usually follows then refreshes it. No-op when
+    /// the pane was not hidden for an overlay (reader / launcher / terminal mode).
+    /// </summary>
+    public void RestorePaneAfterOverlay()
+    {
+        lock (_promptLock)
+        {
+            OverlayActive = false;
+            if (!_linkTreeHiddenForOverlay)
+            {
+                return;
+            }
+
+            _linkTreeHiddenForOverlay = false;
+            if (_shellChannel.IsConnected && !_linkTreeStateVisible && _lastLinkTreeState is { } linkState)
+            {
+                // Same send pattern as the render path: the channel serialises writes in
+                // call order, so this follows the earlier hide and precedes any later render.
+                _ = _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine });
+                _linkTreeStateVisible = true;
+            }
+        }
+    }
 
     public void RenderHierarchical(Page page, NavigationContext context, RenderOptions options)
     {
@@ -145,6 +176,14 @@ public class TerminalPageRenderer : IPageRenderer
                 // (the terminal's own text tree + the card show through). The first render
                 // after the painter clears pushes visible:true again.
                 LeaveLinkTreeIfShown();
+
+                // Deliberately keep _lastLinkTreeState as the pre-card page: a chooser/wizard
+                // preview swaps candidate trees in under the card, and a cancel must bring
+                // back the ORIGINAL tree, not whichever candidate was last previewed.
+                lock (_promptLock)
+                {
+                    _linkTreeHiddenForOverlay = true;
+                }
             }
             else if (_shellChannel.IsConnected)
             {
@@ -155,6 +194,7 @@ public class TerminalPageRenderer : IPageRenderer
                     _lastLinkTreeState = linkState;
                     _ = _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine });
                     _linkTreeStateVisible = true;
+                    _linkTreeHiddenForOverlay = false;
                 }
             }
         }
@@ -768,6 +808,7 @@ public class TerminalPageRenderer : IPageRenderer
     /// </summary>
     private void LeaveLinkTreeIfShown()
     {
+        _linkTreeHiddenForOverlay = false; // any other screen taking over supersedes "hidden for an overlay"
         if (!_linkTreeStateVisible)
         {
             return;

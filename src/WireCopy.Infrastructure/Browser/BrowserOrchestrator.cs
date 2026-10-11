@@ -218,7 +218,19 @@ public partial class BrowserOrchestrator : IBrowserService
             OpenInPaneAsync = url => _browserSession is IBrowserSession paneSession
                 ? paneSession.OpenInPaneAsync(url)
                 : Task.FromResult(PaneOpenResult.NotAttached),
-            SetOverlayPainter = painter => _activeOverlayPainter = painter,
+            SetOverlayPainter = painter =>
+            {
+                var hadPainter = _activeOverlayPainter != null;
+                _activeOverlayPainter = painter;
+
+                // workspace-olkxx: some wizard / chooser exits clear the painter without
+                // re-rendering. Bring the link-tree pane back right away so the user is
+                // never left looking at the terminal's text tree until the next keypress.
+                if (hadPainter && painter == null && _renderer is UI.TerminalPageRenderer paneRenderer)
+                {
+                    paneRenderer.RestorePaneAfterOverlay();
+                }
+            },
             RenderCurrentPageAsync = RenderCurrentPageAsync,
             RefreshCollectionsAsync = RefreshCollectionsAsync,
             RefreshBookmarksAsync = RefreshBookmarksAsync,
