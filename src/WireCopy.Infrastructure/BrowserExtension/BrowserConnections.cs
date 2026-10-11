@@ -4,11 +4,6 @@ using System.Text.Json;
 
 namespace WireCopy.Infrastructure.BrowserExtension;
 
-/// <summary>One browser's last contact with the native-messaging host.</summary>
-/// <param name="LastSeenUtc">When the extension in that browser last reached the host.</param>
-/// <param name="ExtensionVersion">The extension's manifest version, when it sent one.</param>
-public sealed record BrowserConnection(DateTime LastSeenUtc, string? ExtensionVersion);
-
 /// <summary>
 /// Reads and writes <c>connections.json</c> (workspace-m7aml): the host records every
 /// hello/save under the browser that launched it, and the Settings card reads it to
