@@ -190,6 +190,9 @@ public sealed class BookmarkReconcilerTests : TestDatabaseFixture, IDisposable
         ours[2].Url.Should().Be("https://b.example");
     }
 
+    // Guards: two saved bookmarks with the same address (any letter case) no longer wipe the launcher.
+    // Fails if: BookmarkReconciler goes back to ToDictionary(b => b.Url), which throws on the duplicate.
+    // Run: ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~Reconcile_DuplicateUrlsInDb"
     [Fact]
     public async Task Reconcile_DuplicateUrlsInDb_DoesNotThrow_AndDedupsToOneRow()
     {
