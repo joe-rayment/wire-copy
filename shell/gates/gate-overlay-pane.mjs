@@ -159,11 +159,13 @@ try {
         `rightEdgeCol=${topEnd} cols=${cols} rowsNotEndingInBorderAtEdge=[${badEnd.join(',')}]`)
       // Col 0 is the card's left margin (a space) - or the text tree's gutter '▌' on rows the card does
       // not cover. Any other glyph there is a tail wrapped from the end of the row above.
-      const topLeft = rows[top].indexOf('╭')
-      const okCol0 = new Set([' ', '▌'])
-      if (topLeft === 0) { okCol0.add('│'); okCol0.add('╰') } // card flush left: its own border is at col 0
+      // A card flush left owns col 0, so there it must be exactly its own left border:
+      // '╭' on the top row, '│' between, '╰' on the bottom row.
+      const flushLeft = rows[top].indexOf('╭') === 0
+      const expectCol0 = i => !flushLeft || i > bot ? new Set([' ', '▌'])
+        : new Set([i === top ? '╭' : i === bot ? '╰' : '│'])
       const stray = []
-      for (let i = top; i <= bot + 1 && i < rows.length; i++) if (!okCol0.has(rows[i][0] ?? ' ')) stray.push(`${i}:${JSON.stringify(rows[i][0])}`)
+      for (let i = top; i <= bot + 1 && i < rows.length; i++) if (!expectCol0(i).has(rows[i][0] ?? ' ')) stray.push(`${i}:${JSON.stringify(rows[i][0])}`)
       check('C2f no stray glyph wrapped into col 0 of the card rows (or the row below the card)', stray.length === 0, `strayCol0=[${stray.join(' ')}]`)
       if (badEnd.length || !fits || stray.length) dump()
     }
