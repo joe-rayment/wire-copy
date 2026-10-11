@@ -23,14 +23,15 @@ namespace WireCopy.Infrastructure.Browser;
 /// </summary>
 public partial class BrowserOrchestrator : IBrowserService
 {
-    private const int MinContentWidth = 40;
-    private const int MaxContentWidth = 120;
-
     // TTL for Reading List items. Items older than this are purged on the
     // collection-load path (RefreshCollectionsAsync) and excluded from the
     // launcher card's saved-count (GetReadingListItemCount) so the tile
     // subtitle agrees with what the Reading List view shows (workspace-hlzy).
-    private const int ReadingListExpiryHours = 16;
+    // Internal: the browser-extension capture reports the same count (workspace-m7aml).
+    internal const int ReadingListExpiryHours = 16;
+
+    private const int MinContentWidth = 40;
+    private const int MaxContentWidth = 120;
 
     // workspace-exbz: cap on failed sidecar summons before the auto-engage gives up
     // for the session, so navigation never degrades into slow launch attempts on

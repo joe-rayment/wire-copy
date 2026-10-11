@@ -177,6 +177,19 @@ public static class BrowserDependencyInjection
         services.AddSingleton<IAiArticleExtractor, OpenAiArticleExtractor>();
         services.AddSingleton<IRssFeedDetector, RssFeedDetector>();
 
+        // workspace-m7aml: the browser extension hands over page HTML; this saves it to the
+        // Reading List using the same extraction code as PageLoadPipeline. The layout store
+        // and selector extractor are optional, like the pipeline's lazy lookups.
+        services.AddSingleton(sp => new BrowserExtension.ReadingListCapture(
+            sp.GetRequiredService<ILinkExtractor>(),
+            sp.GetRequiredService<IReadableContentExtractor>(),
+            sp.GetService<IArticleLayoutStore>(),
+            sp.GetService<ISelectorBasedArticleExtractor>(),
+            sp.GetRequiredService<Podcast.Cache.IArticleContentCache>(),
+            sp.GetRequiredService<IOptions<BrowserConfiguration>>(),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<BrowserExtension.ReadingListCapture>>()));
+
         // workspace-frpl.11 (B8): opportunistic cookie freshness — a headless scheduled
         // load that renders a logged-in page refreshes cookies.json from the foreground
         // session so later runs stay authenticated. Previously the class existed but was

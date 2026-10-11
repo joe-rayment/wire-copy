@@ -379,17 +379,17 @@ public class PageLoadPipeline
 
         var links = await _linkExtractor.ExtractLinksAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
 
-        // Classify the page using signal-scored approach
-        var signals = PageSignalExtractor.Extract(loadResult.Html);
-        var contentLinkCount = links.Count(l => l.Type == Domain.Enums.Browser.LinkType.Content);
-        var (classification, classificationScore) = PageClassifier.ClassifyScored(signals, contentLinkCount, finalUrl);
+        // Classify the page using signal-scored approach (shared with the extension capture).
+        var classified = ArticleHtmlExtraction.Classify(loadResult.Html, finalUrl, links);
+        var classification = classified.Classification;
+        var signals = classified.Signals;
         page.SetClassification(classification);
         _logger.LogInformation(
             "Page classified as {Classification} (score={Score}): {Url} (contentLinks={ContentLinks}, og:type={OgType}, ld+json={LdJson}, articles={Articles})",
             classification,
-            classificationScore,
+            classified.Score,
             finalUrl,
-            contentLinkCount,
+            classified.ContentLinkCount,
             signals.OgType ?? "none",
             signals.LdJsonType ?? "none",
             signals.ArticleContainerCount);
@@ -471,9 +471,16 @@ public class PageLoadPipeline
             // AI config that passed its self-test) is AUTHORITATIVE — apply it
             // before generic readability so a tuned site never regresses to the
             // heuristics it was tuned to fix. Misses fall through unchanged.
-            readable = await TrySavedSelectorConfigAsync(finalUrl, loadResult.Html).ConfigureAwait(false);
-
-            readable ??= await _contentExtractor.ExtractAsync(loadResult.Html, loadResult.Url ?? requestedUrl, cancellationToken).ConfigureAwait(false);
+            // The saved-layout-then-heuristic steps live in ArticleHtmlExtraction so the
+            // browser-extension capture parses a page exactly as this pipeline does.
+            (readable, _) = await ArticleHtmlExtraction.ExtractReadableAsync(
+                loadResult.Html,
+                loadResult.Url ?? requestedUrl,
+                _contentExtractor,
+                ResolveArticleLayoutStore(),
+                ResolveSelectorExtractor(),
+                _logger,
+                cancellationToken).ConfigureAwait(false);
 
             // Escalate to the AI article-layout pipeline when the heuristic
             // extractor returns null for a URL that *looks* article-shaped
@@ -512,7 +519,7 @@ public class PageLoadPipeline
                 // Populate the persistent article cache so podcast generation can
                 // skip re-extraction for any article the user has already loaded.
                 // Skip paywalled-domain articles with low word count (likely truncated previews).
-                if (!_browserConfig.IsPaywalledDomain(finalUrl) || readable.WordCount >= 200)
+                if (ArticleHtmlExtraction.ShouldCache(_browserConfig, finalUrl, readable))
                 {
                     await TryPopulateArticleCacheAsync(finalUrl, readable, cancellationToken).ConfigureAwait(false);
                 }
@@ -566,7 +573,7 @@ public class PageLoadPipeline
             Classification = classification,
             ClassificationVersion = PageClassifier.ClassificationVersion,
             ExtractionVersion = LinkExtractor.ExtractionVersion,
-            ClassificationScore = classificationScore,
+            ClassificationScore = classified.Score,
             DetectedFeeds = detectedFeeds,
         };
 
@@ -1210,45 +1217,6 @@ public class PageLoadPipeline
     /// non-empty content meeting the global quality gate are persisted.
     /// </summary>
     /// <returns>Extracted content or null if the chain produced nothing.</returns>
-    /// <summary>
-    /// Applies the saved per-domain selector config when one exists
-    /// (workspace-8qyo). Null when there is no config, no entry matches, or the
-    /// extraction misses its quality bar — callers fall through to generic
-    /// readability.
-    /// </summary>
-    private async Task<ReadableContent?> TrySavedSelectorConfigAsync(string url, string? html)
-    {
-        if (string.IsNullOrEmpty(html))
-        {
-            return null;
-        }
-
-        var store = ResolveArticleLayoutStore();
-        var selectorExtractor = ResolveSelectorExtractor();
-        var domain = ArticleLayoutDomains.FromUrl(url);
-        if (store is null || selectorExtractor is null || domain is null)
-        {
-            return null;
-        }
-
-        var savedConfig = await store.LoadAsync(domain).ConfigureAwait(false);
-        if (savedConfig == null)
-        {
-            return null;
-        }
-
-        var extracted = selectorExtractor.Extract(savedConfig, url, html);
-        if (extracted != null)
-        {
-            _logger.LogInformation(
-                "Article extracted via saved selector config for {Url} ({Words} words)",
-                url,
-                extracted.WordCount);
-        }
-
-        return extracted;
-    }
-
     private async Task<ReadableContent?> TryArticleSelectorEscalationAsync(
         string url,
         string html,
@@ -1376,15 +1344,7 @@ public class PageLoadPipeline
 
         try
         {
-            var article = new Podcast.ExtractedArticle
-            {
-                Title = content.Title,
-                CleanedText = content.CleanedText,
-                Author = content.Author,
-                Url = url,
-                WordCount = content.WordCount,
-                PublishedDate = content.PublishedDate,
-            };
+            var article = ArticleHtmlExtraction.ToExtractedArticle(content, url);
 
             await articleCache.PutAsync(url, article, cancellationToken).ConfigureAwait(false);
             _logger.LogDebug("Pre-populated article cache for {Url} ({Words} words)", url, content.WordCount);
