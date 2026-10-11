@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI.Renderers;
 
 namespace WireCopy.Infrastructure.Browser.UI.Components;
 
@@ -101,15 +102,15 @@ internal static class StrategyChooserOverlay
             var rowItem = state.Rows[i];
             var isCursor = i == state.Cursor;
             prepared[i] = FormatRow(rowItem, state.CurrentPhase, isCursor, palette);
-            if (prepared[i].Plain.Length > maxRowWidth)
-            {
-                maxRowWidth = prepared[i].Plain.Length;
-            }
+            maxRowWidth = Math.Max(maxRowWidth, RenderHelpers.GetDisplayWidth(prepared[i].Plain));
         }
 
         // Inner width = larger of (rows, title, hint) + a little padding.
-        var innerContent = Math.Max(maxRowWidth, Math.Max(title.Length + 4, hintLine.Length));
-        var innerWidth = Math.Clamp(innerContent + 2, 30, Math.Max(30, terminalWidth - 4));
+        var innerContent = Math.Max(maxRowWidth, Math.Max(RenderHelpers.GetDisplayWidth(title) + 4, RenderHelpers.GetDisplayWidth(hintLine)));
+
+        // workspace-rgf1i: the whole box (content + borders) must fit the dock-aware terminalWidth,
+        // or xterm wraps the overrun into column 0 of the next row.
+        var innerWidth = OverlayBox.InnerWidth(innerContent + 2, 30, terminalWidth);
 
         var contentLines = state.Rows.Count;
         if (!string.IsNullOrEmpty(state.Footnote))
@@ -122,16 +123,16 @@ internal static class StrategyChooserOverlay
         var boxHeight = contentLines + 2; // +2 for borders
         var startRow = Math.Max(1, terminalHeight - boxHeight - 1); // -1 for status bar
 
-        // workspace-s621: terminalWidth is the dock-aware width; add the dock origin.
-        var startCol = OverlayViewport.Left + Math.Max(0, (terminalWidth - innerWidth - 2) / 2);
+        // workspace-s621: terminalWidth is the dock-aware width; StartCol adds the dock origin.
+        var startCol = OverlayBox.StartCol(terminalWidth, innerWidth);
 
         var borderColor = palette.SecondaryText.AnsiFg;
         var titleColor = palette.StatusBarTextFg.AnsiFg;
 
         // Top border with title
+        title = OverlayBox.Fit(title, title, innerWidth - 1).Plain;
         var titlePadded = $" {title} ";
-        var totalDashes = innerWidth + 2;
-        var rightDashCount = Math.Max(0, totalDashes - titlePadded.Length - 1);
+        var rightDashCount = Math.Max(0, innerWidth + 1 - RenderHelpers.GetDisplayWidth(titlePadded));
         var topLine = $"{borderColor}╭─{Reset}{titleColor}{titlePadded}{Reset}{borderColor}{new string('─', rightDashCount)}╮{Reset}";
 
         ops.Add(new(startCol, startRow, topLine));
@@ -139,34 +140,25 @@ internal static class StrategyChooserOverlay
         var row = startRow + 1;
         for (var i = 0; i < prepared.Length && row < terminalHeight - 1; i++, row++)
         {
-            var (plain, styled) = prepared[i];
-            var pad = Math.Max(0, innerWidth - plain.Length);
+            var (plain, styled) = OverlayBox.Fit(prepared[i].Plain, prepared[i].Styled, innerWidth);
+            var pad = Math.Max(0, innerWidth - RenderHelpers.GetDisplayWidth(plain));
             ops.Add(new(startCol, row, $"{borderColor}│{Reset} {styled}{new string(' ', pad)} {borderColor}│{Reset}"));
         }
 
         if (!string.IsNullOrEmpty(state.Footnote) && row < terminalHeight - 1)
         {
-            var note = state.Footnote!;
-            if (note.Length > innerWidth)
-            {
-                note = note[..innerWidth];
-            }
-
-            var notePad = Math.Max(0, innerWidth - note.Length);
-            ops.Add(new(startCol, row, $"{borderColor}│{Reset} {Dim}{palette.SecondaryText.AnsiFg}{note}{Reset}{new string(' ', notePad)} {borderColor}│{Reset}"));
+            var rawNote = state.Footnote!;
+            var (note, noteStyled) = OverlayBox.Fit(rawNote, $"{Dim}{palette.SecondaryText.AnsiFg}{rawNote}{Reset}", innerWidth);
+            var notePad = Math.Max(0, innerWidth - RenderHelpers.GetDisplayWidth(note));
+            ops.Add(new(startCol, row, $"{borderColor}│{Reset} {noteStyled}{new string(' ', notePad)} {borderColor}│{Reset}"));
             row++;
         }
 
         if (row < terminalHeight - 1)
         {
-            var hint = hintLine;
-            if (hint.Length > innerWidth)
-            {
-                hint = hint[..innerWidth];
-            }
-
-            var hintPad = Math.Max(0, innerWidth - hint.Length);
-            ops.Add(new(startCol, row, $"{borderColor}│{Reset} {palette.GetAccentFg().AnsiFg}{hint}{Reset}{new string(' ', hintPad)} {borderColor}│{Reset}"));
+            var (hint, hintStyled) = OverlayBox.Fit(hintLine, $"{palette.GetAccentFg().AnsiFg}{hintLine}{Reset}", innerWidth);
+            var hintPad = Math.Max(0, innerWidth - RenderHelpers.GetDisplayWidth(hint));
+            ops.Add(new(startCol, row, $"{borderColor}│{Reset} {hintStyled}{new string(' ', hintPad)} {borderColor}│{Reset}"));
             row++;
         }
 

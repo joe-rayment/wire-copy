@@ -2,6 +2,7 @@
 
 using System.Text;
 using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI.Renderers;
 
 namespace WireCopy.Infrastructure.Browser.UI.Components;
 
@@ -30,6 +31,36 @@ internal static class SetupWizardOverlay
     public static void Render(State state, ThemePalette palette, int terminalWidth, int terminalHeight)
         => OverlayBox.Paint(BuildFrame(state, palette, terminalWidth, terminalHeight));
 
+    /// <summary>
+    /// Test/diagnostic helper: the plain-text lines a card renders, including the
+    /// durable identifier on each option. Used by component tests to assert the
+    /// identifier is visible without scraping the ANSI Console output.
+    /// </summary>
+    public static IReadOnlyList<string> DescribeCard(WizardCard card, int? maxContentLines = null)
+    {
+        ArgumentNullException.ThrowIfNull(card);
+        var window = ComputeCardWindow(card, maxContentLines ?? int.MaxValue);
+        var lines = new List<string> { card.Title };
+        if (!string.IsNullOrEmpty(card.Prompt))
+        {
+            lines.Add(card.Prompt);
+        }
+
+        for (var i = window.OptionOffset; i < window.OptionOffset + window.OptionCount; i++)
+        {
+            var opt = card.Options[i];
+            var id = opt.Identifier.Length > 0 ? $"   {opt.Identifier}" : string.Empty;
+            lines.Add($"{opt.Label}{id}");
+        }
+
+        if (!string.IsNullOrEmpty(window.Footnote))
+        {
+            lines.Add(window.Footnote!);
+        }
+
+        return lines;
+    }
+
     /// <summary>Lays the card out as positioned writes (no console access) — see <see cref="OverlayBox"/>.</summary>
     internal static IReadOnlyList<OverlayBox.Op> BuildFrame(State state, ThemePalette palette, int terminalWidth, int terminalHeight)
     {
@@ -46,30 +77,35 @@ internal static class SetupWizardOverlay
         }
 
         var inner = lines.Select(PlainLength).DefaultIfEmpty(0).Max();
-        inner = Math.Max(inner, title.Length + 4);
-        var innerWidth = Math.Clamp(inner + 2, 36, Math.Max(36, terminalWidth - 4));
+        inner = Math.Max(inner, RenderHelpers.GetDisplayWidth(title) + 4);
+
+        // workspace-rgf1i: the whole box (content + borders) must fit the dock-aware terminalWidth,
+        // or xterm wraps the overrun into column 0 of the next row.
+        var innerWidth = OverlayBox.InnerWidth(inner + 2, 36, terminalWidth);
 
         var boxHeight = lines.Count + 2;
         var startRow = Math.Max(1, terminalHeight - boxHeight - 1);
 
-        // workspace-s621: terminalWidth is the dock-aware width; add the dock origin.
-        var startCol = OverlayViewport.Left + Math.Max(0, (terminalWidth - innerWidth - 2) / 2);
+        // workspace-s621: terminalWidth is the dock-aware width; StartCol adds the dock origin.
+        var startCol = OverlayBox.StartCol(terminalWidth, innerWidth);
 
         var border = palette.SecondaryText.AnsiFg;
         var titleColor = palette.StatusBarTextFg.AnsiFg;
 
+        title = OverlayBox.Fit(title, title, innerWidth - 1).Plain;
         var titlePadded = $" {title} ";
-        var rightDashes = Math.Max(0, innerWidth + 2 - titlePadded.Length - 1);
+        var rightDashes = Math.Max(0, innerWidth + 1 - RenderHelpers.GetDisplayWidth(titlePadded));
         ops.Add(new(startCol, startRow, $"{border}╭─{Reset}{titleColor}{titlePadded}{Reset}{border}{new string('─', rightDashes)}╮{Reset}"));
 
         var row = startRow + 1;
-        foreach (var (plain, styled) in lines)
+        foreach (var line in lines)
         {
             if (row >= terminalHeight - 1)
             {
                 break;
             }
 
+            var (plain, styled) = OverlayBox.Fit(line.Plain, line.Styled, innerWidth);
             var pad = Math.Max(0, innerWidth - PlainWidth(plain));
             ops.Add(new(startCol, row, $"{border}│{Reset} {styled}{new string(' ', pad)} {border}│{Reset}"));
             row++;
@@ -144,36 +180,6 @@ internal static class SetupWizardOverlay
 
             return result;
         }
-    }
-
-    /// <summary>
-    /// Test/diagnostic helper: the plain-text lines a card renders, including the
-    /// durable identifier on each option. Used by component tests to assert the
-    /// identifier is visible without scraping the ANSI Console output.
-    /// </summary>
-    public static IReadOnlyList<string> DescribeCard(WizardCard card, int? maxContentLines = null)
-    {
-        ArgumentNullException.ThrowIfNull(card);
-        var window = ComputeCardWindow(card, maxContentLines ?? int.MaxValue);
-        var lines = new List<string> { card.Title };
-        if (!string.IsNullOrEmpty(card.Prompt))
-        {
-            lines.Add(card.Prompt);
-        }
-
-        for (var i = window.OptionOffset; i < window.OptionOffset + window.OptionCount; i++)
-        {
-            var opt = card.Options[i];
-            var id = opt.Identifier.Length > 0 ? $"   {opt.Identifier}" : string.Empty;
-            lines.Add($"{opt.Label}{id}");
-        }
-
-        if (!string.IsNullOrEmpty(window.Footnote))
-        {
-            lines.Add(window.Footnote!);
-        }
-
-        return lines;
     }
 
     /// <summary>
@@ -252,7 +258,7 @@ internal static class SetupWizardOverlay
 
     private static int PlainLength((string Plain, string Styled) line) => PlainWidth(line.Plain);
 
-    private static int PlainWidth(string plain) => plain.Length;
+    private static int PlainWidth(string plain) => RenderHelpers.GetDisplayWidth(plain);
 
     public sealed class State
     {
