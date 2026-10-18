@@ -1,0 +1,14 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <!-- Vendored thin client for the audio-engine HTTP API (see README.md). BCL only: no package
+       dependencies. The .cs files are copied verbatim from upstream and never edited here, so
+       WireCopy's style analyzers are switched off for THIS project only. -->
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RootNamespace>AudioEngine.Client</RootNamespace>
+    <AssemblyName>AudioEngine.Client</AssemblyName>
+    <EnforceCodeStyleInBuild>false</EnforceCodeStyleInBuild>
+    <RunAnalyzers>false</RunAnalyzers>
+  </PropertyGroup>
+
+</Project>

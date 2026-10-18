@@ -17,6 +17,8 @@ Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireCopy.Tests", "tests\Wir
 EndProject
 Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "WireCopy.Persistence", "src\WireCopy.Persistence\WireCopy.Persistence.csproj", "{A0654914-7528-4165-8221-B9558DBF6E6C}"
 EndProject
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "AudioEngine.Client", "src\AudioEngine.Client\AudioEngine.Client.csproj", "{68038B6A-1394-4EF6-A199-ED588B5CEADA}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -99,6 +101,18 @@ Global
 		{A0654914-7528-4165-8221-B9558DBF6E6C}.Release|x64.Build.0 = Release|Any CPU
 		{A0654914-7528-4165-8221-B9558DBF6E6C}.Release|x86.ActiveCfg = Release|Any CPU
 		{A0654914-7528-4165-8221-B9558DBF6E6C}.Release|x86.Build.0 = Release|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Debug|x64.Build.0 = Debug|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Debug|x86.Build.0 = Debug|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Release|Any CPU.Build.0 = Release|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Release|x64.ActiveCfg = Release|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Release|x64.Build.0 = Release|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Release|x86.ActiveCfg = Release|Any CPU
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
@@ -110,5 +124,6 @@ Global
 		{7AABE291-141C-49D2-B9BE-EC6F849AFBB3} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{B5DCE750-EB11-4A89-AD20-E6846BBC7B02} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 		{A0654914-7528-4165-8221-B9558DBF6E6C} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
+		{68038B6A-1394-4EF6-A199-ED588B5CEADA} = {827E0CD3-B72D-47B6-A68D-7590B98EB39B}
 	EndGlobalSection
 EndGlobal

@@ -4,6 +4,7 @@
     <ProjectReference Include="..\WireCopy.Application\WireCopy.Application.csproj" />
     <ProjectReference Include="..\WireCopy.Domain\WireCopy.Domain.csproj" />
     <ProjectReference Include="..\WireCopy.Persistence\WireCopy.Persistence.csproj" />
+    <ProjectReference Include="..\AudioEngine.Client\AudioEngine.Client.csproj" />
   </ItemGroup>
 
   <ItemGroup>
