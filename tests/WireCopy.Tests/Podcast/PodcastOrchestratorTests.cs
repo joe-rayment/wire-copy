@@ -303,6 +303,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Budget Validation
 
+    // Guards:   a BudgetExceeded narration result surfaces its 'would cost' message as a failure
+    // Fails if: the budget error message is rewritten or the failure swallowed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_CostExceedsBudget_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_CostExceedsBudget_ReturnsFailure()
     {
@@ -310,13 +313,15 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        // Cost exceeds the 5.00 budget
+        // Cost exceeds the 5.00 budget — audio-engine reports it as a budget failure
+        _narrator.NarrateAsync(Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(FailedNarration("audio-engine: narration would cost $10.00, over the $5.00 limit.", NarrationErrorKind.BudgetExceeded));
 
         var collection = CreateCollection(url);
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("exceeds budget");
+        result.ErrorMessage.Should().Contain("would cost");
     }
 
     #endregion
@@ -386,6 +391,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticlesProcessed.Should().Be(3);
     }
 
+    // Guards:   one cached article becomes one chapter with the article title and its spoken text
+    // Fails if: chapter Title or Text stop matching the article / BuildSpokenText
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_HappyPath_SendsChaptersToNarrator"
     [Fact]
     public async Task GeneratePodcastAsync_HappyPath_SendsChaptersToNarrator()
     {
@@ -513,6 +521,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Assembly Failure
 
+    // Guards:   a narration failure during assembly surfaces its message unchanged
+    // Fails if: the orchestrator rewrites or drops the narrator's error message
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_AssemblyFails_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_AssemblyFails_ReturnsFailure()
     {
@@ -614,6 +625,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Cancellation
 
+    // Guards:   a token cancelled before narration starts throws OperationCanceledException
+    // Fails if: the orchestrator stops checking the token before narrating
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_CancelledBeforeTts_ThrowsOperationCanceledException"
     [Fact]
     public async Task GeneratePodcastAsync_CancelledBeforeTts_ThrowsOperationCanceledException()
     {
@@ -879,6 +893,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticleStatuses.Should().BeEmpty();
     }
 
+    // Guards:   a narrator estimate with every chunk cached reports the article as cached
+    // Fails if: ChunksCached == ChunksTotal no longer counts as a cached article
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.AnalyzeCacheStatusAsync_WithArticles_ReturnsCacheAnalysis"
     [Fact]
     public async Task AnalyzeCacheStatusAsync_WithArticles_ReturnsCacheAnalysis()
     {
@@ -886,18 +903,12 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        var expectedAnalysis = new CacheAnalysis
-        {
-            TotalArticles = 1,
-            CachedArticles = 1,
-            UncachedArticles = 0,
-            EstimatedCost = 0m,
-            ArticleStatuses = [],
-        };
-        _audioCache.AnalyzeCollectionAsync(
-                Arg.Any<IReadOnlyList<(string, string, string)>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(expectedAnalysis);
+        _narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate
+            {
+                Success = true,
+                Chapters = [new NarrationChapterEstimate(0, "Test Article", 3, 3, 0m)],
+            });
 
         var collection = CreateCollection(url);
         var result = await _sut.AnalyzeCacheStatusAsync(collection);
@@ -906,6 +917,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.CachedArticles.Should().Be(1);
     }
 
+    // Guards:   an exception from EstimateAsync yields an empty analysis instead of escaping
+    // Fails if: the orchestrator stops catching estimate exceptions
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.AnalyzeCacheStatusAsync_ExceptionDuringAnalysis_ReturnsEmptyAnalysis"
     [Fact]
     public async Task AnalyzeCacheStatusAsync_ExceptionDuringAnalysis_ReturnsEmptyAnalysis()
     {
@@ -913,9 +927,7 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        _audioCache.AnalyzeCollectionAsync(
-                Arg.Any<IReadOnlyList<(string, string, string)>>(),
-                Arg.Any<CancellationToken>())
+        _narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Cache corrupted"));
 
         var collection = CreateCollection(url);
@@ -937,6 +949,9 @@ public class PodcastOrchestratorTests : IDisposable
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    // Guards:   AnalyzeCacheStatusAsync reports extraction progress to the caller
+    // Fails if: the progress sink is no longer invoked during analysis
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.AnalyzeCacheStatusAsync_ReportsProgress"
     [Fact]
     public async Task AnalyzeCacheStatusAsync_ReportsProgress()
     {
@@ -957,6 +972,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Assembly Request Metadata
 
+    // Guards:   the NarrationRequest carries the podcast config's title, author, album and genre
+    // Fails if: request metadata is no longer filled from PodcastConfiguration
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PassesPodcastConfigToNarrator"
     [Fact]
     public async Task GeneratePodcastAsync_PassesPodcastConfigToNarrator()
     {
@@ -976,6 +994,9 @@ public class PodcastOrchestratorTests : IDisposable
             Arg.Any<CancellationToken>());
     }
 
+    // Guards:   the narration output path includes the collection name
+    // Fails if: the output path is built without the collection name
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_AssemblyOutputPathIncludesCollectionName"
     [Fact]
     public async Task GeneratePodcastAsync_AssemblyOutputPathIncludesCollectionName()
     {
