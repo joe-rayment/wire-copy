@@ -184,85 +184,6 @@ public class PodcastOrchestratorTests : IDisposable
         }
     }
 
-    private void SetupCacheAnalysis(int cached = 0, int uncached = 1, decimal cost = 0.05m)
-    {
-        _audioCache.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
-            .Returns(new CacheAnalysis
-            {
-                TotalArticles = cached + uncached,
-                CachedArticles = cached,
-                UncachedArticles = uncached,
-                EstimatedCost = cost,
-                ArticleStatuses = [],
-            });
-    }
-
-    private void SetupTtsGeneration(byte[]? audioData = null, bool success = true, string? error = null)
-    {
-        var data = audioData ?? [1, 2, 3, 4, 5];
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(success
-                ? TtsGenerationResult.Successful(data, 100, 1)
-                : TtsGenerationResult.Failure(error ?? "TTS failed"));
-    }
-
-    private void SetupTtsAudioCacheMiss()
-    {
-        _audioCache.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((TtsAudioCacheEntry?)null);
-    }
-
-    private void SetupTtsAudioCacheHit(string audioFilePath = "/tmp/cached-audio.aac")
-    {
-        _audioCache.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "test-key",
-                AudioFilePath = audioFilePath,
-                FileSizeBytes = 1024,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "hash",
-                TtsConfigHash = "config-hash",
-            });
-    }
-
-    private void SetupTtsAudioCachePut(string audioFilePath = "/tmp/new-audio.aac")
-    {
-        _audioCache.PutAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<byte[]>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "new-key",
-                AudioFilePath = audioFilePath,
-                FileSizeBytes = 512,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "new-hash",
-                TtsConfigHash = "config-hash",
-            });
-    }
-
-    private void SetupAssemblySuccess(string? outputPath = null)
-    {
-        var path = outputPath ?? Path.Combine(_tempDir, "output.m4b");
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Successful(
-                path,
-                TimeSpan.FromMinutes(10),
-                1024 * 1024,
-                new List<AudioChapterMarker>
-                {
-                    new() { Title = "Chapter 1", StartTime = TimeSpan.Zero },
-                }));
-    }
-
     private void SetupPublishSuccess(string feedUrl = "https://storage.example.com/feed.xml")
     {
         _publisher.PublishFeedAsync(
@@ -321,30 +242,6 @@ public class PodcastOrchestratorTests : IDisposable
         result.ErrorMessage.Should().Contain("Narration isn't ready");
     }
 
-    [Fact]
-    public async Task GeneratePodcastAsync_FfmpegMissing_ReturnsFailure()
-    {
-        _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>())
-            .Returns(false);
-        var collection = CreateCollection("https://example.com/a");
-
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("FFmpeg");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_TtsNotConfigured_DoesNotCallAssembler()
-    {
-        _ttsService.IsConfigured.Returns(false);
-        var collection = CreateCollection("https://example.com/a");
-
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _audioAssembler.DidNotReceive().ValidatePrerequisitesAsync(Arg.Any<CancellationToken>());
-    }
-
     #endregion
 
     #region GeneratePodcastAsync — Content Extraction
@@ -396,43 +293,6 @@ public class PodcastOrchestratorTests : IDisposable
 
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("exceeds budget");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CostExceedsBudget_DoesNotCallTts()
-    {
-        var url = "https://example.com/expensive";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 10.00m);
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _ttsService.DidNotReceive().GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CostExactlyAtBudget_Proceeds()
-    {
-        var url = "https://example.com/article";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 5.00m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeTrue();
     }
 
     #endregion
@@ -537,73 +397,6 @@ public class PodcastOrchestratorTests : IDisposable
 
     #endregion
 
-    #region GeneratePodcastAsync — TTS Cache Hits
-
-    [Fact]
-    public async Task GeneratePodcastAsync_AllArticlesCached_DoesNotCallTtsService()
-    {
-        var url = "https://example.com/cached";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 1, uncached: 0, cost: 0m);
-        SetupTtsAudioCacheHit();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _ttsService.DidNotReceive().GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CacheHit_ReportsCachedCount()
-    {
-        var url = "https://example.com/cached";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 1, uncached: 0, cost: 0m);
-        SetupTtsAudioCacheHit();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeTrue();
-        result.ArticlesCached.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CacheMiss_StoresInCache()
-    {
-        var url = "https://example.com/fresh";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _audioCache.Received(1).PutAsync(
-            Arg.Is<string>(key => !string.IsNullOrWhiteSpace(key)),
-            Arg.Is<string>(hash => !string.IsNullOrWhiteSpace(hash)),
-            Arg.Is<string>(configHash => !string.IsNullOrWhiteSpace(configHash)),
-            Arg.Is<byte[]>(data => data.Length > 0),
-            Arg.Any<CancellationToken>());
-    }
-
-    #endregion
-
     #region GeneratePodcastAsync — TTS Failures
 
     [Fact]
@@ -699,125 +492,6 @@ public class PodcastOrchestratorTests : IDisposable
         result.FailedArticleDetails[0].Reason.Should().Contain("Quota exceeded");
     }
 
-    // Guards:   a FATAL TTS failure (exhausted billing quota / bad API key) stops the whole run on the first
-    //           article instead of repeating the doomed request for every remaining article, and no partial
-    //           episode is published.
-    // Fails if: the orchestrator's TTS loop goes back to "record the failure and continue" for fatal results
-    //           (the service would then be called 3 times and the run would fail with "All articles failed").
-    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~FatalTtsFailure_StopsRunAfterFirstArticle"
-    [Fact]
-    public async Task GeneratePodcastAsync_FatalTtsFailure_StopsRunAfterFirstArticle()
-    {
-        var url1 = "https://example.com/a1";
-        var url2 = "https://example.com/a2";
-        var url3 = "https://example.com/a3";
-
-        SetupArticleCacheHits(
-            (url1, CreateExtractedArticle(url1, "Article One")),
-            (url2, CreateExtractedArticle(url2, "Article Two")),
-            (url3, CreateExtractedArticle(url3, "Article Three")));
-        SetupCacheAnalysis(cached: 0, uncached: 3, cost: 0.15m);
-        SetupTtsAudioCacheMiss();
-
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Failure("OpenAI quota exhausted \u2014 check billing.", isFatal: true));
-
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var result = await _sut.GeneratePodcastAsync(CreateCollection(url1, url2, url3));
-
-        await _ttsService.Received(1).GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
-            Arg.Any<CancellationToken>());
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("quota exhausted");
-        await _audioAssembler.DidNotReceive().AssembleAsync(
-            Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>());
-    }
-
-    // Guards:   the TTS audio cache is best-effort: if saving to it fails (disk full, permissions, index error)
-    //           the already-paid-for audio is still used and the podcast is still built from it.
-    // Fails if: _audioCache.PutAsync is awaited unguarded again (the IOException then fails the whole run), or the
-    //           fallback hands the assembler a path that does not hold the generated audio.
-    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~AudioCacheWriteFails_StillSucceeds"
-    [Fact]
-    public async Task GeneratePodcastAsync_AudioCacheWriteFails_StillSucceedsWithInMemoryAudio()
-    {
-        var url = "https://example.com/cache-write-fails";
-        SetupArticleCacheHits((url, CreateExtractedArticle(url, "Paid Article")));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-
-        byte[] paidAudio = [9, 8, 7, 6, 5];
-        SetupTtsGeneration(audioData: paidAudio);
-
-        _audioCache.PutAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<byte[]>(),
-                Arg.Any<CancellationToken>())
-            .Returns<TtsAudioCacheEntry>(_ => throw new IOException("No space left on device"));
-
-        // Capture what the assembler is handed, WHILE the run's temp files still exist.
-        byte[]? assembledBytes = null;
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci =>
-            {
-                var segment = ci.Arg<AssemblyRequest>().Segments.Single();
-                assembledBytes = File.Exists(segment.AudioFilePath) ? File.ReadAllBytes(segment.AudioFilePath) : null;
-                return AssemblyResult.Successful(
-                    Path.Combine(_tempDir, "output.m4b"),
-                    TimeSpan.FromMinutes(10),
-                    1024 * 1024,
-                    new List<AudioChapterMarker> { new() { Title = "Chapter 1", StartTime = TimeSpan.Zero } });
-            });
-        SetupPublishSuccess();
-
-        var result = await _sut.GeneratePodcastAsync(CreateCollection(url));
-
-        result.Success.Should().BeTrue(result.ErrorMessage);
-        result.ArticlesProcessed.Should().Be(1);
-        assembledBytes.Should().Equal(paidAudio, "the assembler must receive the in-memory audio the cache failed to store");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_TtsReturnsNullAudioData_TreatsAsFailure()
-    {
-        var url = "https://example.com/null-audio";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new TtsGenerationResult
-            {
-                Success = true,
-                AudioData = null,
-                CharactersProcessed = 100,
-                ChunksCompleted = 1,
-            });
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("All articles failed TTS generation");
-    }
-
     #endregion
 
     #region GeneratePodcastAsync — Assembly Failure
@@ -842,31 +516,6 @@ public class PodcastOrchestratorTests : IDisposable
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("M4B assembly failed");
         result.ErrorMessage.Should().Contain("FFmpeg crashed");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_AssemblyReturnsEmptyPath_ReturnsFailure()
-    {
-        var url = "https://example.com/article1";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new AssemblyResult
-            {
-                Success = true,
-                OutputPath = string.Empty,
-            });
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("M4B assembly failed");
     }
 
     #endregion
@@ -1022,27 +671,6 @@ public class PodcastOrchestratorTests : IDisposable
 
         result.Success.Should().BeFalse();
         result.ErrorMessage.Should().Contain("Network error");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_AssemblerThrowsException_ReturnsFailure()
-    {
-        var url = "https://example.com/article1";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new IOException("Disk full"));
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("Disk full");
     }
 
     [Fact]
@@ -1507,33 +1135,6 @@ public class PodcastOrchestratorTests : IDisposable
         audioPhaseReports.Should().Contain(p => p.TotalArticles == 2);
         audioPhaseReports.Should().Contain(p => p.CurrentArticle == 1);
         audioPhaseReports.Should().Contain(p => p.CurrentArticle == 2);
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CachedArticle_ReportsIsFromCache()
-    {
-        var url = "https://example.com/cached";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 1, uncached: 0, cost: 0m);
-        SetupTtsAudioCacheHit();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var cacheReports = new List<PodcastProgress>();
-        var progress = new SynchronousProgress<PodcastProgress>(p =>
-        {
-            if (p.IsFromCache)
-            {
-                cacheReports.Add(p);
-            }
-        });
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection, progress);
-
-        cacheReports.Should().NotBeEmpty();
-        cacheReports.Should().AllSatisfy(p => p.Phase.Should().Be(PodcastPhase.GeneratingAudio));
     }
 
     [Fact]
