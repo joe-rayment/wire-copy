@@ -4,7 +4,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.Interfaces;
-using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Configuration.Validation;
@@ -69,7 +68,6 @@ public static class PodcastDependencyInjection
         services.AddSingleton<TtsEngineRouter>();
         services.AddSingleton<ITtsService>(sp => sp.GetRequiredService<TtsEngineRouter>());
         services.AddSingleton<ITtsCacheKeyProvider>(sp => sp.GetRequiredService<TtsEngineRouter>());
-        services.AddSingleton<IAudioAssembler, M4bAudioAssembler>();
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
         services.AddSingleton<IFeedReachabilityProbe, HttpFeedReachabilityProbe>();

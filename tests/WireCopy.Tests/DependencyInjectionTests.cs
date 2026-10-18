@@ -6,7 +6,6 @@ using FluentAssertions;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.Interfaces;
-using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Enums.Browser;
@@ -65,7 +64,6 @@ public class DependencyInjectionTests : IDisposable
     [InlineData(typeof(IReadableContentExtractor))]
     [InlineData(typeof(IInputHandler))]
     [InlineData(typeof(ITtsService))]
-    [InlineData(typeof(IAudioAssembler))]
     [InlineData(typeof(IPodcastFeedGenerator))]
     [InlineData(typeof(ICloudStorageClient))]
     [InlineData(typeof(IPodcastPublisher))]

@@ -249,7 +249,7 @@ internal sealed class ChatterboxTtsService : ITtsService
             .FromDemuxConcatInput(wavPaths)
             .OutputToFile(outPath, overwrite: true, options => options
                 .WithCustomArgument("-c:a aac -b:a 96k -ar 24000 -ac 1"))
-            .CancellableThrough(ct, M4bAudioAssembler.FfmpegCancelGraceMs)
+            .CancellableThrough(ct, 2000)
             .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
 
         return await File.ReadAllBytesAsync(outPath, ct).ConfigureAwait(false);

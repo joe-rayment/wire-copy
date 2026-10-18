@@ -678,7 +678,7 @@ internal sealed class OpenAiTtsService : ITtsService
             .FromDemuxConcatInput(chunkPaths)
             .OutputToFile(outputPath, overwrite: true, options => options
                 .WithCustomArgument("-c copy"))
-            .CancellableThrough(cancellationToken, M4bAudioAssembler.FfmpegCancelGraceMs)
+            .CancellableThrough(cancellationToken, 2000)
             .ProcessAsynchronously(throwOnError: true).ConfigureAwait(false);
 
         return await File.ReadAllBytesAsync(outputPath, cancellationToken).ConfigureAwait(false);
