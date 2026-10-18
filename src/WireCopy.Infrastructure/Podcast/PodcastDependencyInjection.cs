@@ -8,6 +8,7 @@ using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Configuration.Validation;
+using WireCopy.Infrastructure.Podcast.AudioEngine;
 using WireCopy.Infrastructure.Podcast.Cache;
 using WireCopy.Infrastructure.Podcast.Chatterbox;
 
@@ -46,6 +47,10 @@ public static class PodcastDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(ChatterboxConfiguration.SectionName).Bind(opts));
 
+        services.AddOptions<AudioEngineConfiguration>()
+            .Configure<IConfiguration>((opts, config) =>
+                config.GetSection(AudioEngineConfiguration.SectionName).Bind(opts));
+
         // Register configuration validators
         services.AddSingleton<IValidateOptions<OpenAiTtsConfiguration>, OpenAiTtsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<PodcastConfiguration>, PodcastConfigurationValidator>();
@@ -76,6 +81,11 @@ public static class PodcastDependencyInjection
         services.AddHostedService<OutputFolderPurgeStartupService>();
         services.AddHostedService<PodcastJobLifecycleService>();
         services.AddSingleton<IPodcastOrchestrator, PodcastOrchestrator>();
+
+        // audio-engine narration. The named client has no timeout: downloads and event streams are
+        // long-lived and cancellation is the caller's token.
+        services.AddHttpClient("AudioEngine", c => c.Timeout = Timeout.InfiniteTimeSpan);
+        services.AddSingleton<IPodcastNarrator, AudioEngineNarrator>();
 
         // workspace-frpl.1 (B0): one process-wide generation gate shared by the
         // manual modal and the scheduler so podcast runs never overlap.
