@@ -15,7 +15,7 @@ using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast;
-using WireCopy.Infrastructure.Podcast.Chatterbox;
+using WireCopy.Infrastructure.Podcast.AudioEngine;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -60,6 +60,10 @@ internal static class SettingsCommandHandler
     internal const string KeyChatterboxExaggeration = "ChatterboxExaggeration";  // invariant float string
     internal const string KeyChatterboxLastTestOk = "ChatterboxLastTestOk";      // ISO-8601 utc timestamp of last successful Test narration
 
+    // workspace-c3ec4.3: audio-engine connection (must match AudioEngineSettings.Resolve).
+    internal const string KeyAudioEngineUrl = "AudioEngineUrl";
+    internal const string KeyAudioEngineApiKey = "AudioEngineApiKey";
+
     // workspace-r8on: layout-judge model + optional local (Ollama) endpoint.
     internal const string KeyLayoutModel = "LayoutModel";
     internal const string KeyLayoutEndpoint = "LayoutEndpoint";
@@ -67,6 +71,9 @@ internal static class SettingsCommandHandler
     internal const string DefaultOllamaEndpoint = "http://localhost:11434/v1";
 
     private const string Reset = "\x1b[0m";
+
+    /// <summary>Upper bound on one audio-engine status probe from the Setup screen.</summary>
+    private static readonly TimeSpan NarratorProbeTimeout = TimeSpan.FromSeconds(2);
 
     /// <summary>
     /// Selectable rows on the unified Setup screen. Each row dispatches Enter to
@@ -85,11 +92,15 @@ internal static class SettingsCommandHandler
         CostGateAlwaysShow,
         LayoutModel,
 
+        // workspace-c3ec4.3: audio-engine connection rows.
+        AudioEngine,
+        AudioEngineKey,
+
         // workspace-2xej.7: narration engine picker + Chatterbox (local) rows.
         NarrationEngine,
         ChatterboxSample,
         ChatterboxExaggeration,
-        ChatterboxStatus,
+        NarrationTest,
 
         // workspace-m7aml.3: install guide for the browser extension.
         BrowserExtension,
@@ -144,10 +155,20 @@ internal static class SettingsCommandHandler
         var selectedIndex = 0;
         BrowserExtensionCard.WarmUp();
 
+        // workspace-c3ec4.3: audio-engine status is probed once up front and again only
+        // after a row that can change it — render reads the cached value, never the network.
+        NarratorStatus? narratorStatus = null;
+        var narratorStatusFresh = false;
+
         while (!ct.IsCancellationRequested)
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            if (!narratorStatusFresh)
+            {
+                narratorStatus = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
+                narratorStatusFresh = true;
+            }
 
             // workspace-2xej.7: the row list depends on the active narration engine,
             // so it is rebuilt every iteration — only the active engine's rows show.
@@ -194,10 +215,10 @@ internal static class SettingsCommandHandler
             var hasBucket = !string.IsNullOrWhiteSpace(bucketName);
             var outputFolder = settingsStore.Get(KeyPodcastOutputFolder)
                                ?? ResolveDefaultOutputFolder();
-            var voice = settingsStore.Get(KeyOpenAiTtsVoice) ?? ResolveTtsDefault(scope, c => c.Voice, "coral");
-            var model = settingsStore.Get(KeyOpenAiTtsModel) ?? ResolveTtsDefault(scope, c => c.Model, "gpt-4o-mini-tts");
+            var voice = settingsStore.Get(KeyOpenAiTtsVoice) ?? ResolveTtsDefault(scope, c => c.OpenAiVoice, "nova");
+            var model = settingsStore.Get(KeyOpenAiTtsModel) ?? ResolveTtsDefault(scope, c => c.OpenAiModel, "tts-1");
             var instructions = settingsStore.Get(KeyOpenAiTtsInstructions)
-                               ?? ResolveTtsDefault(scope, c => c.Instructions ?? string.Empty, string.Empty);
+                               ?? ResolveTtsDefault(scope, c => c.OpenAiInstructions ?? string.Empty, string.Empty);
             var purgeHours = ResolvePurgeHours(scope, settingsStore);
             var costGateAlwaysShow = bool.TryParse(
                 settingsStore.Get(KeyPodcastCostGateAlwaysShow), out var alwaysShowParsed)
@@ -209,36 +230,28 @@ internal static class SettingsCommandHandler
             var layoutModelName = settingsStore.Get(KeyLayoutModel) ?? "gpt-5-nano";
             var layoutDisplay = layoutIsLocal ? $"Local · {layoutModelName}" : $"OpenAI · {layoutModelName}";
 
-            // workspace-2xej.7: Chatterbox (local narration) row values. Filesystem/
-            // PATH checks only — never spawn the sidecar from the render path.
-            var chatterboxTts = scope.ServiceProvider.GetRequiredService<ChatterboxTtsService>();
-            var samplePath = chatterboxTts.GetConfiguredSamplePath();
+            // workspace-c3ec4.3: Chatterbox row values come straight from the settings store —
+            // audio-engine owns the engine; this screen only shows the knobs.
+            var samplePath = ResolveChatterboxSamplePath(settingsStore);
             var sampleExists = samplePath is not null && File.Exists(samplePath);
-            var uvOk = chatterboxTts.IsUvAvailable();
-            var workerOk = File.Exists(chatterboxTts.GetWorkerPath());
-            var exaggerationDisplay = chatterboxTts.GetEffectiveExaggeration()
+            var exaggerationDisplay = ResolveChatterboxExaggeration(scope, settingsStore)
                 .ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture);
-            var chatterboxStatusWarning = !uvOk || !workerOk;
-            string chatterboxStatusValue;
-            if (!uvOk)
-            {
-                chatterboxStatusValue = "uv not installed — Enter shows how";
-            }
-            else if (!workerOk)
-            {
-                chatterboxStatusValue = "worker script missing (rebuild)";
-            }
-            else if (DateTime.TryParse(
+            var audioEngineUrl = settingsStore.Get(KeyAudioEngineUrl) ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
+            var hasAudioEngineKey = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyAudioEngineApiKey));
+            var audioEngineReady = narratorStatus?.Ready == true;
+            var audioEngineValue = $"{audioEngineUrl} · {DescribeNarratorStatus(narratorStatus)}";
+            string narrationTestValue;
+            if (DateTime.TryParse(
                 settingsStore.Get(KeyChatterboxLastTestOk),
                 System.Globalization.CultureInfo.InvariantCulture,
                 System.Globalization.DateTimeStyles.RoundtripKind,
                 out var lastTestAt))
             {
-                chatterboxStatusValue = $"ready ✓ tested {FormatRelativeTime(DateTime.UtcNow - lastTestAt.ToUniversalTime())}";
+                narrationTestValue = $"ready ✓ tested {FormatRelativeTime(DateTime.UtcNow - lastTestAt.ToUniversalTime())}";
             }
             else
             {
-                chatterboxStatusValue = "ready — first use installs";
+                narrationTestValue = "not tested yet";
             }
 
             // ---- Credentials (single OpenAI key powers both TTS and AI Curated) ----
@@ -256,7 +269,7 @@ internal static class SettingsCommandHandler
                 hasOpenAi ? "configured" : "not set",
                 hasOpenAi ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 hasOpenAi ? "Change" : "Set up",
-                helperText: "Used for TTS audio and AI Curated link layout");
+                helperText: "Powers AI layout and article extraction · narration uses audio-engine's own keys");
 
             RenderRow(
                 helpers,
@@ -310,6 +323,37 @@ internal static class SettingsCommandHandler
                 width,
                 rows,
                 selectedIndex,
+                SetupRow.AudioEngine,
+                audioEngineReady ? "●" : "○",
+                audioEngineReady ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Audio engine",
+                audioEngineValue,
+                audioEngineReady ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Change",
+                helperText: "audio-engine makes the audio. Run it locally (see its README) — default http://127.0.0.1:8080",
+                isWarning: !audioEngineReady);
+
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.AudioEngineKey,
+                hasAudioEngineKey ? "●" : "○",
+                hasAudioEngineKey ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Audio engine key",
+                hasAudioEngineKey ? "configured" : "not set",
+                hasAudioEngineKey ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                hasAudioEngineKey ? "Change" : "Set",
+                helperText: "Only needed when audio-engine was started with an API key");
+
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
                 SetupRow.NarrationEngine,
                 "●",
                 palette.PromptFg.AnsiFg,
@@ -344,7 +388,7 @@ internal static class SettingsCommandHandler
                     sampleValue,
                     samplePath is null ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
                     "Change",
-                    helperText: "~10 s clean clip to clone — drop files in voices/ (gitignored). Tone comes from this sample.",
+                    helperText: "~10 s clip; audio-engine reads it from this path",
                     warningText: samplePath is not null && !sampleExists ? "file not found — Enter to fix" : null,
                     isWarning: samplePath is not null && !sampleExists);
 
@@ -362,22 +406,6 @@ internal static class SettingsCommandHandler
                     palette.PromptFg.AnsiFg,
                     "Change",
                     helperText: "0 = flat · 0.5 = natural · 1 = dramatic (Chatterbox exaggeration)");
-
-                RenderRow(
-                    helpers,
-                    palette,
-                    width,
-                    rows,
-                    selectedIndex,
-                    SetupRow.ChatterboxStatus,
-                    chatterboxStatusWarning ? "○" : "●",
-                    chatterboxStatusWarning ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
-                    "Local engine",
-                    chatterboxStatusValue,
-                    chatterboxStatusWarning ? palette.SecondaryText.AnsiFg : palette.PromptFg.AnsiFg,
-                    "Test",
-                    helperText: "Runs on your machine via uv · first generation downloads model weights (one-time, a few GB)",
-                    isWarning: chatterboxStatusWarning);
             }
             else
             {
@@ -427,6 +455,21 @@ internal static class SettingsCommandHandler
                     "Change",
                     helperText: "Style hint sent with each request (gpt-4o-mini-tts only)");
             }
+
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.NarrationTest,
+                narrationTestValue.StartsWith("ready", StringComparison.Ordinal) ? "●" : "○",
+                narrationTestValue.StartsWith("ready", StringComparison.Ordinal) ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Test narration",
+                narrationTestValue,
+                narrationTestValue.StartsWith("ready", StringComparison.Ordinal) ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Test",
+                helperText: "Speaks one sentence through audio-engine with the active engine and saves narration-test.m4a");
 
             // ---- Podcast output ----
             helpers.WriteLine();
@@ -555,6 +598,13 @@ internal static class SettingsCommandHandler
                 var dispatched = rows[selectedIndex];
                 await DispatchRowAsync(ctx, options, dispatched, ct).ConfigureAwait(false);
 
+                if (dispatched is SetupRow.AudioEngine or SetupRow.AudioEngineKey or SetupRow.NarrationEngine
+                    or SetupRow.ChatterboxSample or SetupRow.ChatterboxExaggeration
+                    or SetupRow.Voice or SetupRow.Model or SetupRow.TtsInstructions)
+                {
+                    narratorStatusFresh = false;
+                }
+
                 // An engine switch swaps the contextual rows out from under the
                 // cursor — keep it on the engine row instead of an unrelated one.
                 if (dispatched == SetupRow.NarrationEngine)
@@ -567,7 +617,7 @@ internal static class SettingsCommandHandler
 
             // workspace-2xej.9: 't' on the Narration engine row tests the ACTIVE
             // engine (parity with Enter on the Local engine row).
-            if (command.RawKeyChar == 't' && rows[selectedIndex] == SetupRow.NarrationEngine)
+            if (command.RawKeyChar == 't' && rows[selectedIndex] is SetupRow.NarrationEngine or SetupRow.NarrationTest)
             {
                 await RunNarrationTestAsync(ctx, options, ct).ConfigureAwait(false);
                 continue;
@@ -630,7 +680,7 @@ internal static class SettingsCommandHandler
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyOpenAiTtsVoice)
-                              ?? ResolveTtsDefault(scope, c => c.Voice, "coral");
+                              ?? ResolveTtsDefault(scope, c => c.OpenAiVoice, "nova");
                 await PodcastSetupHelpers.PromptAndPickVoiceAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
@@ -641,7 +691,7 @@ internal static class SettingsCommandHandler
                 using var scope = ctx.ScopeFactory.CreateScope();
                 var store = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
                 var current = store.Get(KeyOpenAiTtsModel)
-                              ?? ResolveTtsDefault(scope, c => c.Model, "gpt-4o-mini-tts");
+                              ?? ResolveTtsDefault(scope, c => c.OpenAiModel, "tts-1");
                 await PodcastSetupHelpers.PromptAndPickModelAsync(
                     ctx, options, store, current, ct).ConfigureAwait(false);
                 return;
@@ -659,6 +709,14 @@ internal static class SettingsCommandHandler
                 HandleToggleCostGateAlwaysShow(ctx);
                 return;
 
+            case SetupRow.AudioEngine:
+                await HandleSetAudioEngineUrlAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
+
+            case SetupRow.AudioEngineKey:
+                await HandleSetAudioEngineKeyAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
+
             case SetupRow.NarrationEngine:
                 await HandlePickEngineAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
@@ -671,7 +729,7 @@ internal static class SettingsCommandHandler
                 await HandleSetChatterboxExaggerationAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
 
-            case SetupRow.ChatterboxStatus:
+            case SetupRow.NarrationTest:
                 await RunNarrationTestAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
 
@@ -683,8 +741,8 @@ internal static class SettingsCommandHandler
 
     /// <summary>
     /// The Setup screen's row list for the active narration engine — credentials
-    /// first, then the narration section (engine row + the active engine's three
-    /// rows), then the output rows (workspace-2xej.7).
+    /// first, then the narration section (audio-engine rows, engine row, the active
+    /// engine's rows, Test narration), then the output rows (workspace-2xej.7, c3ec4.3).
     /// </summary>
     internal static SetupRow[] BuildSetupRows(bool engineIsChatterbox)
     {
@@ -694,11 +752,13 @@ internal static class SettingsCommandHandler
             SetupRow.LayoutModel,
             SetupRow.GcsKey,
             SetupRow.GcsBucket,
+            SetupRow.AudioEngine,
+            SetupRow.AudioEngineKey,
             SetupRow.NarrationEngine,
         };
         rowList.AddRange(engineIsChatterbox
-            ? new[] { SetupRow.ChatterboxSample, SetupRow.ChatterboxExaggeration, SetupRow.ChatterboxStatus }
-            : new[] { SetupRow.Voice, SetupRow.Model, SetupRow.TtsInstructions });
+            ? new[] { SetupRow.ChatterboxSample, SetupRow.ChatterboxExaggeration, SetupRow.NarrationTest }
+            : new[] { SetupRow.Voice, SetupRow.Model, SetupRow.TtsInstructions, SetupRow.NarrationTest });
         rowList.AddRange(new[]
         {
             SetupRow.OutputFolder, SetupRow.AutoPurgeHours, SetupRow.CostGateAlwaysShow, SetupRow.BrowserExtension,
@@ -707,27 +767,32 @@ internal static class SettingsCommandHandler
     }
 
     /// <summary>
-    /// Pure readiness lines for the engine picker (workspace-2xej.7) — extracted
-    /// so tests cover every branch without driving the render loop.
+    /// Pure readiness lines for the engine picker (workspace-c3ec4.3): each engine is
+    /// "ready" only when audio-engine reports it configured. Extracted so tests cover
+    /// every branch without driving the render loop.
     /// </summary>
+    /// <param name="status">The last audio-engine status probe; null when it failed.</param>
+    /// <param name="voice">The OpenAI voice in effect.</param>
+    /// <param name="sampleFileName">File name of the Chatterbox voice sample, or null for the built-in voice.</param>
+    /// <returns>One readiness line per engine.</returns>
     internal static (string OpenAi, string Chatterbox) BuildEngineReadiness(
-        bool hasOpenAiKey,
+        NarratorStatus? status,
         string voice,
-        bool uvAvailable,
-        bool workerExists,
         string? sampleFileName)
     {
-        var openAi = hasOpenAiKey
-            ? $"ready — key configured · voice {voice}"
-            : "needs API key — you'll be asked next";
-        string chatterbox;
-        if (!uvAvailable)
+        if (status is null || !status.Reachable)
         {
-            chatterbox = "needs uv — not installed";
+            return ("audio-engine not reachable", "audio-engine not reachable");
         }
-        else if (!workerExists)
+
+        var openAi = FindEngine(status, "openai")?.IsConfigured == true
+            ? $"ready — audio-engine has an OpenAI key · voice {voice}"
+            : "audio-engine has no OpenAI key — add it in audio-engine's settings";
+
+        string chatterbox;
+        if (FindEngine(status, "chatterbox")?.IsConfigured != true)
         {
-            chatterbox = "broken install — worker script missing";
+            chatterbox = "audio-engine has no chatterbox engine";
         }
         else if (sampleFileName is not null)
         {
@@ -735,10 +800,124 @@ internal static class SettingsCommandHandler
         }
         else
         {
-            chatterbox = "ready · built-in voice (add a sample for your own)";
+            chatterbox = "ready · built-in voice";
         }
 
         return (openAi, chatterbox);
+    }
+
+    /// <summary>
+    /// Short status word for the Audio engine row (workspace-c3ec4.3).
+    /// </summary>
+    /// <param name="status">The last probe; null while none has completed.</param>
+    /// <returns>A few words the row shows after the URL.</returns>
+    internal static string DescribeNarratorStatus(NarratorStatus? status)
+    {
+        if (status is null)
+        {
+            return "checking…";
+        }
+
+        if (status.Ready)
+        {
+            return "ready ✓";
+        }
+
+        return status.ErrorKind switch
+        {
+            NarrationErrorKind.Unreachable => "not running",
+            NarrationErrorKind.Unauthorized => "key rejected",
+            NarrationErrorKind.NotConfigured => "no key",
+            NarrationErrorKind.EngineNotConfigured => "engine not configured",
+            _ => string.IsNullOrWhiteSpace(status.Message) ? "not ready" : status.Message,
+        };
+    }
+
+    /// <summary>
+    /// Validates the Audio engine URL field: must be an absolute http/https URL.
+    /// </summary>
+    /// <param name="value">The raw field text.</param>
+    /// <returns>An error message, or null when valid.</returns>
+    internal static string? ValidateAudioEngineUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return "URL cannot be empty";
+        }
+
+        if (!Uri.TryCreate(value.Trim(), UriKind.Absolute, out var uri)
+            || (uri.Scheme != Uri.UriSchemeHttp && uri.Scheme != Uri.UriSchemeHttps))
+        {
+            return "Enter an absolute http:// or https:// URL (e.g. http://127.0.0.1:8080)";
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// The configured Chatterbox voice-sample path resolved to absolute (relative paths
+    /// resolve against the current directory), WITHOUT an existence check. Null when
+    /// unset/blank (built-in voice).
+    /// </summary>
+    /// <param name="store">The user settings store.</param>
+    /// <returns>The absolute sample path, or null.</returns>
+    internal static string? ResolveChatterboxSamplePath(IUserSettingsStore store)
+    {
+        ArgumentNullException.ThrowIfNull(store);
+        var saved = store.Get(KeyChatterboxVoiceSample);
+        if (string.IsNullOrWhiteSpace(saved))
+        {
+            return null;
+        }
+
+        return Path.GetFullPath(saved.Trim(), Environment.CurrentDirectory);
+    }
+
+    private static NarratorEngine? FindEngine(NarratorStatus status, string name)
+        => status.Engines.FirstOrDefault(e => string.Equals(e.Name, name, StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>
+    /// Effective Chatterbox exaggeration: the settings key (invariant float) wins over
+    /// the bound <see cref="AudioEngineConfiguration"/> default; garbage/absent falls
+    /// back; clamped to [0, 2].
+    /// </summary>
+    private static double ResolveChatterboxExaggeration(IServiceScope scope, IUserSettingsStore store)
+    {
+        var saved = store.Get(KeyChatterboxExaggeration);
+        if (!string.IsNullOrWhiteSpace(saved)
+            && double.TryParse(saved, System.Globalization.NumberStyles.Float, System.Globalization.CultureInfo.InvariantCulture, out var parsed)
+            && !double.IsNaN(parsed)
+            && !double.IsInfinity(parsed))
+        {
+            return Math.Clamp(parsed, 0d, 2d);
+        }
+
+        var opts = scope.ServiceProvider.GetService<IOptions<AudioEngineConfiguration>>();
+        return Math.Clamp(opts?.Value.ChatterboxExaggeration ?? 0.5, 0d, 2d);
+    }
+
+    /// <summary>
+    /// One bounded (<see cref="NarratorProbeTimeout"/>) audio-engine status probe; null
+    /// when the probe times out or throws so the screen degrades to "checking…".
+    /// </summary>
+    private static async Task<NarratorStatus?> ProbeNarratorAsync(IServiceScope scope, CancellationToken ct)
+    {
+        try
+        {
+            var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(NarratorProbeTimeout);
+            return await narrator.CheckAsync(cts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return null;
+        }
+        catch (Exception)
+        {
+            // Broad by design: a status probe must never abort the Setup screen.
+            return null;
+        }
     }
 
     /// <summary>
@@ -945,20 +1124,20 @@ internal static class SettingsCommandHandler
     }
 
     /// <summary>
-    /// Resolves a TTS configuration default from the bound
-    /// <see cref="OpenAiTtsConfiguration"/> when the settings store has no
+    /// Resolves a narration configuration default from the bound
+    /// <see cref="AudioEngineConfiguration"/> when the settings store has no
     /// override. Falls back to the supplied literal when no options are
     /// registered (defensive: keeps the Setup screen renderable in the unit
     /// tests' bare DI container).
     /// </summary>
     private static string ResolveTtsDefault(
         IServiceScope scope,
-        Func<OpenAiTtsConfiguration, string> selector,
+        Func<AudioEngineConfiguration, string> selector,
         string fallback)
     {
         try
         {
-            var opts = scope.ServiceProvider.GetService<IOptions<OpenAiTtsConfiguration>>();
+            var opts = scope.ServiceProvider.GetService<IOptions<AudioEngineConfiguration>>();
             var value = opts is null ? null : selector(opts.Value);
             return string.IsNullOrEmpty(value) ? fallback : value;
         }
@@ -1116,13 +1295,11 @@ internal static class SettingsCommandHandler
         var trimmedKey = apiKey.Trim();
 
         using var scope = ctx.ScopeFactory.CreateScope();
-        var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
-        ttsService.SetApiKeyOverride(trimmedKey);
 
         ctx.NavigationService.SetStatusMessage("Verifying API key...");
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-        var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
+        var validation = await new OpenAiKeyValidator().ValidateAsync(trimmedKey, ct).ConfigureAwait(false);
 
         if (validation.IsValid)
         {
@@ -1146,7 +1323,6 @@ internal static class SettingsCommandHandler
         }
         else
         {
-            ttsService.SetApiKeyOverride(string.Empty);
             ctx.NavigationService.SetStatusMessage(validation.ErrorMessage ?? "Invalid API key", StatusSeverity.Error);
         }
 
@@ -2137,7 +2313,7 @@ internal static class SettingsCommandHandler
         using var scope = ctx.ScopeFactory.CreateScope();
         var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
         var current = settingsStore.Get(KeyOpenAiTtsInstructions)
-                      ?? ResolveTtsDefault(scope, c => c.Instructions ?? string.Empty, string.Empty);
+                      ?? ResolveTtsDefault(scope, c => c.OpenAiInstructions ?? string.Empty, string.Empty);
 
         var prompt = string.IsNullOrEmpty(current)
             ? "TTS instructions (Enter blank to keep, 'reset' to revert): "
@@ -2258,48 +2434,130 @@ internal static class SettingsCommandHandler
     }
 
     /// <summary>
-    /// Enter on the Narration engine row (workspace-2xej.7): shows the two-engine
-    /// picker with live readiness lines, persists the choice, then GUIDES rather
-    /// than traps — OpenAI without a key chains into the key flow; Chatterbox
-    /// without uv gets the install hint as a status message. The engine switch
-    /// sticks regardless of whether the follow-up completes.
+    /// Enter on the Audio engine row (workspace-c3ec4.3): prompts for the URL audio-engine
+    /// listens on and saves it plain; the caller re-probes status afterwards.
+    /// </summary>
+    private static async Task HandleSetAudioEngineUrlAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var current = settingsStore.Get(KeyAudioEngineUrl) ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new FormFieldConfig
+        {
+            Label = "Audio engine URL",
+            Placeholder = "http://127.0.0.1:8080",
+            HelpText = "Where audio-engine is listening · Enter to save · Esc to cancel",
+            IsSecret = false,
+            MaxLength = 200,
+            InitialValue = current,
+            Validate = ValidateAudioEngineUrl,
+        };
+
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(UI.OverlayViewport.Width - 6, 60);
+        var input = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
+        if (input is null)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var trimmed = input.Trim();
+        try
+        {
+            settingsStore.Set(KeyAudioEngineUrl, trimmed);
+            ctx.NavigationService.SetStatusMessage($"Audio engine → {trimmed}");
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to save audio-engine URL");
+            ctx.NavigationService.SetStatusMessage("Failed to save audio-engine URL", StatusSeverity.Error);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Enter on the Audio engine key row (workspace-c3ec4.3): prompts for audio-engine's
+    /// API key, saves it encrypted, then probes audio-engine once and surfaces its message.
+    /// </summary>
+    private static async Task HandleSetAudioEngineKeyAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new FormFieldConfig
+        {
+            Label = "Audio engine API key",
+            Placeholder = "the key audio-engine was started with",
+            HelpText = "Enter to save · Esc to cancel",
+            IsSecret = true,
+            Validate = v => string.IsNullOrWhiteSpace(v) ? "Key cannot be empty" : null,
+        };
+
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(UI.OverlayViewport.Width - 6, 60);
+        var input = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
+        if (input is null)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        try
+        {
+            settingsStore.Set(KeyAudioEngineApiKey, input.Trim(), encrypt: true);
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to save audio-engine key");
+            ctx.NavigationService.SetStatusMessage("Failed to save audio-engine key", StatusSeverity.Error);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        ctx.NavigationService.SetStatusMessage("Key saved — checking audio-engine…");
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+
+        var status = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
+        if (status?.Ready == true)
+        {
+            ctx.NavigationService.SetStatusMessage(string.IsNullOrWhiteSpace(status.Message) ? "audio-engine ready" : status.Message);
+        }
+        else
+        {
+            ctx.NavigationService.SetStatusMessage(
+                string.IsNullOrWhiteSpace(status?.Message) ? "Key saved — audio-engine not reachable" : status!.Message,
+                StatusSeverity.Error);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Enter on the Narration engine row (workspace-2xej.7, c3ec4.3): shows the two-engine
+    /// picker with readiness lines taken from audio-engine's status, persists the choice,
+    /// and re-renders. audio-engine owns the engines' keys, so nothing chains afterwards.
     /// </summary>
     private static async Task HandlePickEngineAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-        var openAiTts = scope.ServiceProvider.GetRequiredService<OpenAiTtsService>();
-        var chatterboxTts = scope.ServiceProvider.GetRequiredService<ChatterboxTtsService>();
 
         var currentIsChatterbox = string.Equals(
             settingsStore.Get(KeyTtsEngine), "chatterbox", StringComparison.OrdinalIgnoreCase);
-        var voice = settingsStore.Get(KeyOpenAiTtsVoice) ?? ResolveTtsDefault(scope, c => c.Voice, "coral");
-        var uvAvailable = chatterboxTts.IsUvAvailable();
-        var workerExists = File.Exists(chatterboxTts.GetWorkerPath());
-        var samplePath = chatterboxTts.GetConfiguredSamplePath();
+        var voice = settingsStore.Get(KeyOpenAiTtsVoice) ?? ResolveTtsDefault(scope, c => c.OpenAiVoice, "nova");
+        var samplePath = ResolveChatterboxSamplePath(settingsStore);
+        var status = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
         var (openAiReadiness, chatterboxReadiness) = BuildEngineReadiness(
-            openAiTts.IsConfigured,
+            status,
             voice,
-            uvAvailable,
-            workerExists,
             samplePath is not null ? Path.GetFileName(samplePath) : null);
 
-        var picked = await PodcastSetupHelpers.PromptAndPickEngineAsync(
+        _ = await PodcastSetupHelpers.PromptAndPickEngineAsync(
             ctx, options, settingsStore, currentIsChatterbox, openAiReadiness, chatterboxReadiness, ct)
             .ConfigureAwait(false);
-
-        if (picked == "openai" && !openAiTts.IsConfigured)
-        {
-            await HandleSetApiKey(ctx, options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        if (picked == "chatterbox" && !uvAvailable)
-        {
-            ctx.NavigationService.SetStatusMessage(
-                "Install uv to enable local narration: curl -LsSf https://astral.sh/uv/install.sh | sh",
-                StatusSeverity.Error);
-        }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
@@ -2565,10 +2823,10 @@ internal static class SettingsCommandHandler
     }
 
     /// <summary>
-    /// "Test narration" (workspace-2xej.9): generates a fixed sentence via the
-    /// ACTIVE engine in an inline panel that streams TtsProgress lines (for
-    /// Chatterbox's first run that's the uv env build + model download), saves
-    /// narration-test.m4a to the output folder, opens it in the OS player, and
+    /// "Test narration" (workspace-2xej.9, audio-engine since workspace-c3ec4.3):
+    /// generates a fixed sentence via the ACTIVE engine through audio-engine in an
+    /// inline panel (the first local clip can take a while while the model loads),
+    /// saves narration-test.m4a to the output folder, opens it in the OS player, and
     /// stamps ChatterboxLastTestOk on local success. Esc cancels cleanly.
     /// </summary>
     private static async Task RunNarrationTestAsync(
@@ -2579,7 +2837,7 @@ internal static class SettingsCommandHandler
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-        var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
+        var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
         var engineIsChatterbox = string.Equals(
             settingsStore.Get(KeyTtsEngine), "chatterbox", StringComparison.OrdinalIgnoreCase);
         var outputFolder = settingsStore.Get(KeyPodcastOutputFolder) ?? ResolveDefaultOutputFolder();
@@ -2609,20 +2867,14 @@ internal static class SettingsCommandHandler
         {
             var engineLabel = engineIsChatterbox ? "Chatterbox (local)" : "OpenAI (cloud)";
             var expectation = engineIsChatterbox
-                ? "First run installs the local engine (a few GB, one-time). The clip itself takes seconds on GPU, up to a few minutes on CPU."
+                ? "audio-engine runs Chatterbox locally — the first clip can take a while"
                 : "Costs well under a cent.";
             WritePanelLine(0, $"{palette.GetAccentFg().AnsiFg}Test narration — {engineLabel}{Reset}");
             WritePanelLine(1, $"{palette.SecondaryText.AnsiFg}{RenderHelpers.TruncateText(expectation, panelWidth - 4)}{Reset}");
             WritePanelLine(2, $"{palette.SecondaryText.AnsiFg}Esc cancels.{Reset}");
             WritePanelLine(4, $"{palette.PrimaryText.AnsiFg}Generating…{Reset}");
 
-            var progress = new Progress<TtsProgress>(p =>
-            {
-                var line = RenderHelpers.TruncateText(p.Message, panelWidth - 4);
-                WritePanelLine(4, $"{palette.PrimaryText.AnsiFg}{line}{Reset}");
-            });
-
-            var genTask = ExecuteNarrationTestAsync(ttsService, outputFolder, progress, cts.Token);
+            var genTask = ExecuteNarrationTestAsync(narrator, outputFolder, cts.Token);
 
             // Race generation against Esc; a pending input wait doubles as the
             // final "press any key" consumer so no keystroke is ever swallowed.
@@ -2664,10 +2916,7 @@ internal static class SettingsCommandHandler
 
             if (outcome.Success && outcome.FilePath is not null)
             {
-                if (engineIsChatterbox)
-                {
-                    settingsStore.Set(KeyChatterboxLastTestOk, DateTime.UtcNow.ToString("O"));
-                }
+                settingsStore.Set(KeyChatterboxLastTestOk, DateTime.UtcNow.ToString("O"));
 
                 var secondsNote = string.Empty;
                 try
@@ -2737,26 +2986,30 @@ internal static class SettingsCommandHandler
     internal const string NarrationTestFileName = "narration-test.m4a";
 
     /// <summary>
-    /// The testable core of the narration test: generate via the given engine,
-    /// write the clip into the output folder. No keyboard, no panel.
+    /// The testable core of the narration test: ask audio-engine for the fixed sentence
+    /// and have it written into the output folder. No keyboard, no panel.
     /// </summary>
+    /// <param name="narrator">The narrator (audio-engine client).</param>
+    /// <param name="outputFolder">Folder the clip lands in; created when missing.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The outcome with the clip path on success.</returns>
     internal static async Task<NarrationTestOutcome> ExecuteNarrationTestAsync(
-        ITtsService ttsService,
+        IPodcastNarrator narrator,
         string outputFolder,
-        IProgress<TtsProgress>? progress,
         CancellationToken ct)
     {
-        var result = await ttsService.GenerateAudioAsync(NarrationTestSentence, "Narration test", progress, ct)
-            .ConfigureAwait(false);
-        if (!result.Success || result.AudioData is null)
-        {
-            return new NarrationTestOutcome(false, null, result.ErrorMessage ?? "Narration test failed without an error message");
-        }
+        ArgumentNullException.ThrowIfNull(narrator);
+        ArgumentNullException.ThrowIfNull(outputFolder);
 
         Directory.CreateDirectory(outputFolder);
         var path = Path.Combine(outputFolder, NarrationTestFileName);
-        await File.WriteAllBytesAsync(path, result.AudioData, ct).ConfigureAwait(false);
-        return new NarrationTestOutcome(true, path, null);
+        var result = await narrator.NarrateTestAsync(NarrationTestSentence, path, ct).ConfigureAwait(false);
+        if (!result.Success)
+        {
+            return new NarrationTestOutcome(false, null, result.ErrorMessage ?? "audio-engine: narration test failed");
+        }
+
+        return new NarrationTestOutcome(true, result.OutputPath ?? path, null);
     }
 
     private static bool TryOpenFile(string path, Action<string>? openFile, ILogger logger)
@@ -2791,9 +3044,6 @@ internal static class SettingsCommandHandler
             using var scope = ctx.ScopeFactory.CreateScope();
             var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
             settingsStore.Remove(KeyOpenAiApiKey);
-
-            var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
-            ttsService.SetApiKeyOverride(string.Empty);
 
             ctx.NavigationService.SetStatusMessage("API key cleared — run :set apikey to restore");
         }
