@@ -387,17 +387,22 @@ public class PodcastOrchestratorTests : IDisposable
     }
 
     [Fact]
-    public async Task GeneratePodcastAsync_HappyPath_CallsAssemblerWithCorrectSegments()
+    public async Task GeneratePodcastAsync_HappyPath_SendsChaptersToNarrator()
     {
         var url = "https://example.com/article1";
-        SetupHappyPath(url);
+        var article = CreateExtractedArticle(url);
+        SetupArticleCacheHits((url, article));
+        SetupPublishSuccess();
 
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _audioAssembler.Received(1).AssembleAsync(
-            Arg.Is<AssemblyRequest>(r => r.Segments.Count == 1),
-            Arg.Any<IProgress<AssemblyProgress>?>(),
+        await _narrator.Received(1).NarrateAsync(
+            Arg.Is<NarrationRequest>(r =>
+                r.Chapters.Count == 1 &&
+                r.Chapters[0].Title == "Test Article" &&
+                r.Chapters[0].Text == PodcastOrchestrator.BuildSpokenText(article)),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -515,14 +520,14 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Failure("FFmpeg crashed"));
+        _narrator.NarrateAsync(Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(FailedNarration("audio-engine: assembly failed: FFmpeg crashed", NarrationErrorKind.Failed));
 
         var collection = CreateCollection(url);
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("M4B assembly failed");
+        result.ErrorMessage.Should().Contain("assembly failed");
         result.ErrorMessage.Should().Contain("FFmpeg crashed");
     }
 
@@ -953,7 +958,7 @@ public class PodcastOrchestratorTests : IDisposable
     #region GeneratePodcastAsync — Assembly Request Metadata
 
     [Fact]
-    public async Task GeneratePodcastAsync_PassesPodcastConfigToAssembly()
+    public async Task GeneratePodcastAsync_PassesPodcastConfigToNarrator()
     {
         var url = "https://example.com/article1";
         SetupHappyPath(url);
@@ -961,11 +966,13 @@ public class PodcastOrchestratorTests : IDisposable
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _audioAssembler.Received(1).AssembleAsync(
-            Arg.Is<AssemblyRequest>(r =>
-                r.Metadata.Title.Contains("Test Podcast") &&
-                r.Metadata.Author == "Test Author"),
-            Arg.Any<IProgress<AssemblyProgress>?>(),
+        await _narrator.Received(1).NarrateAsync(
+            Arg.Is<NarrationRequest>(r =>
+                r.Title.Contains("Test Podcast") &&
+                r.Author == "Test Author" &&
+                r.Album == "Test Podcast" &&
+                r.Genre == "Podcast"),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -978,9 +985,9 @@ public class PodcastOrchestratorTests : IDisposable
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _audioAssembler.Received(1).AssembleAsync(
-            Arg.Is<AssemblyRequest>(r => r.OutputPath.Contains("Test Collection")),
-            Arg.Any<IProgress<AssemblyProgress>?>(),
+        await _narrator.Received(1).NarrateAsync(
+            Arg.Is<NarrationRequest>(r => r.OutputPath.Contains("Test Collection")),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
