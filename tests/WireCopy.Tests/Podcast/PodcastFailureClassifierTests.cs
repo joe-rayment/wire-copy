@@ -55,7 +55,7 @@ public class PodcastFailureClassifierTests
         c.Fix.Should().Contain("Test in Settings");
         c.Fix.Should().Contain("curl -LsSf https://astral.sh/uv/install.sh");
         c.Fix.Should().NotContain("platform.openai.com", "a local failure must never advise checking OpenAI");
-        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.ChatterboxStatus);
+        c.RelevantSetupRow.Should().Be(SettingsCommandHandler.SetupRow.NarrationTest);
     }
 
     [Fact]
