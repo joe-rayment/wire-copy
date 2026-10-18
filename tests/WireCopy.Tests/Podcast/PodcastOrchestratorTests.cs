@@ -603,11 +603,25 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Progress Reporting
 
+    // Guards:   the narrator's synthesizing and assembling progress is mapped onto the GeneratingAudio and AssemblingAudio podcast phases, alongside the orchestrator's own CachingContent and Publishing phases
+    // Fails if: MapNarrationProgress stops translating NarrationPhase.Assembling to PodcastPhase.AssemblingAudio, or the orchestrator stops forwarding narrator progress
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ReportsProgressPhases"
     [Fact]
     public async Task GeneratePodcastAsync_ReportsProgressPhases()
     {
         var url = "https://example.com/article1";
         SetupHappyPath(url);
+
+        // The AssemblingAudio phase comes from the narrator's own progress, so this stub reports
+        // a synthesizing and an assembling step through the sink the orchestrator hands it.
+        _narrator.NarrateAsync(Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var sink = ci.ArgAt<IProgress<NarrationProgress>?>(1);
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Synthesizing, Fraction = 0.5 });
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Assembling, Fraction = 0.9 });
+                return SuccessfulNarration();
+            });
 
         var phases = new List<PodcastPhase>();
         var progress = new SynchronousProgress<PodcastProgress>(p => phases.Add(p.Phase));
