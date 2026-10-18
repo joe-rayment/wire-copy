@@ -82,6 +82,15 @@ internal static class PodcastFailureClassifier
         var error = errorMessage ?? string.Empty;
         var firstFailureReason = failedArticles.Count > 0 ? failedArticles[0].Reason : string.Empty;
 
+        // ---- audio-engine (workspace-c3ec4.4) — every IPodcastNarrator failure message
+        // starts with "audio-engine". Must come FIRST so "audio-engine rejected the API key"
+        // is never mistaken for the OpenAI key-missing step below, and "would cost $X over the
+        // $Y limit" is never mistaken for the generic OpenAI cost/budget rules. ----
+        if (error.StartsWith("audio-engine", StringComparison.OrdinalIgnoreCase))
+        {
+            return ClassifyAudioEngine(error);
+        }
+
         // ---- Local narration engine (Chatterbox) — keyed on the sentinel prefix
         // ChatterboxTtsService stamps on every failure (workspace-2xej.10). Must
         // come FIRST so a local failure never advises checking platform.openai.com. ----
@@ -221,5 +230,53 @@ internal static class PodcastFailureClassifier
             Step: "Unknown",
             Reason: string.IsNullOrWhiteSpace(error) ? "Generation failed without a specific error message" : error,
             Fix: "Check the application logs at ~/.local/share/WireCopy/logs/ for details");
+    }
+
+    /// <summary>
+    /// Classifies a message the audio-engine narrator produced (it always starts with
+    /// "audio-engine"). The remediation depends on which of its messages this is.
+    /// </summary>
+    private static PodcastFailureClassification ClassifyAudioEngine(string error)
+    {
+        const string Step = "Audio engine";
+
+        if (error.Contains("isn't running", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: "Start audio-engine (see the audio-engine README: Run natively), or change its address in Settings, then press p again");
+        }
+
+        // audio-engine's own OpenAI key lives in audio-engine, not in WireCopy — checked before the
+        // generic "API key" rule below, which is about the key WireCopy sends TO audio-engine.
+        if (error.Contains("no OpenAI key", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: "Open audio-engine's settings page and add the OpenAI key there, then press p again");
+        }
+
+        if (error.Contains("API key", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: "Set the audio-engine API key in Settings -> Podcast narration, then press p again");
+        }
+
+        if (error.Contains("would cost", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: "Raise the budget in audio-engine's settings, or shorten the reading list, then press p again");
+        }
+
+        return new PodcastFailureClassification(
+            Step: Step,
+            Reason: error,
+            Fix: "Check audio-engine's own logs for details, then press p again");
     }
 }

@@ -35,11 +35,12 @@ namespace WireCopy.Tests.Browser;
 /// (respecting cancellation), letting background tasks complete naturally.
 /// </remarks>
 [Trait("Category", "Unit")]
+[Collection(ConsoleSerialCollection.Name)] // the narrator-readiness tests capture Console.Out
 public class PodcastCommandHandlerTests
 {
     private readonly NavigationService _navigationService;
     private readonly IInputHandler _inputHandler;
-    private readonly ITtsService _ttsService;
+    private readonly IPodcastNarrator _narrator;
     private readonly IPodcastOrchestrator _orchestrator;
     private readonly IUserSettingsStore _settingsStore;
     private readonly GcsConfiguration _gcsConfig;
@@ -61,7 +62,11 @@ public class PodcastCommandHandlerTests
         _navigationService.NavigateTo(page);
 
         _inputHandler = Substitute.For<IInputHandler>();
-        _ttsService = Substitute.For<ITtsService>();
+        // workspace-c3ec4.4: narration readiness is audio-engine's answer, not a local key check.
+        _narrator = Substitute.For<IPodcastNarrator>();
+        _narrator.EngineName.Returns("openai");
+        _narrator.CheckAsync(Arg.Any<CancellationToken>())
+            .Returns(new NarratorStatus { Ready = true, Message = "audio-engine ready" });
         _orchestrator = Substitute.For<IPodcastOrchestrator>();
         _audioAssembler = Substitute.For<IAudioAssembler>();
         _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
@@ -158,74 +163,6 @@ public class PodcastCommandHandlerTests
 
     #endregion
 
-    #region API Key Validation (Saved Key)
-
-    [Fact]
-    public async Task HandleGeneratePodcast_SavedKeyInvalid_ClearsKeyAndProceeds()
-    {
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
-        _settingsStore.Get("OpenAiApiKey").Returns("old-invalid-key");
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns(TtsValidationResult.Invalid("Key expired", "invalid_key"));
-
-        // TTS stays unconfigured → no cache analysis screen
-        // Queue: [GoBack] → consumed by confirmation screen
-        SetupInputQueue(Cmd(CommandType.GoBack));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _settingsStore.Received(1).Remove("OpenAiApiKey");
-        _ttsService.Received(1).SetApiKeyOverride("old-invalid-key");
-        _ttsService.Received(1).SetApiKeyOverride(string.Empty);
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_SavedKeyValid_UsesKeyWithoutClearing()
-    {
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false, true);
-        _settingsStore.Get("OpenAiApiKey").Returns("valid-key");
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns(TtsValidationResult.Valid());
-
-        SetupInstantCacheAnalysis();
-
-        // TTS becomes configured → cache analysis shown (1 call abandoned), then confirmation
-        // Queue: [GoBack, GoBack] → 1st abandoned by cache analysis, 2nd for confirmation
-        SetupInputQueue(Cmd(CommandType.GoBack), Cmd(CommandType.GoBack));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Remove("OpenAiApiKey");
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_SavedKeyValidationTimesOut_ProceedsWithSavedKey()
-    {
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false, true);
-        _settingsStore.Get("OpenAiApiKey").Returns("maybe-valid-key");
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns<TtsValidationResult>(_ =>
-                throw new OperationCanceledException("Validation timed out"));
-
-        SetupInstantCacheAnalysis();
-
-        // Queue: [GoBack, GoBack] → 1st abandoned by cache analysis, 2nd for confirmation
-        SetupInputQueue(Cmd(CommandType.GoBack), Cmd(CommandType.GoBack));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Remove("OpenAiApiKey");
-        _ttsService.Received(1).SetApiKeyOverride("maybe-valid-key");
-    }
-
-    #endregion
-
     #region Cancel-before-progress (workspace-ny44 retired the confirmation screen)
 
     [Fact]
@@ -241,7 +178,6 @@ public class PodcastCommandHandlerTests
         // Use AlwaysShow=true so we don't need a 51-item collection just
         // to exercise the cancel-at-gate contract.
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         _settingsStore.Get("PodcastCostGateAlwaysShow").Returns("true");
 
         // Force a high-cost analysis (10 articles + $5 estimate) so the
@@ -289,7 +225,6 @@ public class PodcastCommandHandlerTests
         // the legacy input queue (a back-compat sanity check that the extra
         // keystrokes don't blow up the new flow).
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
 
         var result = PodcastResult.Successful(
@@ -318,169 +253,6 @@ public class PodcastCommandHandlerTests
             Arg.Any<CancellationToken>());
     }
 
-    [Fact]
-    public async Task HandleGeneratePodcast_NoTtsKey_ModalSPressEntersSetupAndSaves()
-    {
-        // workspace-yib5 Phase 5: pressing `p` without a TTS key now pops an
-        // inline modal BEFORE the slow cache-analysis pass. Pressing `s` on
-        // that modal deep-links into HandleSetApiKey; a successful save
-        // persists the key, triggers the resume-after-save callback, and the
-        // outer retry loop re-enters generation now that the key is set —
-        // proving the "zero extra keystrokes after paste + Enter" contract.
-        SetupCollectionView();
-
-        // Flip IsConfigured to true once SetApiKeyOverride is called with the
-        // real key. This models the singleton TTS service: after a successful
-        // save the override is set, so the retry skips the modal and proceeds
-        // through cache-analysis (which we observe via AnalyzeCacheStatusAsync).
-        _ttsService.IsConfigured.Returns(false);
-        _ttsService.WhenForAnyArgs(s => s.SetApiKeyOverride(default!))
-            .Do(call =>
-            {
-                if (call.Arg<string>() == "sk-test-key-123")
-                {
-                    _ttsService.IsConfigured.Returns(true);
-                }
-            });
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns(TtsValidationResult.Valid());
-
-        SetupInstantCacheAnalysis();
-
-        // Modal: 's' → HandleSetApiKey → resume → retry → cache-analysis abandoned → confirmation: GoBack
-        SetupInputQueue(
-            new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 's' },
-            Cmd(CommandType.GoBack),
-            Cmd(CommandType.GoBack));
-
-        _inputHandler.PromptForInputAsync(
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<bool>(),
-            Arg.Any<int?>(),
-            Arg.Any<int?>(),
-            Arg.Any<string?>(),
-            Arg.Any<Func<char, bool>?>())
-            .Returns("sk-test-key-123");
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _ttsService.Received().SetApiKeyOverride("sk-test-key-123");
-        _settingsStore.Received(1).Set("OpenAiApiKey", "sk-test-key-123", encrypt: true);
-
-        // workspace-reym retired the standalone cache-analysis screen, so
-        // the proof of resume-success is now that GeneratePodcastAsync
-        // was reached. (Pre-workspace-reym this assertion was on
-        // AnalyzeCacheStatusAsync because the screen ran on every press
-        // — now analysis only runs when the cost-gate is armed, which is
-        // not the default path.)
-        await _orchestrator.Received().GeneratePodcastAsync(
-            Arg.Any<Collection>(),
-            Arg.Any<IProgress<PodcastProgress>>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_NoTtsKey_ApiKeyValidationFails_DoesNotPersist()
-    {
-        // workspace-yib5 Phase 5: on a failed auth probe, the key is cleared
-        // and resumeAfterSave is NOT invoked — the user falls back to the
-        // "set up cancelled" status line.
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
-
-        _ttsService.ValidateApiKeyAsync(Arg.Any<CancellationToken>())
-            .Returns(TtsValidationResult.Invalid("Invalid key", "invalid_key"));
-
-        // Modal: 's' → HandleSetApiKey → bad key → cancel (no resume)
-        SetupInputQueue(new NavigationCommand { Type = CommandType.NoOp, RawKeyChar = 's' });
-
-        _inputHandler.PromptForInputAsync(
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<bool>(),
-            Arg.Any<int?>(),
-            Arg.Any<int?>(),
-            Arg.Any<string?>(),
-            Arg.Any<Func<char, bool>?>())
-            .Returns("bad-key");
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _settingsStore.DidNotReceive().Set("OpenAiApiKey", Arg.Any<string>(), Arg.Any<bool>());
-        _ttsService.Received().SetApiKeyOverride(string.Empty);
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_NoTtsKey_ModalEscCancelsGenerate()
-    {
-        // workspace-yib5 Phase 5: pressing Esc on the missing-key modal sets
-        // the status-line message and exits the generate flow without
-        // entering cache-analysis or HandleSetApiKey.
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
-
-        SetupInputQueue(Cmd(CommandType.GoBack));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        await _inputHandler.DidNotReceive().PromptForInputAsync(
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>(),
-            Arg.Any<bool>(),
-            Arg.Any<int?>(),
-            Arg.Any<int?>(),
-            Arg.Any<string?>(),
-            Arg.Any<Func<char, bool>?>());
-        await _orchestrator.DidNotReceive().AnalyzeCacheStatusAsync(
-            Arg.Any<Collection>(),
-            Arg.Any<IProgress<ContentExtractionProgress>>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_UnhandledKey_StaysOnMissingKeyModal()
-    {
-        // workspace-ny44 retired the row-navigated confirmation screen — the
-        // post-cache-analysis modal is now PodcastMissingKeyModal (from
-        // workspace-yib5), which behaves the same way: any non-handled key
-        // re-renders and the loop continues until the user presses Esc.
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
-
-        var unhandledCmd = new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'j' };
-        SetupInputQueue(unhandledCmd, Cmd(CommandType.GoBack));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _renderCalled.Should().BeTrue();
-        await _orchestrator.DidNotReceive().GeneratePodcastAsync(
-            Arg.Any<Collection>(),
-            Arg.Any<IProgress<PodcastProgress>>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_MultipleUnhandledKeys_StaysOnMissingKeyModal()
-    {
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
-
-        var keys = new[]
-        {
-            new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'j' },
-            new NavigationCommand { Type = CommandType.MoveUp, RawKeyChar = 'k' },
-            new NavigationCommand { Type = CommandType.MoveDown, RawKeyChar = 'x' },
-            Cmd(CommandType.GoBack),
-        };
-        SetupInputQueue(keys);
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _renderCalled.Should().BeTrue();
-    }
-
     #endregion
 
     #region Cache Analysis Screen
@@ -496,7 +268,6 @@ public class PodcastCommandHandlerTests
         // GeneratePodcastAsync. This test pins that contract: when
         // AlwaysShow is enabled, analysis runs; otherwise it doesn't.
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         _settingsStore.Get("PodcastCostGateAlwaysShow").Returns("true");
 
         var analysis = new CacheAnalysis
@@ -543,7 +314,6 @@ public class PodcastCommandHandlerTests
         // extracts inline during GeneratePodcastAsync — same total work,
         // but no separate pre-flight screen and no silent analysis hang.
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
 
         var result = PodcastResult.Successful(
@@ -574,7 +344,6 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_CacheAnalysisFails_ContinuesWithoutAnalysis()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
 
         _orchestrator.AnalyzeCacheStatusAsync(
             Arg.Any<Collection>(),
@@ -594,7 +363,6 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_UserSkipsCacheAnalysis_ProceedsWithoutAnalysis()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
 
         // Analysis responds to cancellation but never completes on its own
         _orchestrator.AnalyzeCacheStatusAsync(
@@ -626,7 +394,6 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_GenerationSucceeds_ShowsCompletionScreen()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
 
         var result = PodcastResult.Successful(
@@ -661,7 +428,6 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_GenerationFails_ShowsErrorScreen()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
 
         var failResult = PodcastResult.Failure(
@@ -692,7 +458,6 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_GenerationThrows_ShowsErrorScreen()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
 
         _orchestrator.GeneratePodcastAsync(
@@ -716,7 +481,6 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_UserCancelsDuringProgress_CancelsGeneration()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
 
         // Generation responds to cancellation
@@ -749,94 +513,9 @@ public class PodcastCommandHandlerTests
     #region Error State Recovery
 
     [Fact]
-    public async Task HandleGeneratePodcast_AuthError401_ClearsApiKeyAndShowsError()
+    public async Task HandleGeneratePodcast_NonAuthError_DoesNotTouchSavedSettings()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
-        SetupInstantCacheAnalysis();
-
-        _orchestrator.GeneratePodcastAsync(
-            Arg.Any<Collection>(),
-            Arg.Any<IProgress<PodcastProgress>>(),
-            Arg.Any<CancellationToken>())
-            .Returns(PodcastResult.Failure("HTTP 401 Unauthorized"));
-
-        // After navigating to Generate + dismissing local-only warning:
-        //   progress (abandoned) + error dismiss
-        SetupGenerateInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _settingsStore.Received(1).Remove("OpenAiApiKey");
-        _ttsService.Received(1).SetApiKeyOverride(string.Empty);
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_AuthError403_ClearsApiKey()
-    {
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
-        SetupInstantCacheAnalysis();
-
-        _orchestrator.GeneratePodcastAsync(
-            Arg.Any<Collection>(),
-            Arg.Any<IProgress<PodcastProgress>>(),
-            Arg.Any<CancellationToken>())
-            .Returns(PodcastResult.Failure("HTTP 403 Forbidden"));
-
-        // After navigating to Generate + dismissing local-only warning:
-        //   progress (abandoned) + error dismiss
-        SetupGenerateInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _settingsStore.Received(1).Remove("OpenAiApiKey");
-    }
-
-    [Fact]
-    public async Task HandleGeneratePodcast_NotConfiguredError_ClearsApiKey()
-    {
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
-        SetupInstantCacheAnalysis();
-
-        _orchestrator.GeneratePodcastAsync(
-            Arg.Any<Collection>(),
-            Arg.Any<IProgress<PodcastProgress>>(),
-            Arg.Any<CancellationToken>())
-            .Returns(PodcastResult.Failure("TTS not configured"));
-
-        // After navigating to Generate + dismissing local-only warning:
-        //   progress (abandoned) + error dismiss
-        SetupGenerateInputQueue(
-            Cmd(CommandType.ActivateLink),
-            Cmd(CommandType.ActivateLink));
-
-        await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
-
-        _settingsStore.Received(1).Remove("OpenAiApiKey");
-        _ttsService.Received(1).SetApiKeyOverride(string.Empty);
-    }
-
-    // workspace-n0kb: 's' deep-link unit coverage lives in
-    // PodcastFailureClassifierTests (RelevantSetupRow → SetupRow.OpenAiKey/GcsBucket).
-    // The end-to-end ShowErrorScreenAsync → DispatchRowAsync wiring shares the
-    // input-queue plumbing of the existing AuthError401/AuthError403 tests,
-    // which under the current substitute-based input handler do not exit
-    // deterministically in CI (separate pre-existing flake — see test method
-    // bodies); the change here is purely additive (new hint + new branch), so
-    // adding another full-flow test would extend the same flake. Live testing
-    // covers the visible UX path.
-
-    [Fact]
-    public async Task HandleGeneratePodcast_NonAuthError_DoesNotClearApiKey()
-    {
-        SetupCollectionView();
-        _ttsService.IsConfigured.Returns(true);
         SetupInstantCacheAnalysis();
 
         _orchestrator.GeneratePodcastAsync(
@@ -854,7 +533,6 @@ public class PodcastCommandHandlerTests
         await PodcastCommandHandler.HandleGeneratePodcast(_ctx, _options, CancellationToken.None);
 
         _settingsStore.DidNotReceive().Remove("OpenAiApiKey");
-        _ttsService.DidNotReceive().SetApiKeyOverride(string.Empty);
     }
 
     #endregion
@@ -865,7 +543,7 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_SavedBucketName_LoadedFromSettings()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
+        SetNarratorNotReady();
         _settingsStore.Get("GcsBucketName").Returns("my-podcast-bucket");
 
         // No cache analysis (not configured).
@@ -882,7 +560,7 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_InvalidSavedBucketName_Ignored()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
+        SetNarratorNotReady();
         _settingsStore.Get("GcsBucketName").Returns("x"); // too short
 
         SetupInputQueue(Cmd(CommandType.GoBack));
@@ -925,7 +603,7 @@ public class PodcastCommandHandlerTests
     {
         // Simulate missing ICloudStorageClient in DI (GetRequiredService throws)
         var serviceProvider = Substitute.For<IServiceProvider>();
-        serviceProvider.GetService(typeof(ITtsService)).Returns(_ttsService);
+        serviceProvider.GetService(typeof(IPodcastNarrator)).Returns(_narrator);
         serviceProvider.GetService(typeof(IPodcastOrchestrator)).Returns(_orchestrator);
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
@@ -963,7 +641,7 @@ public class PodcastCommandHandlerTests
     public async Task HandleGeneratePodcast_CancellationTokenFired_Throws()
     {
         SetupCollectionView();
-        _ttsService.IsConfigured.Returns(false);
+        SetNarratorNotReady();
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -978,7 +656,129 @@ public class PodcastCommandHandlerTests
 
     #endregion
 
+    #region Narrator readiness (workspace-c3ec4.4)
+
+    // Guards:   pressing p when audio-engine says it is not ready shows the error screen with
+    //           audio-engine's own message and never starts generation.
+    // Fails if: the handler ignores NarratorStatus.Ready, drops status.Message, or calls
+    //           GeneratePodcastAsync anyway.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastCommandHandlerTests.HandleGeneratePodcast_NarratorNotReady_ShowsItsMessageAndStops"
+    [Fact]
+    public async Task HandleGeneratePodcast_NarratorNotReady_ShowsItsMessageAndStops()
+    {
+        SetupCollectionView();
+        const string message = "audio-engine rejected the API key. Set it in Settings -> Podcast narration.";
+        SetNarratorNotReady(message);
+
+        // One key dismisses the error screen.
+        SetupInputQueue(Cmd(CommandType.ActivateLink));
+
+        var screen = await CaptureConsoleAsync(
+            () => PodcastCommandHandler.RunGeneratePodcastAttempt(_ctx, _options, CancellationToken.None));
+
+        screen.Result.Should().BeFalse("a not-ready narrator ends the attempt without a retry");
+        StripAnsi(screen.Output).Should().Contain("Podcast generation failed");
+        StripAnsi(screen.Output).Should().Contain("rejected the API key");
+        StripAnsi(screen.Output).Should().Contain("Audio engine");
+        await _orchestrator.DidNotReceive().AnalyzeCacheStatusAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<ContentExtractionProgress>>(),
+            Arg.Any<CancellationToken>());
+        await _orchestrator.DidNotReceive().GeneratePodcastAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<PodcastProgress>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    // Guards:   an audio-engine that never answers becomes a not-ready status that says it
+    //           isn't running, instead of hanging the keypress or crashing.
+    // Fails if: CheckNarratorAsync lets the OperationCanceledException escape, or its synthetic
+    //           status is Ready or lacks the "isn't running" wording the classifier keys on.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastCommandHandlerTests.CheckNarratorAsync_CheckTimesOut_ReportsNotRunning"
+    [Fact]
+    public async Task CheckNarratorAsync_CheckTimesOut_ReportsNotRunning()
+    {
+        var narrator = Substitute.For<IPodcastNarrator>();
+        narrator.CheckAsync(Arg.Any<CancellationToken>())
+            .ThrowsAsync(new OperationCanceledException("no reply"));
+
+        var status = await PodcastCommandHandler.CheckNarratorAsync(narrator, CancellationToken.None);
+
+        status.Ready.Should().BeFalse();
+        status.ErrorKind.Should().Be(NarrationErrorKind.Unreachable);
+        status.Message.Should().StartWith("audio-engine");
+        status.Message.Should().Contain("isn't running");
+    }
+
+    // Guards:   when audio-engine's selected engine is Chatterbox, the cost gate tells the user
+    //           the run is local and free instead of quoting an OpenAI price.
+    // Fails if: the handler stops passing engineIsLocal=true for EngineName "chatterbox"
+    //           (or compares the name case-sensitively).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastCommandHandlerTests.HandleGeneratePodcast_ChatterboxEngine_CostGateSaysGeneratedLocally"
+    [Fact]
+    public async Task HandleGeneratePodcast_ChatterboxEngine_CostGateSaysGeneratedLocally()
+    {
+        SetupCollectionView();
+        _narrator.EngineName.Returns("Chatterbox");
+        _settingsStore.Get("PodcastCostGateAlwaysShow").Returns("true");
+
+        // The gate only arms for a non-trivial job (same recipe as
+        // HandleGeneratePodcast_UserCancelsAtCostGate_DoesNotStartGeneration).
+        _orchestrator.AnalyzeCacheStatusAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<ContentExtractionProgress>>(),
+            Arg.Any<CancellationToken>())
+            .Returns(new CacheAnalysis
+            {
+                TotalArticles = 10,
+                CachedArticles = 0,
+                UncachedArticles = 10,
+                EstimatedCost = 5.00m,
+                ArticleStatuses = [],
+            });
+
+        // Esc on the cost-gate modal cancels the attempt.
+        SetupInputQueue(Cmd(CommandType.GoBack));
+
+        var screen = await CaptureConsoleAsync(
+            () => PodcastCommandHandler.RunGeneratePodcastAttempt(_ctx, _options, CancellationToken.None));
+
+        StripAnsi(screen.Output).Should().Contain("generated locally (Chatterbox)");
+        await _orchestrator.DidNotReceive().GeneratePodcastAsync(
+            Arg.Any<Collection>(),
+            Arg.Any<IProgress<PodcastProgress>>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    #endregion
+
     #region Helpers
+
+    private void SetNarratorNotReady(string message = "audio-engine isn't running at http://127.0.0.1:8080.")
+    {
+        _narrator.CheckAsync(Arg.Any<CancellationToken>())
+            .Returns(new NarratorStatus { Ready = false, Message = message });
+    }
+
+    /// <summary>Runs <paramref name="action"/> with Console.Out captured (class is in ConsoleSerialCollection).</summary>
+    private static async Task<(bool Result, string Output)> CaptureConsoleAsync(Func<Task<bool>> action)
+    {
+        var originalOut = Console.Out;
+        using var sw = new StringWriter();
+        Console.SetOut(sw);
+        try
+        {
+            var result = await action();
+            return (result, sw.ToString());
+        }
+        finally
+        {
+            Console.SetOut(originalOut);
+        }
+    }
+
+    private static string StripAnsi(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(text, @"\x1B\[[0-9;?]*[A-Za-z]", string.Empty);
 
     private static NavigationCommand Cmd(CommandType type) =>
         new() { Type = type };
@@ -1133,7 +933,7 @@ public class PodcastCommandHandlerTests
         var podcastConfig = new PodcastConfiguration();
 
         var serviceProvider = Substitute.For<IServiceProvider>();
-        serviceProvider.GetService(typeof(ITtsService)).Returns(_ttsService);
+        serviceProvider.GetService(typeof(IPodcastNarrator)).Returns(_narrator);
         serviceProvider.GetService(typeof(IPodcastOrchestrator)).Returns(_orchestrator);
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
@@ -1174,7 +974,7 @@ public class PodcastCommandHandlerTests
         var podcastConfig = new PodcastConfiguration();
 
         var serviceProvider = Substitute.For<IServiceProvider>();
-        serviceProvider.GetService(typeof(ITtsService)).Returns(_ttsService);
+        serviceProvider.GetService(typeof(IPodcastNarrator)).Returns(_narrator);
         serviceProvider.GetService(typeof(IPodcastOrchestrator)).Returns(_orchestrator);
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))

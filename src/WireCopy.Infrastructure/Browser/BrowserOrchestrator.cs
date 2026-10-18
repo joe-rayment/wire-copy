@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
+using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Enums.Browser;
@@ -112,9 +113,9 @@ public partial class BrowserOrchestrator : IBrowserService
     private string? _humanActionWatcherUrl;
     private CancellationTokenSource? _humanActionWatcherCts;
 
-    // Lazily resolved TTS service for checking IsConfigured state
-    private ITtsService? _ttsService;
-    private bool _ttsServiceResolved;
+    // Lazily resolved narrator (audio-engine) for checking IsConfigured state
+    private IPodcastNarrator? _narrator;
+    private bool _narratorResolved;
 
     // Live preload progress indicator: set by background thread, read by main loop
     private volatile bool _progressDirty;

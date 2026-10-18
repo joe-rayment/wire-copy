@@ -165,43 +165,11 @@ internal static class PodcastCommandHandler
             await Task.Delay(100, ct).ConfigureAwait(false);
 
             using var scope = ctx.ScopeFactory.CreateScope();
-            var ttsService = scope.ServiceProvider.GetRequiredService<ITtsService>();
+            var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
             var orchestrator = scope.ServiceProvider.GetRequiredService<IPodcastOrchestrator>();
             var gcsConfig = scope.ServiceProvider
                 .GetRequiredService<IOptions<GcsConfiguration>>().Value;
             var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-
-            // Hydrate persisted settings if not already configured
-            if (!ttsService.IsConfigured)
-            {
-                var savedKey = settingsStore.Get("OpenAiApiKey");
-                if (!string.IsNullOrWhiteSpace(savedKey))
-                {
-                    ttsService.SetApiKeyOverride(savedKey);
-
-                    // Validate the saved key still works (5s timeout — don't block on network issues)
-                    try
-                    {
-                        using var validationCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-                        validationCts.CancelAfter(TimeSpan.FromSeconds(5));
-                        var validation = await ttsService.ValidateApiKeyAsync(validationCts.Token).ConfigureAwait(false);
-
-                        if (!validation.IsValid && validation.ErrorCode is "invalid_key" or "insufficient_credits")
-                        {
-                            ctx.Logger.LogWarning(
-                                "Saved API key is no longer valid ({ErrorCode}), clearing", validation.ErrorCode);
-                            settingsStore.Remove("OpenAiApiKey");
-                            ttsService.SetApiKeyOverride(string.Empty);
-                            ctx.NavigationService.SetStatusMessage("Saved API key is no longer valid");
-                        }
-                    }
-                    catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-                    {
-                        // Validation timed out (network unreachable) — proceed with saved key
-                        ctx.Logger.LogDebug("API key validation timed out, proceeding with saved key");
-                    }
-                }
-            }
 
             if (string.IsNullOrWhiteSpace(gcsConfig.BucketName))
             {
@@ -212,75 +180,25 @@ internal static class PodcastCommandHandler
                 }
             }
 
-            // workspace-2xej.10: the missing-config path assumes the missing piece
-            // is the OpenAI key, so it must only run for the OpenAI engine. When
-            // the local engine is active but not ready (uv/worker/sample), the
-            // API-key modal would be a lie — instead surface ValidateApiKeyAsync's
-            // engine-specific message and send the user to Settings.
-            var engineIsChatterbox = string.Equals(
-                settingsStore.Get(SettingsCommandHandler.KeyTtsEngine), "chatterbox", StringComparison.OrdinalIgnoreCase);
-
-            if (engineIsChatterbox && !ttsService.IsConfigured)
+            // workspace-c3ec4.4: narration runs in audio-engine, which owns the TTS keys. Ask it
+            // whether it is up, accepts our key and has the selected engine configured BEFORE the
+            // slow cache analysis. A not-ready status carries a user-ready message that starts with
+            // "audio-engine" — the failure classifier turns it into a remediation screen. The check
+            // gets 5 s so an unreachable address never hangs the keypress.
+            var status = await CheckNarratorAsync(narrator, ct).ConfigureAwait(false);
+            if (!status.Ready)
             {
-                var validation = await ttsService.ValidateApiKeyAsync(ct).ConfigureAwait(false);
-
-                // Sentinel-prefix the message so the failure classifier renders
-                // the local-engine troubleshooting (Test in Settings, uv install)
-                // and points the 's' deep-link at the Local engine row.
                 await PodcastProgressScreens.ShowErrorScreenAsync(
                     ctx,
                     options,
-                    "Local narration: " + (validation.ErrorMessage ?? "engine not ready — fix it in Settings → Narration engine, then press p again."),
-                    Array.Empty<ArticleFailure>(),
+                    string.IsNullOrWhiteSpace(status.Message) ? "audio-engine isn't ready." : status.Message,
+                    [],
                     ct).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return false;
             }
 
-            // workspace-yib5 Phase 5: pre-cache-analysis missing-key modal.
-            // When the user pressed `p` without an OpenAI key, surface a
-            // one-line modal BEFORE the slow cache-analysis + cost-gate so
-            // they don't sit through minutes of work before being asked to
-            // set up. Pressing `s` deep-links into HandleSetApiKey with a
-            // resume callback that re-enters the generate flow on save
-            // success, satisfying the bead's "zero extra keystrokes beyond
-            // the actual key paste + Enter" acceptance criterion.
-            if (!engineIsChatterbox && !ttsService.IsConfigured)
-            {
-                var choice = await PodcastMissingKeyModal.ShowAsync(ctx, options, ct).ConfigureAwait(false);
-                if (choice == PodcastMissingKeyModal.Outcome.Cancel)
-                {
-                    ctx.NavigationService.SetStatusMessage("Set up cancelled — press p again when ready");
-                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                    return false;
-                }
-
-                var resumed = false;
-                await SettingsCommandHandler.HandleSetApiKey(
-                    ctx,
-                    options,
-                    ct,
-                    subtitle: "Set this up and we'll continue generating your podcast.",
-                    resumeAfterSave: () =>
-                    {
-                        resumed = true;
-                        return Task.CompletedTask;
-                    }).ConfigureAwait(false);
-
-                if (resumed)
-                {
-                    // Hydration above already pulled the saved key into the
-                    // service; on a fresh save the FormField path also calls
-                    // SetApiKeyOverride. Loop the whole attempt so cache
-                    // analysis + cost-gate run with the configured key.
-                    options = ctx.GetCurrentRenderOptions();
-                    return true;
-                }
-
-                ctx.NavigationService.SetStatusMessage("Set up cancelled — press p again when ready");
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return false;
-            }
+            var engineIsLocal = string.Equals(narrator.EngineName, "chatterbox", StringComparison.OrdinalIgnoreCase);
 
             // Pre-flight FFmpeg check: fail fast before slow cache analysis
             var audioAssembler = scope.ServiceProvider.GetRequiredService<IAudioAssembler>();
@@ -370,7 +288,7 @@ internal static class PodcastCommandHandler
                 if (costGateConfig.ShouldShowGate(analysis))
                 {
                     var proceed = await PodcastCostGateModal
-                        .ShowAsync(ctx, options, analysis, costGateConfig, ct, engineIsLocal: engineIsChatterbox)
+                        .ShowAsync(ctx, options, analysis, costGateConfig, ct, engineIsLocal: engineIsLocal)
                         .ConfigureAwait(false);
                     if (!proceed)
                     {
@@ -397,24 +315,9 @@ internal static class PodcastCommandHandler
 
             if (!result.Success)
             {
-                // If TTS failed due to auth error, clear the persisted key so user is re-prompted.
-                // workspace-p1px: BucketNotPublic / FeedNotReachable produce 403 in their diagnostic
-                // strings (the public HTTP GET returned 403) but are STORAGE failures, not TTS auth
-                // failures — guarded against clearing the OpenAI key for the wrong reason.
+                // workspace-c3ec4.4: narration keys live in audio-engine, so a failed run never
+                // clears a saved key here any more — the classifier shows what to fix instead.
                 var error = result.ErrorMessage ?? "Unknown error";
-                var isStorageFailure = result.FailureDetail?.FailureClass
-                    is FeedPublishFailureClass.BucketNotPublic
-                    or FeedPublishFailureClass.FeedNotReachable
-                    or FeedPublishFailureClass.FeedNotParseable;
-                if (!isStorageFailure
-                    && (error.Contains("401", StringComparison.Ordinal)
-                        || error.Contains("403", StringComparison.Ordinal)
-                        || error.Contains("not configured", StringComparison.OrdinalIgnoreCase)))
-                {
-                    settingsStore.Remove("OpenAiApiKey");
-                    ttsService.SetApiKeyOverride(string.Empty);
-                }
-
                 var retry = await PodcastProgressScreens.ShowErrorScreenAsync(
                     ctx, options, error, result.FailedArticleDetails, result.FailureDetail, ct)
                     .ConfigureAwait(false);
@@ -445,6 +348,34 @@ internal static class PodcastCommandHandler
             }
 
             return false;
+        }
+    }
+
+    /// <summary>
+    /// Runs <see cref="IPodcastNarrator.CheckAsync"/> with a 5 s budget so an unreachable audio-engine
+    /// never blocks the keypress. A timeout (as opposed to the user cancelling) becomes a not-ready
+    /// status whose message the failure classifier routes to the "start audio-engine" remediation.
+    /// </summary>
+    /// <param name="narrator">The narrator to check.</param>
+    /// <param name="ct">The user's cancellation token.</param>
+    /// <returns>The narrator's status, or a synthetic not-ready status on timeout.</returns>
+    internal static async Task<NarratorStatus> CheckNarratorAsync(IPodcastNarrator narrator, CancellationToken ct)
+    {
+        try
+        {
+            using var checkCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            checkCts.CancelAfter(TimeSpan.FromSeconds(5));
+            return await narrator.CheckAsync(checkCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+        {
+            return new NarratorStatus
+            {
+                Ready = false,
+                ErrorKind = NarrationErrorKind.Unreachable,
+                Message = "audio-engine isn't running or isn't answering (no reply within 5 seconds). "
+                    + "Start it (audio-engine README: Run natively) or change its address in Settings.",
+            };
         }
     }
 

@@ -7,6 +7,7 @@ using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
+using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Enums.Browser;
@@ -202,24 +203,24 @@ public partial class BrowserOrchestrator
         return Math.Clamp(terminalWidth - 2, min, MaxContentWidth);
     }
 
-    private bool IsTtsConfigured()
+    private bool IsNarratorConfigured()
     {
-        if (!_ttsServiceResolved)
+        if (!_narratorResolved)
         {
             try
             {
                 using var scope = _scopeFactory.CreateScope();
-                _ttsService = scope.ServiceProvider.GetService<ITtsService>();
+                _narrator = scope.ServiceProvider.GetService<IPodcastNarrator>();
             }
             catch
             {
                 // Podcast services may not be registered
             }
 
-            _ttsServiceResolved = true;
+            _narratorResolved = true;
         }
 
-        return _ttsService?.IsConfigured ?? false;
+        return _narrator?.IsConfigured ?? false;
     }
 
     /// <summary>
@@ -287,7 +288,7 @@ public partial class BrowserOrchestrator
             return 4; // Selected
         }
 
-        return IsTtsConfigured() ? 0 : 3; // Idle or Unconfigured
+        return IsNarratorConfigured() ? 0 : 3; // Idle or Unconfigured
     }
 
     /// <summary>
