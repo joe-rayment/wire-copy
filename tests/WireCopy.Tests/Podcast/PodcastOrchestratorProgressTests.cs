@@ -5,15 +5,12 @@ using Microsoft.Extensions.Logging.Abstractions;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using WireCopy.Application.DTOs;
-using WireCopy.Application.DTOs.Audio;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces;
-using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Entities.Collections;
-using WireCopy.Domain.ValueObjects.Audio;
 using WireCopy.Domain.ValueObjects.Podcast;
 using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Configuration;
@@ -24,28 +21,28 @@ using Xunit;
 namespace WireCopy.Tests.Podcast;
 
 /// <summary>
-/// Tests for workspace-74zy (Phase A: surface real progress signals). Asserts the
-/// orchestrator forwards <see cref="TtsProgress"/> chunk events,
-/// <see cref="AssemblyProgress"/> per-segment + FFmpeg-percent events, and
+/// Tests for workspace-74zy (Phase A: surface real progress signals), migrated to the
+/// <see cref="IPodcastNarrator"/> seam (workspace-c3ec4.2). Asserts the orchestrator maps
+/// <see cref="NarrationProgress"/> events (chunk counts, the Assembling phase) and
 /// <see cref="PublishProgress"/> per-episode upload events through the
-/// <see cref="PodcastProgress"/> sink. Also covers the cache-hit count emission
-/// at the start of the audio phase and monotonic <c>PhaseElapsed</c>.
+/// <see cref="PodcastProgress"/> sink, and that <c>PhaseElapsed</c> is monotonic.
 /// </summary>
 [Trait("Category", "Unit")]
 public class PodcastOrchestratorProgressTests : IDisposable
 {
     private readonly IArticleContentCache _articleCache;
-    private readonly ITtsService _ttsService;
-    private readonly ITtsAudioCache _audioCache;
-    private readonly IAudioAssembler _audioAssembler;
+    private readonly IPodcastNarrator _narrator;
     private readonly IPodcastPublisher _publisher;
     private readonly PodcastOrchestrator _sut;
     private readonly string _tempDir;
+    private readonly string _fakeAudioFile;
 
     public PodcastOrchestratorProgressTests()
     {
         _tempDir = Path.Combine(Path.GetTempPath(), $"podcast-progress-{Guid.NewGuid():N}");
         Directory.CreateDirectory(_tempDir);
+        _fakeAudioFile = Path.Combine(_tempDir, "narrated.m4a");
+        File.WriteAllBytes(_fakeAudioFile, [1, 2, 3, 4]);
 
         var pageLoader = Substitute.For<IPageLoader>();
         var contentExtractor = Substitute.For<IReadableContentExtractor>();
@@ -69,9 +66,7 @@ public class PodcastOrchestratorProgressTests : IDisposable
             _articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
-        _ttsService = Substitute.For<ITtsService>();
-        _audioCache = Substitute.For<ITtsAudioCache>();
-        _audioAssembler = Substitute.For<IAudioAssembler>();
+        _narrator = Substitute.For<IPodcastNarrator>();
         _publisher = Substitute.For<IPodcastPublisher>();
 
         var podcastConfig = Options.Create(new PodcastConfiguration
@@ -85,23 +80,17 @@ public class PodcastOrchestratorProgressTests : IDisposable
             MinimumWordCount = 5,
         });
 
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
-        {
-            ApiKey = "test-key",
-            MaxBudgetUsd = 5.00m,
-        });
-
-        _ttsService.IsConfigured.Returns(true);
-        _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
+        _narrator.IsConfigured.Returns(true);
+        _narrator.EngineName.Returns("openai");
+        _narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate { Success = true });
+        SetupNarrateSuccess();
 
         _sut = new PodcastOrchestrator(
             contentProvider,
-            _ttsService,
-            _audioCache,
-            _audioAssembler,
+            _narrator,
             _publisher,
             podcastConfig,
-            ttsConfig,
             NullLogger<PodcastOrchestrator>.Instance);
     }
 
@@ -122,47 +111,53 @@ public class PodcastOrchestratorProgressTests : IDisposable
         GC.SuppressFinalize(this);
     }
 
+    // Guards:   chunk-level progress from the narrator (ChunksDone/ChunksTotal) reaches the PodcastProgress
+    //           sink as CurrentArticleChunkIndex/Total/Percent, so the UI can show "chunk 2 of 2".
+    // Fails if: MapNarrationProgress stops copying the chunk fields, or the orchestrator stops passing an
+    //           IProgress<NarrationProgress> to NarrateAsync.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorProgressTests.GeneratePodcast_ForwardsNarratorChunkProgress_IntoPodcastProgress"
     [Fact]
-    public async Task GeneratePodcast_ForwardsTtsChunkProgress_IntoPodcastProgress()
+    public async Task GeneratePodcast_ForwardsNarratorChunkProgress_IntoPodcastProgress()
     {
         const string url = "https://example.com/article1";
         SetupArticleCacheHit(url, "Article 1");
-        SetupCacheAnalysis(cached: 0, uncached: 1);
-        SetupAudioCacheMiss();
-        SetupAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
-        // TTS mock simulates two chunk progress reports.
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
+        // Narrator simulates two chunk progress reports for the single chapter.
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                var sink = callInfo.ArgAt<IProgress<TtsProgress>>(2);
-                sink?.Report(new TtsProgress
+                var sink = callInfo.ArgAt<IProgress<NarrationProgress>?>(1);
+                sink?.Report(new NarrationProgress
                 {
-                    CurrentChunk = 1,
-                    TotalChunks = 2,
-                    CharactersProcessed = 100,
-                    TotalCharacters = 200,
+                    Phase = NarrationPhase.Synthesizing,
+                    Fraction = 0.25,
+                    ChapterIndex = 0,
+                    ChapterTitle = "Article 1",
+                    ChaptersTotal = 1,
+                    ChunksDone = 1,
+                    ChunksTotal = 2,
                     Message = "Chunk 1/2",
                 });
-                sink?.Report(new TtsProgress
+                sink?.Report(new NarrationProgress
                 {
-                    CurrentChunk = 2,
-                    TotalChunks = 2,
-                    CharactersProcessed = 200,
-                    TotalCharacters = 200,
+                    Phase = NarrationPhase.Synthesizing,
+                    Fraction = 0.5,
+                    ChapterIndex = 0,
+                    ChapterTitle = "Article 1",
+                    ChaptersTotal = 1,
+                    ChunksDone = 2,
+                    ChunksTotal = 2,
                     Message = "Chunk 2/2",
                 });
-                return Task.FromResult(TtsGenerationResult.Successful([1, 2, 3], 200, 2));
+                return Task.FromResult(SuccessfulNarration());
             });
 
         var events = new List<PodcastProgress>();
-        var progress = new Progress<PodcastProgress>(p => events.Add(p));
+        var progress = new SynchronousProgress<PodcastProgress>(p => events.Add(p));
 
         var result = await _sut.GeneratePodcastAsync(CreateCollection(url), progress);
 
@@ -172,70 +167,61 @@ public class PodcastOrchestratorProgressTests : IDisposable
         chunkEvents.Should().Contain(e => e.CurrentArticleChunkIndex == 1 && e.CurrentArticleChunkTotal == 2);
         chunkEvents.Should().Contain(e => e.CurrentArticleChunkIndex == 2 && e.CurrentArticleChunkTotal == 2);
         chunkEvents.Last().CurrentArticleChunkPercent.Should().BeApproximately(100.0, 0.01);
+        chunkEvents.Should().OnlyContain(e => e.Phase == PodcastPhase.GeneratingAudio);
+        chunkEvents.Should().OnlyContain(e => e.CurrentArticle == 1 && e.ArticleTitle == "Article 1");
     }
 
+    // Guards:   the narrator's Assembling phase shows up as the AssemblingAudio podcast phase at 70%, and its
+    //           Done phase is NOT forwarded (publishing reports its own bands after it).
+    // Fails if: MapNarrationProgress maps Assembling to GeneratingAudio, changes the 70% band, or the
+    //           orchestrator starts forwarding NarrationPhase.Done as an audio-phase event.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorProgressTests.GeneratePodcast_ForwardsAssemblingPhase_AsAssemblingAudioPhase"
     [Fact]
-    public async Task GeneratePodcast_EmitsCacheHitCounts_AtStartOfAudioPhase()
+    public async Task GeneratePodcast_ForwardsAssemblingPhase_AsAssemblingAudioPhase()
     {
         const string url = "https://example.com/article1";
         SetupArticleCacheHit(url, "Article 1");
-        SetupCacheAnalysis(cached: 3, uncached: 2);
-        SetupAudioCacheHit();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
-        var events = new List<PodcastProgress>();
-        var progress = new Progress<PodcastProgress>(p => events.Add(p));
-
-        await _sut.GeneratePodcastAsync(CreateCollection(url), progress);
-
-        var audio = events.Where(p => p.Phase == PodcastPhase.GeneratingAudio).ToList();
-        audio.Should().NotBeEmpty();
-        audio.Should().Contain(p => p.CachedArticleCount == 3 && p.UncachedArticleCount == 2,
-            "weighted-ETA needs the orchestrator to surface the cache split");
-    }
-
-    [Fact]
-    public async Task GeneratePodcast_ForwardsAssemblyProgress_AsAssemblingAudioPhase()
-    {
-        const string url = "https://example.com/article1";
-        SetupArticleCacheHit(url, "Article 1");
-        SetupCacheAnalysis(cached: 0, uncached: 1);
-        SetupAudioCacheHit();
-        SetupPublishSuccess();
-
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
             .Returns(callInfo =>
             {
-                var sink = callInfo.ArgAt<IProgress<AssemblyProgress>?>(1);
-                sink?.Report(new AssemblyProgress { TotalSegments = 3, CompletedSegments = 1, Message = "Probed 1 of 3" });
-                sink?.Report(new AssemblyProgress { TotalSegments = 3, CompletedSegments = 3, FfmpegPercent = 100, Message = "Concatenating (100%)" });
-                return Task.FromResult(AssemblyResult.Successful(
-                    Path.Combine(_tempDir, "out.m4b"),
-                    TimeSpan.FromMinutes(10),
-                    1024,
-                    new List<AudioChapterMarker>()));
+                var sink = callInfo.ArgAt<IProgress<NarrationProgress>?>(1);
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Synthesizing, Fraction = 0.5, ChapterIndex = 0, ChaptersTotal = 1 });
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Assembling, Fraction = 0.95, ChaptersTotal = 1, Message = "Joining chapters" });
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Done, Fraction = 1.0, ChaptersTotal = 1 });
+                return Task.FromResult(SuccessfulNarration());
             });
 
         var events = new List<PodcastProgress>();
-        var progress = new Progress<PodcastProgress>(p => events.Add(p));
+        var progress = new SynchronousProgress<PodcastProgress>(p => events.Add(p));
 
         await _sut.GeneratePodcastAsync(CreateCollection(url), progress);
 
         var assembly = events.Where(p => p.Phase == PodcastPhase.AssemblingAudio).ToList();
-        assembly.Should().HaveCountGreaterThanOrEqualTo(2);
-        assembly.Should().Contain(p => p.AssembledSegments == 1 && p.AssembledSegmentsTotal == 3);
-        assembly.Should().Contain(p => p.AssembledSegments == 3 && p.AssembledSegmentsTotal == 3);
+        assembly.Should().ContainSingle();
+        assembly[0].PercentComplete.Should().Be(70);
+        assembly[0].TotalArticles.Should().Be(1);
+        assembly[0].Message.Should().Be("Joining chapters");
+
+        // Done is dropped: after the Assembling event the next event belongs to publishing.
+        var assemblingIndex = events.IndexOf(assembly[0]);
+        events.Skip(assemblingIndex + 1).Should().OnlyContain(e => e.Phase != PodcastPhase.GeneratingAudio && e.Phase != PodcastPhase.AssemblingAudio);
     }
 
+    // Guards:   per-episode upload progress from the publisher reaches the sink as Publishing-phase events
+    //           carrying UploadedBytes/UploadedBytesTotal and UploadedEpisodes/UploadedEpisodesTotal.
+    // Fails if: the orchestrator stops passing an IProgress<PublishProgress> to PublishFeedAsync or stops
+    //           copying the upload counters into PodcastProgress.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorProgressTests.GeneratePodcast_ForwardsPublishProgress_AsPublishingPhase"
     [Fact]
     public async Task GeneratePodcast_ForwardsPublishProgress_AsPublishingPhase()
     {
         const string url = "https://example.com/article1";
         SetupArticleCacheHit(url, "Article 1");
-        SetupCacheAnalysis(cached: 0, uncached: 1);
-        SetupAudioCacheHit();
-        SetupAssemblySuccess();
 
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(),
@@ -263,7 +249,7 @@ public class PodcastOrchestratorProgressTests : IDisposable
             });
 
         var events = new List<PodcastProgress>();
-        var progress = new Progress<PodcastProgress>(p => events.Add(p));
+        var progress = new SynchronousProgress<PodcastProgress>(p => events.Add(p));
 
         await _sut.GeneratePodcastAsync(CreateCollection(url), progress);
 
@@ -272,23 +258,38 @@ public class PodcastOrchestratorProgressTests : IDisposable
         publish.Should().Contain(p => p.UploadedEpisodes == 1 && p.UploadedEpisodesTotal == 1);
     }
 
+    // Guards:   PhaseElapsed never goes backwards across GeneratingAudio events in one run (it reads one
+    //           per-phase stopwatch), so a weighted-ETA consumer can trust it.
+    // Fails if: the orchestrator restarts or swaps the audio-phase stopwatch between the initial
+    //           "Sending articles" report and the narrator-driven reports.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorProgressTests.GeneratePodcast_PhaseElapsed_IsMonotonicWithinAudioPhase"
     [Fact]
     public async Task GeneratePodcast_PhaseElapsed_IsMonotonicWithinAudioPhase()
     {
         const string url = "https://example.com/article1";
         SetupArticleCacheHit(url, "Article 1");
-        SetupCacheAnalysis(cached: 0, uncached: 1);
-        SetupAudioCacheHit();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var sink = callInfo.ArgAt<IProgress<NarrationProgress>?>(1);
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Queued, Fraction = 0, ChaptersTotal = 1 });
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Synthesizing, Fraction = 0.3, ChapterIndex = 0, ChaptersTotal = 1 });
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Synthesizing, Fraction = 0.6, ChapterIndex = 0, ChaptersTotal = 1 });
+                return Task.FromResult(SuccessfulNarration());
+            });
+
         var events = new List<PodcastProgress>();
-        var progress = new Progress<PodcastProgress>(p => events.Add(p));
+        var progress = new SynchronousProgress<PodcastProgress>(p => events.Add(p));
 
         await _sut.GeneratePodcastAsync(CreateCollection(url), progress);
 
         var audioElapsed = events.Where(p => p.Phase == PodcastPhase.GeneratingAudio).Select(p => p.PhaseElapsed).ToList();
-        audioElapsed.Should().NotBeEmpty();
+        audioElapsed.Should().HaveCountGreaterThanOrEqualTo(3);
         for (var i = 1; i < audioElapsed.Count; i++)
         {
             audioElapsed[i].Should().BeGreaterThanOrEqualTo(audioElapsed[i - 1],
@@ -301,6 +302,24 @@ public class PodcastOrchestratorProgressTests : IDisposable
         var collection = Collection.Create("Progress Test Collection");
         collection.AddItem(url, $"Article: {url}");
         return collection;
+    }
+
+    private NarrationResult SuccessfulNarration() => new()
+    {
+        Success = true,
+        OutputPath = _fakeAudioFile,
+        Bytes = 4,
+        Duration = TimeSpan.FromSeconds(30),
+        CostUsd = 0m,
+    };
+
+    private void SetupNarrateSuccess()
+    {
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(SuccessfulNarration());
     }
 
     private void SetupArticleCacheHit(string url, string title)
@@ -319,70 +338,6 @@ public class PodcastOrchestratorProgressTests : IDisposable
                 CleanedText = string.Join(" ", Enumerable.Repeat("words", 50)),
                 WordCount = 50,
             });
-    }
-
-    private void SetupCacheAnalysis(int cached, int uncached)
-    {
-        _audioCache.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
-            .Returns(new CacheAnalysis
-            {
-                TotalArticles = cached + uncached,
-                CachedArticles = cached,
-                UncachedArticles = uncached,
-                EstimatedCost = 0.05m,
-                ArticleStatuses = [],
-            });
-    }
-
-    private void SetupAudioCacheMiss()
-    {
-        _audioCache.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((TtsAudioCacheEntry?)null);
-    }
-
-    private void SetupAudioCacheHit()
-    {
-        var path = Path.Combine(_tempDir, $"cached-{Guid.NewGuid():N}.aac");
-        File.WriteAllBytes(path, [1, 2, 3, 4]);
-        _audioCache.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "k",
-                AudioFilePath = path,
-                FileSizeBytes = 4,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "h",
-                TtsConfigHash = "c",
-            });
-    }
-
-    private void SetupAudioCachePut()
-    {
-        _audioCache.PutAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<byte[]>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "new",
-                AudioFilePath = Path.Combine(_tempDir, "new.aac"),
-                FileSizeBytes = 4,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "h",
-                TtsConfigHash = "c",
-            });
-    }
-
-    private void SetupAssemblySuccess()
-    {
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Successful(
-                Path.Combine(_tempDir, "out.m4b"),
-                TimeSpan.FromMinutes(10),
-                1024,
-                new List<AudioChapterMarker>()));
     }
 
     private void SetupPublishSuccess()
