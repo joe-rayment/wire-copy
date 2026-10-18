@@ -1,14 +1,12 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using System.Net;
 using FluentAssertions;
-using Microsoft.Extensions.Logging.Abstractions;
-using Microsoft.Extensions.Options;
 using NSubstitute;
 using NSubstitute.ExceptionExtensions;
 using WireCopy.Application.DTOs;
 using WireCopy.Application.Interfaces;
 using WireCopy.Infrastructure.Configuration;
-using WireCopy.Infrastructure.Podcast;
 using Xunit;
 
 namespace WireCopy.Tests.Podcast;
@@ -40,27 +38,38 @@ public class TtsValidationTests
 
     #endregion
 
-    #region ValidateApiKeyAsync — No Key
+    #region OpenAiKeyValidator — No Key
 
+    // Guards:   A missing OpenAI key is reported as "no_key" with a plain message,
+    //           without ever contacting OpenAI.
+    // Fails if: OpenAiKeyValidator.ValidateAsync(null) tries a network call, returns
+    //           Valid, or uses a different error code / message for the blank case.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~TtsValidationTests.OpenAiKeyValidator_NullKey_ReturnsNoKeyError"
     [Fact]
-    public async Task ValidateApiKeyAsync_NoKeyConfigured_ReturnsNoKeyError()
+    public async Task OpenAiKeyValidator_NullKey_ReturnsNoKeyError()
     {
-        var service = CreateTtsService(apiKey: null);
+        var validator = new OpenAiKeyValidator();
 
-        var result = await service.ValidateApiKeyAsync();
+        var result = await validator.ValidateAsync(null);
 
         result.IsValid.Should().BeFalse();
         result.ErrorCode.Should().Be("no_key");
-        result.ErrorMessage.Should().Contain("No API key");
+        result.ErrorMessage.Should().Be("No API key configured.");
     }
 
-    [Fact]
-    public async Task ValidateApiKeyAsync_EmptyOverride_ReturnsNoKeyError()
+    // Guards:   An empty or whitespace-only key counts as "not configured" (no_key),
+    //           the same as a null key.
+    // Fails if: ValidateAsync("") or ValidateAsync("   ") is sent to OpenAI as a real
+    //           key, or is classified as anything other than no_key.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~TtsValidationTests.OpenAiKeyValidator_BlankKey_ReturnsNoKeyError"
+    [Theory]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task OpenAiKeyValidator_BlankKey_ReturnsNoKeyError(string apiKey)
     {
-        var service = CreateTtsService(apiKey: null);
-        service.SetApiKeyOverride(string.Empty);
+        var validator = new OpenAiKeyValidator();
 
-        var result = await service.ValidateApiKeyAsync();
+        var result = await validator.ValidateAsync(apiKey);
 
         result.IsValid.Should().BeFalse();
         result.ErrorCode.Should().Be("no_key");
@@ -68,18 +77,68 @@ public class TtsValidationTests
 
     #endregion
 
-    #region ValidateApiKeyAsync — Cancellation
+    #region OpenAiKeyValidator — Cancellation
 
+    // Guards:   Cancelling the key check surfaces as OperationCanceledException so the
+    //           settings screen can tell "user backed out" from "key is bad".
+    // Fails if: ValidateAsync swallows cancellation and turns it into a
+    //           network_error / server_error result instead of rethrowing.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~TtsValidationTests.OpenAiKeyValidator_CancelledToken_ThrowsOperationCancelledException"
     [Fact]
-    public async Task ValidateApiKeyAsync_CancelledToken_ThrowsOperationCancelledException()
+    public async Task OpenAiKeyValidator_CancelledToken_ThrowsOperationCancelledException()
     {
-        var service = CreateTtsService(apiKey: "sk-test");
+        var validator = new OpenAiKeyValidator();
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
 
-        var act = () => service.ValidateApiKeyAsync(cts.Token);
+        var act = () => validator.ValidateAsync("sk-test", cts.Token);
 
         await act.Should().ThrowAsync<OperationCanceledException>();
+    }
+
+    #endregion
+
+    #region OpenAiKeyValidator — HTTP status classification (loopback fake server)
+
+    // Guards:   A 401 from the OpenAI endpoint is classified as "invalid_key" — the one
+    //           code the settings screen treats as "definitely wrong, clear the key".
+    // Fails if: the validator stops mapping HTTP 401 to invalid_key (e.g. falls through
+    //           to network_error), or ConfigureClientOptions no longer redirects the SDK
+    //           to the configured endpoint.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~TtsValidationTests.OpenAiKeyValidator_Http401_ReturnsInvalidKey"
+    [Fact]
+    public async Task OpenAiKeyValidator_Http401_ReturnsInvalidKey()
+    {
+        var port = GetFreePort();
+        var prefix = $"http://127.0.0.1:{port}/";
+        using var listener = new HttpListener();
+        listener.Prefixes.Add(prefix);
+        listener.Start();
+
+        // Answer every request with 401 and a minimal OpenAI-shaped error body.
+        var serverTask = Task.Run(async () =>
+        {
+            var context = await listener.GetContextAsync();
+            context.Response.StatusCode = 401;
+            context.Response.ContentType = "application/json";
+            var body = "{\"error\":{\"message\":\"Incorrect API key provided\",\"type\":\"invalid_request_error\",\"code\":\"invalid_api_key\"}}"u8.ToArray();
+            context.Response.ContentLength64 = body.Length;
+            await context.Response.OutputStream.WriteAsync(body);
+            context.Response.Close();
+        });
+
+        var validator = new OpenAiKeyValidator
+        {
+            ConfigureClientOptions = o => o.Endpoint = new Uri(prefix),
+        };
+
+        var result = await validator.ValidateAsync("sk-definitely-wrong");
+
+        result.IsValid.Should().BeFalse();
+        result.ErrorCode.Should().Be("invalid_key");
+        result.ErrorMessage.Should().Be("Invalid API key.");
+        await serverTask;
+        listener.Stop();
     }
 
     #endregion
@@ -395,10 +454,13 @@ public class TtsValidationTests
 
     #region Helpers
 
-    private static OpenAiTtsService CreateTtsService(string? apiKey)
+    private static int GetFreePort()
     {
-        var config = Options.Create(new OpenAiTtsConfiguration { ApiKey = apiKey });
-        return new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance);
+        var probe = new System.Net.Sockets.TcpListener(IPAddress.Loopback, 0);
+        probe.Start();
+        var port = ((IPEndPoint)probe.LocalEndpoint).Port;
+        probe.Stop();
+        return port;
     }
 
     #endregion

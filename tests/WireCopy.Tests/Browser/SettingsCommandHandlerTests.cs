@@ -6,13 +6,16 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using NSubstitute;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Browser;
+using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Browser.CommandHandlers;
 using WireCopy.Infrastructure.Configuration;
+using WireCopy.Infrastructure.Podcast.AudioEngine;
 using Xunit;
 
 namespace WireCopy.Tests.Browser;
@@ -43,8 +46,6 @@ public class SettingsCommandHandlerTests
         var navLogger = Substitute.For<ILogger<NavigationService>>();
         var navigationService = new NavigationService(navLogger);
 
-        var ttsOptions = Substitute.For<IOptions<OpenAiTtsConfiguration>>();
-        ttsOptions.Value.Returns(new OpenAiTtsConfiguration());
         var hierarchyOptions = Substitute.For<IOptions<OpenAiHierarchyConfiguration>>();
         hierarchyOptions.Value.Returns(new OpenAiHierarchyConfiguration());
         var podcastOptions = Substitute.For<IOptions<PodcastConfiguration>>();
@@ -54,21 +55,17 @@ public class SettingsCommandHandlerTests
         var scope = Substitute.For<IServiceScope>();
         var serviceProvider = Substitute.For<IServiceProvider>();
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
-        serviceProvider.GetService(typeof(IOptions<OpenAiTtsConfiguration>)).Returns(ttsOptions);
         serviceProvider.GetService(typeof(IOptions<OpenAiHierarchyConfiguration>)).Returns(hierarchyOptions);
         serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>)).Returns(podcastOptions);
 
-        // workspace-2xej.7: the config screen resolves the local engine for the
-        // narration rows' readiness values on every render frame.
-        var chatterboxConfig = Options.Create(new ChatterboxConfiguration());
-        serviceProvider.GetService(typeof(WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxTtsService)).Returns(
-            new WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxTtsService(
-                new WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxSidecar(
-                    chatterboxConfig,
-                    Microsoft.Extensions.Logging.Abstractions.NullLogger<WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxSidecar>.Instance),
-                chatterboxConfig,
-                Microsoft.Extensions.Logging.Abstractions.NullLogger<WireCopy.Infrastructure.Podcast.Chatterbox.ChatterboxTtsService>.Instance,
-                _settingsStore));
+        // workspace-c3ec4.3: the config screen resolves the audio-engine narrator
+        // and its configuration for the narration rows' readiness values on every
+        // render frame.
+        var narrator = Substitute.For<IPodcastNarrator>();
+        narrator.CheckAsync(Arg.Any<CancellationToken>()).Returns(Status());
+        serviceProvider.GetService(typeof(IPodcastNarrator)).Returns(narrator);
+        serviceProvider.GetService(typeof(IOptions<AudioEngineConfiguration>))
+            .Returns(Microsoft.Extensions.Options.Options.Create(new AudioEngineConfiguration()));
         scope.ServiceProvider.Returns(serviceProvider);
         scopeFactory.CreateScope().Returns(scope);
 
@@ -391,4 +388,25 @@ public class SettingsCommandHandlerTests
     }
 
     #endregion
+
+    private static NarratorStatus Status(
+        bool reachable = true,
+        bool openAiConfigured = true,
+        bool chatterboxConfigured = true) =>
+        new()
+        {
+            Url = "http://127.0.0.1:8080",
+            Reachable = reachable,
+            Authorized = reachable,
+            Ready = reachable && openAiConfigured,
+            EngineName = "openai",
+            EngineConfigured = openAiConfigured,
+            Engines =
+            [
+                new NarratorEngine("openai", openAiConfigured, [], "nova"),
+                new NarratorEngine("chatterbox", chatterboxConfigured, [], "builtin"),
+            ],
+            Message = reachable ? "ok" : "connection refused",
+            ErrorKind = reachable ? NarrationErrorKind.None : NarrationErrorKind.Unreachable,
+        };
 }
