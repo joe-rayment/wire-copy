@@ -201,7 +201,10 @@ public class PodcastOrchestratorTests : IDisposable
     /// A successful narration whose <see cref="NarrationResult.OutputPath"/> is a small real file
     /// under <see cref="_tempDir"/>, so anything downstream that stats or reads the audio finds it.
     /// </summary>
-    private NarrationResult SuccessfulNarration(string fileName = "narration.m4b", decimal costUsd = 0m)
+    private NarrationResult SuccessfulNarration(
+        string fileName = "narration.m4b",
+        decimal costUsd = 0m,
+        IReadOnlyList<NarrationSkippedChapter>? skipped = null)
     {
         var path = Path.Combine(_tempDir, fileName);
         File.WriteAllBytes(path, new byte[] { 1, 2, 3, 4 });
@@ -212,8 +215,20 @@ public class PodcastOrchestratorTests : IDisposable
             Bytes = 4,
             Duration = TimeSpan.FromSeconds(30),
             CostUsd = costUsd,
+            SkippedChapters = skipped ?? [],
         };
     }
+
+    /// <summary>
+    /// A failed narration result carrying the narrator's own message and error kind, the way
+    /// audio-engine reports synthesis, assembly and budget problems.
+    /// </summary>
+    private static NarrationResult FailedNarration(string message, NarrationErrorKind kind = NarrationErrorKind.Failed) => new()
+    {
+        Success = false,
+        ErrorMessage = message,
+        ErrorKind = kind,
+    };
 
     /// <summary>
     /// Sets up a complete happy-path pipeline for one article. Narration itself is covered by the
@@ -237,16 +252,19 @@ public class PodcastOrchestratorTests : IDisposable
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
+    // Guards:   an unconfigured narrator fails fast with an audio-engine message before any extraction
+    // Fails if: the IsConfigured preflight is removed or its message no longer names audio-engine
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_TtsNotConfigured_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_TtsNotConfigured_ReturnsFailure()
     {
-        _ttsService.IsConfigured.Returns(false);
+        _narrator.IsConfigured.Returns(false);
         var collection = CreateCollection("https://example.com/a");
 
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("Narration isn't ready");
+        result.ErrorMessage.Should().Contain("audio-engine");
     }
 
     #endregion
@@ -403,20 +421,31 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — TTS Failures
 
+    // Guards:   a failed narration result becomes a failure whose message is the narrator's error
+    // Fails if: the narrator's ErrorMessage is replaced or ignored
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_SingleArticleTtsFails_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_SingleArticleTtsFails_ReturnsFailure()
     {
         var url = "https://example.com/fail";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(FailedNarration("audio-engine: synthesis failed"));
 
         var collection = CreateCollection(url);
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("All articles failed TTS generation");
+        result.ErrorMessage.Should().Be("audio-engine: synthesis failed");
     }
 
+    // Guards:   a narration that skips one of two chapters still succeeds with 1 processed and 1 failed
+    // Fails if: SkippedChapters stop reducing ArticlesProcessed or raising ArticlesFailed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PartialTtsFailure_StillSucceeds"
     [Fact]
     public async Task GeneratePodcastAsync_PartialTtsFailure_StillSucceeds()
     {
@@ -427,20 +456,12 @@ public class PodcastOrchestratorTests : IDisposable
             (url1, CreateExtractedArticle(url1, "Good Article")),
             (url2, CreateExtractedArticle(url2, "Bad Article")));
 
-        // Match by title parameter (2nd arg) which is unique per article
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Good Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
+        // audio-engine narrates the first chapter and skips the second (index 1)
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
-
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Bad Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Failure("TTS API error"));
+            .Returns(_ => SuccessfulNarration(skipped: [new NarrationSkippedChapter(1, "Bad Article", "Quota exceeded")]));
 
         SetupPublishSuccess();
 
@@ -452,6 +473,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticlesFailed.Should().Be(1);
     }
 
+    // Guards:   a skipped chapter appears in FailedArticleDetails with its title, reason and source url
+    // Fails if: SkippedChapters are not mapped to ArticleFailure entries
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PartialTtsFailure_IncludesFailureDetails"
     [Fact]
     public async Task GeneratePodcastAsync_PartialTtsFailure_IncludesFailureDetails()
     {
@@ -462,27 +486,22 @@ public class PodcastOrchestratorTests : IDisposable
             (url1, CreateExtractedArticle(url1, "Good Article")),
             (url2, CreateExtractedArticle(url2, "Bad Article")));
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Good Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
+        // audio-engine skips the second chapter (index 1) and says why
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
-
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Bad Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Failure("Quota exceeded"));
+            .Returns(_ => SuccessfulNarration(skipped: [new NarrationSkippedChapter(1, "Bad Article", "Quota exceeded")]));
 
         SetupPublishSuccess();
 
         var collection = CreateCollection(url1, url2);
         var result = await _sut.GeneratePodcastAsync(collection);
 
+        result.Success.Should().BeTrue();
         result.FailedArticleDetails.Should().ContainSingle(f => f.Title == "Bad Article");
         result.FailedArticleDetails[0].Reason.Should().Contain("Quota exceeded");
+        result.FailedArticleDetails[0].Url.Should().Be(url2);
     }
 
     #endregion
@@ -606,6 +625,9 @@ public class PodcastOrchestratorTests : IDisposable
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    // Guards:   cancellation raised inside the narrator propagates as OperationCanceledException
+    // Fails if: the orchestrator swallows the cancellation into a failure result
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_CancelledDuringTts_ThrowsOperationCanceledException"
     [Fact]
     public async Task GeneratePodcastAsync_CancelledDuringTts_ThrowsOperationCanceledException()
     {
@@ -615,16 +637,15 @@ public class PodcastOrchestratorTests : IDisposable
 
         using var cts = new CancellationTokenSource();
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 await cts.CancelAsync();
-                callInfo.ArgAt<CancellationToken>(3).ThrowIfCancellationRequested();
-                return TtsGenerationResult.Failure("Should not reach here");
+                callInfo.ArgAt<CancellationToken>(2).ThrowIfCancellationRequested();
+                return FailedNarration("Should not reach here");
             });
 
         var collection = CreateCollection(url);
@@ -637,6 +658,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Exception Handling
 
+    // Guards:   a non-cancellation exception from the narrator becomes a failure result carrying its message
+    // Fails if: the orchestrator lets the exception escape or drops the message
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_UnexpectedExceptionDuringTts_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_UnexpectedExceptionDuringTts_ReturnsFailure()
     {
@@ -644,10 +668,9 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Network error"));
 
@@ -1278,6 +1301,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticlesProcessed.Should().Be(1);
     }
 
+    // Guards:   when every article fails the quality gate, the narrator is never called
+    // Fails if: the orchestrator narrates an empty chapter list
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_QualitySkippedArticle_DoesNotCallTts"
     [Fact]
     public async Task GeneratePodcastAsync_QualitySkippedArticle_DoesNotCallTts()
     {
@@ -1288,10 +1314,9 @@ public class PodcastOrchestratorTests : IDisposable
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _ttsService.DidNotReceive().GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
+        await _narrator.DidNotReceive().NarrateAsync(
+            Arg.Any<NarrationRequest>(),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
