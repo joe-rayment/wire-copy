@@ -36,9 +36,7 @@ public class PodcastOrchestratorTests : IDisposable
     private readonly IArticleContentCache _articleCache;
 
     // Direct dependencies of PodcastOrchestrator
-    private readonly ITtsService _ttsService;
-    private readonly ITtsAudioCache _audioCache;
-    private readonly IAudioAssembler _audioAssembler;
+    private readonly IPodcastNarrator _narrator;
     private readonly IPodcastPublisher _publisher;
 
     private readonly PodcastOrchestrator _sut;
@@ -70,9 +68,7 @@ public class PodcastOrchestratorTests : IDisposable
             NullLogger<ReadingListContentProvider>.Instance);
 
         // Direct dependencies
-        _ttsService = Substitute.For<ITtsService>();
-        _audioCache = Substitute.For<ITtsAudioCache>();
-        _audioAssembler = Substitute.For<IAudioAssembler>();
+        _narrator = Substitute.For<IPodcastNarrator>();
         _publisher = Substitute.For<IPodcastPublisher>();
 
         _tempDir = Path.Combine(Path.GetTempPath(), $"podcast-orch-test-{Guid.NewGuid():N}");
@@ -88,26 +84,23 @@ public class PodcastOrchestratorTests : IDisposable
             TempDirectory = _tempDir,
         });
 
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
-        {
-            ApiKey = "test-key",
-            MaxBudgetUsd = 5.00m,
-        });
-
         _sut = new PodcastOrchestrator(
             contentProvider,
-            _ttsService,
-            _audioCache,
-            _audioAssembler,
+            _narrator,
             _publisher,
             podcastConfig,
-            ttsConfig,
             NullLogger<PodcastOrchestrator>.Instance);
 
-        // Default: TTS is configured, FFmpeg is available
-        _ttsService.IsConfigured.Returns(true);
-        _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
+        // Default: narrator is configured, estimates succeed, narration writes a small fake audio file
+        _narrator.IsConfigured.Returns(true);
+        _narrator.EngineName.Returns("openai");
+        _narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate { Success = true });
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => SuccessfulNarration());
     }
 
     public void Dispose()
@@ -205,17 +198,31 @@ public class PodcastOrchestratorTests : IDisposable
     }
 
     /// <summary>
-    /// Sets up a complete happy-path pipeline for one article.
+    /// A successful narration whose <see cref="NarrationResult.OutputPath"/> is a small real file
+    /// under <see cref="_tempDir"/>, so anything downstream that stats or reads the audio finds it.
+    /// </summary>
+    private NarrationResult SuccessfulNarration(string fileName = "narration.m4b")
+    {
+        var path = Path.Combine(_tempDir, fileName);
+        File.WriteAllBytes(path, new byte[] { 1, 2, 3, 4 });
+        return new NarrationResult
+        {
+            Success = true,
+            OutputPath = path,
+            Bytes = 4,
+            Duration = TimeSpan.FromSeconds(30),
+            CostUsd = 0m,
+        };
+    }
+
+    /// <summary>
+    /// Sets up a complete happy-path pipeline for one article. Narration itself is covered by the
+    /// constructor's default <see cref="_narrator"/> stub.
     /// </summary>
     private void SetupHappyPath(string url = "https://example.com/article1")
     {
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
     }
 
@@ -1341,11 +1348,11 @@ public class PodcastOrchestratorTests : IDisposable
             articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
-        var ttsService = Substitute.For<ITtsService>();
-        ttsService.IsConfigured.Returns(true);
-        var audioCache = Substitute.For<ITtsAudioCache>();
-        var audioAssembler = Substitute.For<IAudioAssembler>();
-        audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
+        var narrator = Substitute.For<IPodcastNarrator>();
+        narrator.IsConfigured.Returns(true);
+        narrator.EngineName.Returns("openai");
+        narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate { Success = true });
         var publisher = Substitute.For<IPodcastPublisher>();
 
         var pConfig = Options.Create(podcastConfig ?? new PodcastConfiguration
@@ -1357,16 +1364,12 @@ public class PodcastOrchestratorTests : IDisposable
             Category = "Tech",
             // Leave OutputFolderPath null → falls back to LocalAppData default in ResolveOutputFolderPath.
         });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { ApiKey = "x" });
 
         var sut = new PodcastOrchestrator(
             contentProvider,
-            ttsService,
-            audioCache,
-            audioAssembler,
+            narrator,
             publisher,
             pConfig,
-            ttsConfig,
             NullLogger<PodcastOrchestrator>.Instance,
             store);
 
@@ -1559,48 +1562,16 @@ public class PodcastOrchestratorTests : IDisposable
     [Fact]
     public async Task GeneratePodcastAsync_PublishFails_WithBucketConfigured_ReturnsTotalFailureWithTypedDetail()
     {
-        var (sut, store, publisher, audioAssembler, audioCacheLocal, ttsService, articleCache) = BuildOrchestratorAllSubs();
+        var (sut, store, publisher, narrator, articleCache) = BuildOrchestratorAllSubs();
         store.Get("GcsBucketName").Returns("my-bucket");
 
         const string url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         articleCache.TryGetAsync(url, Arg.Any<CancellationToken>()).Returns(article);
 
-        audioCacheLocal.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
-            .Returns(new CacheAnalysis
-            {
-                TotalArticles = 1,
-                CachedArticles = 0,
-                UncachedArticles = 1,
-                EstimatedCost = 0.05m,
-                ArticleStatuses = [],
-            });
-
-        audioCacheLocal.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((TtsAudioCacheEntry?)null);
-
-        ttsService.GenerateAudioAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TtsProgress>>(), Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
-
-        audioCacheLocal.PutAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "k",
-                AudioFilePath = Path.Combine(_tempDir, "seg.aac"),
-                FileSizeBytes = 1,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "h",
-                TtsConfigHash = "c",
-            });
-
-        audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Successful(
-                Path.Combine(_tempDir, "out.m4b"),
-                TimeSpan.FromMinutes(5),
-                1024,
-                new List<AudioChapterMarker> { new() { Title = "C1", StartTime = TimeSpan.Zero } }));
+        narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulNarration());
 
         publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
@@ -1635,37 +1606,16 @@ public class PodcastOrchestratorTests : IDisposable
     [Fact]
     public async Task GeneratePodcastAsync_PublishFails_WithoutBucketConfigured_StillReturnsLocalOnlySuccess()
     {
-        var (sut, store, publisher, audioAssembler, audioCacheLocal, ttsService, articleCache) = BuildOrchestratorAllSubs();
+        var (sut, store, publisher, narrator, articleCache) = BuildOrchestratorAllSubs();
         store.Get("GcsBucketName").Returns((string?)null);
 
         const string url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         articleCache.TryGetAsync(url, Arg.Any<CancellationToken>()).Returns(article);
 
-        audioCacheLocal.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
-            .Returns(new CacheAnalysis
-            {
-                TotalArticles = 1, CachedArticles = 0, UncachedArticles = 1,
-                EstimatedCost = 0.05m, ArticleStatuses = [],
-            });
-        audioCacheLocal.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((TtsAudioCacheEntry?)null);
-        ttsService.GenerateAudioAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TtsProgress>>(), Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
-        audioCacheLocal.PutAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "k", AudioFilePath = Path.Combine(_tempDir, "seg.aac"),
-                FileSizeBytes = 1, CachedAtUtc = DateTime.UtcNow, ContentHash = "h", TtsConfigHash = "c",
-            });
-        audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Successful(
-                Path.Combine(_tempDir, "out.m4b"),
-                TimeSpan.FromMinutes(5),
-                1024,
-                new List<AudioChapterMarker> { new() { Title = "C1", StartTime = TimeSpan.Zero } }));
+        narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulNarration());
         publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
                 Arg.Any<IProgress<PublishProgress>?>(), Arg.Any<CancellationToken>())
@@ -1691,9 +1641,7 @@ public class PodcastOrchestratorTests : IDisposable
         PodcastOrchestrator sut,
         IUserSettingsStore store,
         IPodcastPublisher publisher,
-        IAudioAssembler audioAssembler,
-        ITtsAudioCache audioCache,
-        ITtsService ttsService,
+        IPodcastNarrator narrator,
         IArticleContentCache articleCache) BuildOrchestratorAllSubs()
     {
         var store = Substitute.For<IUserSettingsStore>();
@@ -1719,11 +1667,11 @@ public class PodcastOrchestratorTests : IDisposable
             articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
-        var ttsService = Substitute.For<ITtsService>();
-        ttsService.IsConfigured.Returns(true);
-        var audioCache = Substitute.For<ITtsAudioCache>();
-        var audioAssembler = Substitute.For<IAudioAssembler>();
-        audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
+        var narrator = Substitute.For<IPodcastNarrator>();
+        narrator.IsConfigured.Returns(true);
+        narrator.EngineName.Returns("openai");
+        narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate { Success = true });
         var publisher = Substitute.For<IPodcastPublisher>();
 
         var pConfig = Options.Create(new PodcastConfiguration
@@ -1735,20 +1683,16 @@ public class PodcastOrchestratorTests : IDisposable
             Category = "Technology",
             TempDirectory = _tempDir,
         });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { ApiKey = "test-key", MaxBudgetUsd = 5.00m });
 
         var sut = new PodcastOrchestrator(
             contentProvider,
-            ttsService,
-            audioCache,
-            audioAssembler,
+            narrator,
             publisher,
             pConfig,
-            ttsConfig,
             NullLogger<PodcastOrchestrator>.Instance,
             store);
 
-        return (sut, store, publisher, audioAssembler, audioCache, ttsService, articleCache);
+        return (sut, store, publisher, narrator, articleCache);
     }
 
     #endregion
