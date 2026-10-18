@@ -14,66 +14,6 @@ public class PodcastSetupTests
 {
     #region TTS API Key Override
 
-    [Fact]
-    public void SetApiKeyOverride_SetsKeyAndBecomesConfigured()
-    {
-        var service = CreateTtsService(apiKey: null);
-
-        service.IsConfigured.Should().BeFalse("no key set yet");
-
-        service.SetApiKeyOverride("sk-test-key");
-
-        service.IsConfigured.Should().BeTrue("override key was set");
-    }
-
-    [Fact]
-    public void SetApiKeyOverride_OverridesConfigKey()
-    {
-        var service = CreateTtsService(apiKey: "config-key");
-        service.IsConfigured.Should().BeTrue();
-
-        service.SetApiKeyOverride("override-key");
-
-        // Override takes priority — service should still be configured
-        service.IsConfigured.Should().BeTrue();
-    }
-
-    [Fact]
-    public void SetApiKeyOverride_WhitespaceOnly_RemainsNotConfigured()
-    {
-        var service = CreateTtsService(apiKey: null);
-
-        service.SetApiKeyOverride("   ");
-
-        service.IsConfigured.Should().BeFalse("whitespace-only key is treated as unconfigured");
-    }
-
-    [Fact]
-    public void SetApiKeyOverride_EmptyString_RemainsNotConfigured()
-    {
-        var service = CreateTtsService(apiKey: null);
-
-        service.SetApiKeyOverride(string.Empty);
-
-        service.IsConfigured.Should().BeFalse("empty string key is treated as unconfigured");
-    }
-
-    [Fact]
-    public void IsConfigured_NoKeyAnywhere_ReturnsFalse()
-    {
-        var service = CreateTtsService(apiKey: null);
-
-        service.IsConfigured.Should().BeFalse();
-    }
-
-    [Fact]
-    public void IsConfigured_ConfigKeySet_ReturnsTrue()
-    {
-        var service = CreateTtsService(apiKey: "sk-from-config");
-
-        service.IsConfigured.Should().BeTrue();
-    }
-
     #endregion
 
     #region GCS Bucket Validation
@@ -129,13 +69,4 @@ public class PodcastSetupTests
 
     #endregion
 
-    #region Helpers
-
-    private static OpenAiTtsService CreateTtsService(string? apiKey)
-    {
-        var config = Options.Create(new OpenAiTtsConfiguration { ApiKey = apiKey });
-        return new OpenAiTtsService(config, NullLogger<OpenAiTtsService>.Instance);
-    }
-
-    #endregion
 }

@@ -63,7 +63,6 @@ public class DependencyInjectionTests : IDisposable
     [InlineData(typeof(INavigationTreeBuilder))]
     [InlineData(typeof(IReadableContentExtractor))]
     [InlineData(typeof(IInputHandler))]
-    [InlineData(typeof(ITtsService))]
     [InlineData(typeof(IPodcastFeedGenerator))]
     [InlineData(typeof(ICloudStorageClient))]
     [InlineData(typeof(IPodcastPublisher))]

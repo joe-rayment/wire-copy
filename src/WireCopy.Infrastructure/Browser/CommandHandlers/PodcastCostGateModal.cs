@@ -35,10 +35,9 @@ internal static class PodcastCostGateModal
 
     /// <summary>
     /// Roughly how many minutes the listener will get out of one uncached
-    /// article on the default OpenAI TTS voice. Matches
-    /// <c>OpenAiTtsService.MinutesPerArticle</c>'s rule-of-thumb so the
+    /// article on the default OpenAI TTS voice (rule-of-thumb so the
     /// estimated duration here lines up with the duration the orchestrator
-    /// emits when generation actually runs.
+    /// emits when generation actually runs).
     /// </summary>
     private const double MinutesPerArticleUncached = 3.5;
 

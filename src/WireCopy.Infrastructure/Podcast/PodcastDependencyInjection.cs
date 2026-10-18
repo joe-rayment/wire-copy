@@ -37,10 +37,6 @@ public static class PodcastDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(GcsConfiguration.SectionName).Bind(opts));
 
-        services.AddOptions<TtsAudioCacheConfiguration>()
-            .Configure<IConfiguration>((opts, config) =>
-                config.GetSection(TtsAudioCacheConfiguration.SectionName).Bind(opts));
-
         services.AddOptions<AudioEngineConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(AudioEngineConfiguration.SectionName).Bind(opts));
@@ -49,19 +45,15 @@ public static class PodcastDependencyInjection
         services.AddSingleton<IValidateOptions<OpenAiTtsConfiguration>, OpenAiTtsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<PodcastConfiguration>, PodcastConfigurationValidator>();
         services.AddSingleton<IValidateOptions<GcsConfiguration>, GcsConfigurationValidator>();
-        services.AddSingleton<IValidateOptions<TtsAudioCacheConfiguration>, TtsAudioCacheConfigurationValidator>();
 
         // Register user settings store (must be before services that consume it)
         services.AddSingleton<IUserSettingsStore, UserSettingsStore>();
 
         // Register services.
-        services.AddSingleton<OpenAiTtsService>();
-        services.AddSingleton<ITtsService>(sp => sp.GetRequiredService<OpenAiTtsService>());
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
         services.AddSingleton<IFeedReachabilityProbe, HttpFeedReachabilityProbe>();
         services.AddSingleton<IPodcastPublisher, PodcastPublisher>();
-        services.AddSingleton<ITtsAudioCache, FileSystemTtsAudioCache>();
         services.AddSingleton<IArticleContentCache, ArticleContentCache>();
         services.AddSingleton<ReadingListContentProvider>();
         services.AddSingleton<OutputFolderPurger>();

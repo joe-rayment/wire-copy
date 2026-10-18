@@ -49,26 +49,13 @@ public class PodcastPipelineIntegrationTests : IDisposable
     {
         var services = BuildServiceProvider();
 
-        var tts = services.GetService<ITtsService>();
+        var narrator = services.GetService<IPodcastNarrator>();
         var publisher = services.GetService<IPodcastPublisher>();
         var orchestrator = services.GetService<IPodcastOrchestrator>();
 
-        tts.Should().NotBeNull();
+        narrator.Should().NotBeNull();
         publisher.Should().NotBeNull();
         orchestrator.Should().NotBeNull();
-    }
-
-    [Fact(Skip = "Requires OpenAI API key, FFmpeg, GCS credentials, and browser stack")]
-    public void TtsService_WithApiKey_IsConfigured()
-    {
-        var services = BuildServiceProvider();
-        var tts = services.GetRequiredService<ITtsService>();
-
-        // Only passes when OPENAI_API_KEY or config key is set
-        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY")))
-        {
-            tts.IsConfigured.Should().BeTrue();
-        }
     }
 
     [Fact(Skip = "Requires OpenAI API key, FFmpeg, GCS credentials, and browser stack")]
