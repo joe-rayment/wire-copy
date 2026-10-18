@@ -4,13 +4,10 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs;
-using WireCopy.Application.DTOs.Audio;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces;
-using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Entities.Collections;
-using WireCopy.Domain.ValueObjects.Audio;
 using WireCopy.Domain.ValueObjects.Podcast;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Storage;
@@ -19,7 +16,8 @@ namespace WireCopy.Infrastructure.Podcast;
 
 /// <summary>
 /// Orchestrates the end-to-end podcast generation pipeline:
-/// content extraction, TTS generation, M4B assembly, and feed publishing.
+/// content extraction, narration (one audio-engine job per run, via
+/// <see cref="IPodcastNarrator"/>), and feed publishing.
 /// </summary>
 internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 {
@@ -34,12 +32,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     private static readonly TimeSpan JobJournalDebounceInterval = TimeSpan.FromSeconds(1);
 
     private readonly ReadingListContentProvider _contentProvider;
-    private readonly ITtsService _ttsService;
-    private readonly ITtsAudioCache _audioCache;
-    private readonly IAudioAssembler _audioAssembler;
+    private readonly IPodcastNarrator _narrator;
     private readonly IPodcastPublisher _publisher;
     private readonly PodcastConfiguration _podcastConfig;
-    private readonly OpenAiTtsConfiguration _ttsConfig;
     private readonly IUserSettingsStore? _settingsStore;
     private readonly IServiceScopeFactory? _scopeFactory;
     private readonly ILogger<PodcastOrchestrator> _logger;
@@ -57,23 +52,17 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
     public PodcastOrchestrator(
         ReadingListContentProvider contentProvider,
-        ITtsService ttsService,
-        ITtsAudioCache audioCache,
-        IAudioAssembler audioAssembler,
+        IPodcastNarrator narrator,
         IPodcastPublisher publisher,
         IOptions<PodcastConfiguration> podcastConfig,
-        IOptions<OpenAiTtsConfiguration> ttsConfig,
         ILogger<PodcastOrchestrator> logger,
         IUserSettingsStore? settingsStore = null,
         IServiceScopeFactory? scopeFactory = null)
     {
         _contentProvider = contentProvider;
-        _ttsService = ttsService;
-        _audioCache = audioCache;
-        _audioAssembler = audioAssembler;
+        _narrator = narrator;
         _publisher = publisher;
         _podcastConfig = podcastConfig.Value;
-        _ttsConfig = ttsConfig.Value;
         _settingsStore = settingsStore;
         _scopeFactory = scopeFactory;
         _logger = logger;
@@ -136,23 +125,12 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         _logger.LogInformation("Starting podcast generation for '{Collection}'", collection.Name);
 
         // Step 1: Pre-flight checks
-        // workspace-pvr6: untyped failure — PodcastFailureClassifier's heuristic
-        // matches "API key" / "not configured" and routes to the credentials
-        // remediation copy without needing a typed FailureDetail here. Typing
-        // would duplicate string-pattern-matching with no user-visible gain.
-        if (!_ttsService.IsConfigured)
+        // The "audio-engine" prefix routes the failure to the narration-setup remediation
+        // copy in PodcastFailureClassifier (workspace-pvr6: untyped on purpose).
+        if (!_narrator.IsConfigured)
         {
-            // Engine-neutral (workspace-2xej.10): the orchestrator has no engine
-            // context, and the copy must be true for both OpenAI and the local
-            // engine. The per-engine specifics live in the p-flow preflight.
-            return PodcastResult.Failure("Narration isn't ready — press c (Settings) → Narration engine to finish setup.");
-        }
-
-        // workspace-pvr6: untyped — classifier's "FFmpeg" pattern produces the
-        // brew/apt install remediation. No upside to typing.
-        if (!await _audioAssembler.ValidatePrerequisitesAsync(cancellationToken).ConfigureAwait(false))
-        {
-            return PodcastResult.Failure("FFmpeg is not installed or not found in PATH.");
+            return PodcastResult.Failure(
+                "audio-engine isn't set up: set its address and API key in Settings -> Podcast narration.");
         }
 
         // workspace-hzjs (F.3): persist a Running PodcastJob row so generation
@@ -258,6 +236,39 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         return string.Join("\n", parts);
     }
 
+    /// <summary>
+    /// Maps an audio-engine <see cref="NarrationProgress"/> onto the <see cref="PodcastProgress"/>
+    /// bands the UI expects: narration occupies 10..70 %, assembly sits at 70 %.
+    /// </summary>
+    private static PodcastProgress MapNarrationProgress(NarrationProgress p, int chapterCount, TimeSpan elapsed)
+    {
+        if (p.Phase == NarrationPhase.Assembling)
+        {
+            return new PodcastProgress
+            {
+                Phase = PodcastPhase.AssemblingAudio,
+                PercentComplete = 70,
+                TotalArticles = p.ChaptersTotal ?? chapterCount,
+                Message = p.Message ?? "Assembling M4B audiobook...",
+                PhaseElapsed = elapsed,
+            };
+        }
+
+        return new PodcastProgress
+        {
+            Phase = PodcastPhase.GeneratingAudio,
+            PercentComplete = 10 + (int)(Math.Min(p.Fraction, 0.9) / 0.9 * 60),
+            CurrentArticle = p.ChapterIndex.HasValue ? p.ChapterIndex.Value + 1 : 0,
+            TotalArticles = p.ChaptersTotal ?? chapterCount,
+            ArticleTitle = p.ChapterTitle,
+            CurrentArticleChunkIndex = p.ChunksDone,
+            CurrentArticleChunkTotal = p.ChunksTotal,
+            CurrentArticleChunkPercent = p.ChunksTotal > 0 ? p.ChunksDone * 100.0 / p.ChunksTotal : 0,
+            Message = p.Message,
+            PhaseElapsed = elapsed,
+        };
+    }
+
     private static string SanitizeFileName(string name) => FileNameSanitizer.Sanitize(name);
 
     /// <summary>
@@ -341,6 +352,26 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         return wordCount;
     }
 
+    private NarrationRequest BuildNarrationRequest(
+        Collection collection,
+        IReadOnlyList<NarrationChapter> chapters,
+        string outputPath) => new()
+        {
+            Title = $"{_podcastConfig.Title}: {collection.Name}",
+            Author = _podcastConfig.Author,
+            Album = _podcastConfig.Title,
+            Description = _podcastConfig.Description,
+            Genre = "Podcast",
+
+            // workspace-yg9l: embed the WIRE COPY cover art so macOS Music / Apple
+            // Podcasts / VLC render the wordmark as album art. audio-engine ignores
+            // a missing file.
+            CoverArtPath = ResolveCoverArtPath(),
+            Chapters = chapters,
+            OutputPath = outputPath,
+            ListId = collection.Id.ToString(),
+        };
+
     private async Task<PodcastResult> GeneratePodcastCoreAsync(
         Collection collection,
         IProgress<PodcastProgress>? progress,
@@ -348,10 +379,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     {
         // All pipeline state declared up-front so catch/finally blocks can access them
         IReadOnlyList<ArticleFailure> extractionFailures = [];
-        var segments = new List<ArticleAudioSegment>();
-        var ttsFailures = new List<ArticleFailure>();
-        TempFileManager? tempFiles = null;
-        var keepTempDir = false;
 
         try
         {
@@ -481,290 +508,71 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     qualityFailures.Count);
             }
 
-            // Step 3: Estimate cost (accounting for cached articles) and check budget
-            var cacheAnalysis = await _audioCache.AnalyzeCollectionAsync(
-                articles.Select(a => (a.Url, a.Title, BuildSpokenText(a))).ToList(),
-                cancellationToken).ConfigureAwait(false);
+            // Step 3: Narrate. One audio-engine job per run: WireCopy sends each article's
+            // spoken text as a chapter; audio-engine owns TTS, audio caching, assembly and
+            // the cost budget, and returns the finished m4b at outputPath.
+            var chapters = articles
+                .Select(a => new NarrationChapter(a.Title, BuildSpokenText(a), a.Url))
+                .ToList();
 
-            var totalCost = cacheAnalysis.EstimatedCost;
+            // Final M4B lands in the persistent output folder, so the user can reliably
+            // find it and the path on the success screen points at a file that survives.
+            var outputPath = GetOutputFilePath(collection.Name);
+            var narrationRequest = BuildNarrationRequest(collection, chapters, outputPath);
 
-            if (totalCost > _ttsConfig.MaxBudgetUsd)
-            {
-                // workspace-pvr6: untyped — classifier matches "budget"/"cost"
-                // and routes to the cost-gate remediation.
-                return PodcastResult.Failure(
-                    $"Estimated cost ${totalCost:F4} exceeds budget ${_ttsConfig.MaxBudgetUsd:F2}. " +
-                    $"Reduce articles or increase MaxBudgetUsd.",
-                    failedArticleDetails: extractionFailures);
-            }
-
-            _logger.LogInformation(
-                "Estimated TTS cost: ${Cost:F4} for {Count} articles ({Cached} cached, {Uncached} need generation)",
-                totalCost,
-                articles.Count,
-                cacheAnalysis.CachedArticles,
-                cacheAnalysis.UncachedArticles);
-
-            // Step 4: Generate TTS audio for each article
-            tempFiles = new TempFileManager(_podcastConfig.TempDirectory, _logger);
-
-            // workspace-74zy: stopwatch per phase + cache-hit count emission so
-            // a downstream weighted-ETA consumer can correctly weight
-            // upload-bound vs. TTS-bound runs without inferring it from the
-            // text itself.
+            // workspace-74zy: stopwatch per phase so a downstream weighted-ETA consumer can
+            // weight upload-bound vs. TTS-bound runs without inferring it from the text.
             var audioPhaseStopwatch = System.Diagnostics.Stopwatch.StartNew();
             progress?.Report(new PodcastProgress
             {
                 Phase = PodcastPhase.GeneratingAudio,
-                TotalArticles = articles.Count,
+                TotalArticles = chapters.Count,
                 PercentComplete = 10,
-                CachedArticleCount = cacheAnalysis.CachedArticles,
-                UncachedArticleCount = cacheAnalysis.UncachedArticles,
-                Message = $"{cacheAnalysis.CachedArticles} cached · {cacheAnalysis.UncachedArticles} need TTS",
+                Message = "Sending articles to audio-engine...",
                 PhaseElapsed = audioPhaseStopwatch.Elapsed,
             });
 
-            for (var i = 0; i < articles.Count; i++)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-
-                var article = articles[i];
-                progress?.Report(new PodcastProgress
-                {
-                    Phase = PodcastPhase.GeneratingAudio,
-                    CurrentArticle = i + 1,
-                    TotalArticles = articles.Count,
-                    ArticleTitle = article.Title,
-                    PercentComplete = 10 + (int)((i + 1) * 60.0 / articles.Count),
-                    CachedArticleCount = cacheAnalysis.CachedArticles,
-                    UncachedArticleCount = cacheAnalysis.UncachedArticles,
-                    PhaseElapsed = audioPhaseStopwatch.Elapsed,
-                });
-
-                // Build spoken text with headline/author/date intro
-                var spokenText = BuildSpokenText(article);
-
-                // Check cache first
-                var cached = await _audioCache.TryGetAsync(spokenText, article.Url, cancellationToken).ConfigureAwait(false);
-                string audioPath;
-
-                if (cached != null)
-                {
-                    // Cache hit — use cached audio file directly
-                    audioPath = cached.AudioFilePath;
-                    progress?.Report(new PodcastProgress
-                    {
-                        Phase = PodcastPhase.GeneratingAudio,
-                        CurrentArticle = i + 1,
-                        TotalArticles = articles.Count,
-                        ArticleTitle = article.Title,
-                        PercentComplete = 10 + (int)((i + 1) * 60.0 / articles.Count),
-                        IsFromCache = true,
-                        CachedArticleCount = cacheAnalysis.CachedArticles,
-                        UncachedArticleCount = cacheAnalysis.UncachedArticles,
-                        PhaseElapsed = audioPhaseStopwatch.Elapsed,
-                    });
-                    _logger.LogInformation(
-                        "Using cached audio for '{Title}' (key={Key})",
-                        article.Title,
-                        cached.CacheKey);
-                }
-                else
-                {
-                    // workspace-74zy: forward TTS per-chunk progress through to
-                    // the podcast progress sink. Previously OpenAiTtsService
-                    // emitted TtsProgress per chunk but the orchestrator never
-                    // subscribed, so multi-chunk articles went silent during
-                    // synth. Now consumers see chunk index + percent for the
-                    // current article in real time.
-                    IProgress<TtsProgress>? ttsProgress = null;
-                    if (progress is not null)
-                    {
-                        var outerProgress = progress;
-                        var articleIndex = i + 1;
-                        var totalArticles = articles.Count;
-                        var title = article.Title;
-                        var stopwatch = audioPhaseStopwatch;
-                        var cachedSnapshot = cacheAnalysis.CachedArticles;
-                        var uncachedSnapshot = cacheAnalysis.UncachedArticles;
-                        ttsProgress = new SyncProgress<TtsProgress>(p => outerProgress.Report(new PodcastProgress
-                        {
-                            Phase = PodcastPhase.GeneratingAudio,
-                            CurrentArticle = articleIndex,
-                            TotalArticles = totalArticles,
-                            ArticleTitle = title,
-                            PercentComplete = 10 + (int)((articleIndex - 1 + (p.PercentComplete / 100.0)) * 60.0 / totalArticles),
-                            CurrentArticleChunkIndex = p.CurrentChunk,
-                            CurrentArticleChunkTotal = p.TotalChunks,
-                            CurrentArticleChunkPercent = p.PercentComplete,
-                            CachedArticleCount = cachedSnapshot,
-                            UncachedArticleCount = uncachedSnapshot,
-                            PhaseElapsed = stopwatch.Elapsed,
-                            Message = p.Message,
-
-                            // workspace-rz1c: carry retry state through so the
-                            // screen can render a "rate-limited, retrying" banner.
-                            IsRetrying = p.IsRetrying,
-                            RetryAttempt = p.RetryAttempt,
-                            RetryMaxAttempts = p.RetryMaxAttempts,
-                            RetryDelaySeconds = p.RetryDelaySeconds,
-                        }));
-                    }
-
-                    var ttsResult = await _ttsService.GenerateAudioAsync(
-                        spokenText,
-                        article.Title,
-                        ttsProgress,
-                        cancellationToken: cancellationToken).ConfigureAwait(false);
-
-                    if (!ttsResult.Success || ttsResult.AudioData == null)
-                    {
-                        _logger.LogWarning(
-                            "TTS failed for '{Title}': {Error}",
-                            article.Title,
-                            ttsResult.ErrorMessage);
-                        ttsFailures.Add(new ArticleFailure
-                        {
-                            Title = article.Title,
-                            Url = article.Url,
-                            Reason = ttsResult.ErrorMessage ?? "TTS generation failed",
-                        });
-
-                        // workspace-y3eg7: a fatal failure (bad/revoked key,
-                        // exhausted billing quota) will repeat for every
-                        // remaining article — stop the run on the first one
-                        // instead of re-issuing doomed requests. Like the
-                        // all-failed path, no partial episode is published.
-                        if (ttsResult.IsFatal)
-                        {
-                            return PodcastResult.Failure(
-                                $"{ttsResult.ErrorMessage} (stopped at article {i + 1}/{articles.Count})",
-                                failedArticleDetails: extractionFailures.Concat(ttsFailures).ToList());
-                        }
-
-                        continue;
-                    }
-
-                    // Store in cache. workspace-y3eg7: the cache is best-effort —
-                    // a disk-full / permission / index-save error must not throw
-                    // away audio that was already paid for, so on failure keep the
-                    // in-memory bytes by spilling them to a run-scoped temp file.
-                    try
-                    {
-                        var cacheEntry = await _audioCache.PutAsync(
-                            spokenText,
-                            article.Url,
-                            article.Title,
-                            ttsResult.AudioData,
-                            cancellationToken).ConfigureAwait(false);
-                        audioPath = cacheEntry.AudioFilePath;
-
-                        _logger.LogInformation(
-                            "Generated and cached audio for '{Title}' ({Chars} chars)",
-                            article.Title,
-                            ttsResult.CharactersProcessed);
-                    }
-                    catch (Exception ex) when (ex is not OperationCanceledException)
-                    {
-                        _logger.LogWarning(
-                            ex,
-                            "Could not cache audio for '{Title}'; continuing with the in-memory audio",
-                            article.Title);
-                        audioPath = tempFiles.GetTempFilePath($"article-{i + 1}-uncached.mp3");
-                        await File.WriteAllBytesAsync(audioPath, ttsResult.AudioData, cancellationToken).ConfigureAwait(false);
-                    }
-                }
-
-                // Duration left as TimeSpan.Zero so M4bAudioAssembler probes
-                // the actual audio file with FFProbe for accurate chapter markers.
-                segments.Add(new ArticleAudioSegment
-                {
-                    Title = article.Title,
-                    AudioFilePath = audioPath,
-                    Duration = TimeSpan.Zero,
-                    SourceUrl = article.Url,
-                });
-            }
-
-            var allFailures = extractionFailures.Concat(ttsFailures).ToList();
-
-            if (segments.Count == 0)
-            {
-                // workspace-pvr6: untyped — the per-article failure reasons in
-                // allFailures carry the typed 429/401/500 details from the TTS
-                // service. The result screen surfaces them inline; the
-                // classifier's TTS-error patterns produce a sensible Step/Fix
-                // line. No typed FailureDetail adds clarity here.
-                return PodcastResult.Failure(
-                    "All articles failed TTS generation.",
-                    failedArticleDetails: allFailures);
-            }
-
-            // Step 5: Assemble M4B
-            progress?.Report(new PodcastProgress
-            {
-                Phase = PodcastPhase.AssemblingAudio,
-                PercentComplete = 70,
-                Message = "Assembling M4B audiobook...",
-            });
-
-            // Final M4B lands in the persistent output folder, not the per-run temp dir,
-            // so the user can reliably find it and the path on the success screen
-            // points at a file that survives cleanup.
-            var outputPath = GetOutputFilePath(collection.Name);
-            var assemblyRequest = new AssemblyRequest
-            {
-                Segments = segments,
-                OutputPath = outputPath,
-                Metadata = new AudioMetadata
-                {
-                    Title = $"{_podcastConfig.Title}: {collection.Name}",
-                    Author = _podcastConfig.Author,
-                    Description = _podcastConfig.Description,
-                    Genre = "Podcast",
-
-                    // workspace-yg9l: embed the WIRE COPY cover art into the
-                    // M4B's user-data box so macOS Music / Apple Podcasts /
-                    // VLC render the wordmark as album art. Path resolves
-                    // relative to the running binary (Content item in
-                    // WireCopy.API.csproj copies assets/ to the bin dir).
-                    CoverArtPath = ResolveCoverArtPath(),
-                },
-            };
-
-            // workspace-74zy: stopwatch + assembly progress forwarding. The
-            // assembler ticks once per segment probe + a steady stream from
-            // FFmpeg's NotifyOnProgress callback during concat. We translate
-            // both into PodcastProgress events so the consumer can show a
-            // moving bar through the assembly phase.
-            var assemblyPhaseStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            IProgress<AssemblyProgress>? assemblyProgress = null;
+            IProgress<NarrationProgress>? narrationProgress = null;
             if (progress is not null)
             {
                 var outerProgress = progress;
-                var stopwatch = assemblyPhaseStopwatch;
-                assemblyProgress = new SyncProgress<AssemblyProgress>(p => outerProgress.Report(new PodcastProgress
+                var stopwatch = audioPhaseStopwatch;
+                var chapterCount = chapters.Count;
+                narrationProgress = new SyncProgress<NarrationProgress>(p =>
                 {
-                    Phase = PodcastPhase.AssemblingAudio,
-                    PercentComplete = 70 + (int)(p.FfmpegPercent * 0.15),
-                    AssembledSegments = p.CompletedSegments,
-                    AssembledSegmentsTotal = p.TotalSegments,
-                    Message = p.Message,
-                    PhaseElapsed = stopwatch.Elapsed,
-                }));
+                    // Done is followed by publishing, which reports its own bands.
+                    if (p.Phase != NarrationPhase.Done)
+                    {
+                        outerProgress.Report(MapNarrationProgress(p, chapterCount, stopwatch.Elapsed));
+                    }
+                });
             }
 
-            var assemblyResult = await _audioAssembler.AssembleAsync(assemblyRequest, assemblyProgress, cancellationToken).ConfigureAwait(false);
-            if (!assemblyResult.Success || string.IsNullOrEmpty(assemblyResult.OutputPath))
+            var narration = await _narrator.NarrateAsync(narrationRequest, narrationProgress, cancellationToken)
+                .ConfigureAwait(false);
+            if (!narration.Success || string.IsNullOrEmpty(narration.OutputPath))
             {
-                // workspace-pvr6: untyped — assembly errors are typically
-                // FFmpeg-related (caught by the classifier's "ffmpeg" pattern)
-                // or transient I/O issues that don't have a FailureClass.
-                // The error message is rich enough for the heuristic.
+                // User-facing narrator messages start with "audio-engine" so
+                // PodcastFailureClassifier can route them (budget, unreachable, key, ...).
                 return PodcastResult.Failure(
-                    $"M4B assembly failed: {assemblyResult.ErrorMessage}",
-                    failedArticleDetails: allFailures);
+                    narration.ErrorMessage ?? "audio-engine: narration failed.",
+                    failedArticleDetails: extractionFailures);
             }
+
+            // Chapters audio-engine skipped (the file was still produced) are surfaced the
+            // same way as extraction failures.
+            var skippedFailures = narration.SkippedChapters
+                .Select(s => new ArticleFailure
+                {
+                    Title = s.Title ?? (s.Index >= 0 && s.Index < chapters.Count ? chapters[s.Index].Title : "(unknown chapter)"),
+                    Url = s.Index >= 0 && s.Index < chapters.Count ? chapters[s.Index].SourceUrl ?? string.Empty : string.Empty,
+                    Reason = s.Error ?? "audio-engine skipped this chapter",
+                })
+                .ToList();
+            var allFailures = extractionFailures.Concat(skippedFailures).ToList();
+            var articlesProcessed = Math.Max(0, chapters.Count - skippedFailures.Count);
+            var totalCost = narration.CostUsd;
+            var finalAudioPath = narration.OutputPath;
 
             // Step 6: Publish
             progress?.Report(new PodcastProgress
@@ -791,15 +599,11 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 {
                     Title = $"{collection.Name} ({DateTime.UtcNow:yyyy-MM-dd})",
                     Description = $"Articles from the '{collection.Name}' reading list.",
-                    LocalAudioFilePath = assemblyResult.OutputPath,
-                    Duration = assemblyResult.TotalDuration,
-                    Chapters = assemblyResult.Chapters
-                        .Select(c => new ChapterMark
-                        {
-                            Title = c.Title,
-                            StartTime = c.StartTime,
-                        })
-                        .ToList(),
+                    LocalAudioFilePath = finalAudioPath,
+                    Duration = narration.Duration,
+
+                    // Chapter marks live inside the m4b audio-engine built; the feed
+                    // entry carries none of its own.
                 },
             };
 
@@ -851,15 +655,12 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 Message = publishResult.Success ? "Done!" : "Published locally only.",
             });
 
-            // Keep temp dir so the M4B output survives dispose
-            keepTempDir = true;
-
             if (!publishResult.Success)
             {
                 _logger.LogWarning(
                     "Feed publishing failed: {Error}. M4B saved locally at {Path}",
                     publishResult.ErrorMessage,
-                    assemblyResult.OutputPath);
+                    finalAudioPath);
 
                 // workspace-3a2k: when the user configured a GCS bucket, a
                 // publish failure is a TOTAL failure — not a "local-only
@@ -880,30 +681,28 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     return PodcastResult.Failure(
                         publishResult.ErrorMessage ?? "Publish failed",
                         detail: failureDetail,
-                        localFilePath: assemblyResult.OutputPath,
+                        localFilePath: finalAudioPath,
                         failedArticleDetails: allFailures);
                 }
 
                 return PodcastResult.Successful(
                     feedUrl: null,
-                    localFilePath: assemblyResult.OutputPath,
-                    totalDuration: assemblyResult.TotalDuration,
-                    articlesProcessed: segments.Count,
+                    localFilePath: finalAudioPath,
+                    totalDuration: narration.Duration,
+                    articlesProcessed: articlesProcessed,
                     articlesFailed: allFailures.Count,
-                    fileSizeBytes: assemblyResult.FileSizeBytes,
-                    articlesCached: cacheAnalysis.CachedArticles,
+                    fileSizeBytes: narration.Bytes,
                     totalCost: totalCost,
                     failedArticleDetails: allFailures);
             }
 
             return PodcastResult.Successful(
                 feedUrl: publishResult.FeedUrl,
-                localFilePath: assemblyResult.OutputPath,
-                totalDuration: assemblyResult.TotalDuration,
-                articlesProcessed: segments.Count,
+                localFilePath: finalAudioPath,
+                totalDuration: narration.Duration,
+                articlesProcessed: articlesProcessed,
                 articlesFailed: allFailures.Count,
-                fileSizeBytes: assemblyResult.FileSizeBytes,
-                articlesCached: cacheAnalysis.CachedArticles,
+                fileSizeBytes: narration.Bytes,
                 totalCost: totalCost,
                 failedArticleDetails: allFailures);
         }
@@ -922,19 +721,13 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             // FailureClass=Generic would. Leave untyped on purpose.
             return PodcastResult.Failure(
                 $"Podcast generation failed: {ex.Message}",
-                failedArticleDetails: extractionFailures.Concat(ttsFailures).ToList());
-        }
-        finally
-        {
-            if (!keepTempDir)
-            {
-                // On failure/cancellation, clean up temp directory
-                tempFiles?.Dispose();
-            }
-
-            // Audio segment files are managed by the TTS cache — do not delete them here.
+                failedArticleDetails: extractionFailures);
         }
     }
+
+    /// <summary>Same path as <see cref="GetOutputFilePath"/> but without creating the folder (estimates must not touch disk).</summary>
+    private string BuildOutputFilePath(string collectionName) =>
+        Path.Combine(ResolveEffectiveOutputFolder(), $"{SanitizeFileName(collectionName)}.m4a");
 
     /// <summary>
     /// Resolves the user-overridden output folder (from <see cref="IUserSettingsStore"/>)
@@ -982,9 +775,14 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 };
             }
 
-            return await _audioCache.AnalyzeCollectionAsync(
-                articles.Select(a => (a.Url, a.Title, BuildSpokenText(a))).ToList(),
+            var chapters = articles
+                .Select(a => new NarrationChapter(a.Title, BuildSpokenText(a), a.Url))
+                .ToList();
+            var estimate = await _narrator.EstimateAsync(
+                BuildNarrationRequest(collection, chapters, BuildOutputFilePath(collection.Name)),
                 cancellationToken).ConfigureAwait(false);
+
+            return BuildCacheAnalysis(articles, estimate);
         }
         catch (OperationCanceledException)
         {
@@ -1002,6 +800,52 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                 ArticleStatuses = [],
             };
         }
+    }
+
+    /// <summary>
+    /// Turns audio-engine's per-chapter estimate into the cache analysis the confirmation
+    /// screen shows. A failed estimate is logged and yields the article counts with a
+    /// zero cost (never throws), so a down audio-engine doesn't block the flow here.
+    /// </summary>
+    private CacheAnalysis BuildCacheAnalysis(IReadOnlyList<ExtractedArticle> articles, NarrationEstimate estimate)
+    {
+        if (!estimate.Success)
+        {
+            _logger.LogWarning("audio-engine estimate failed: {Error}", estimate.ErrorMessage);
+            return new CacheAnalysis
+            {
+                TotalArticles = articles.Count,
+                CachedArticles = 0,
+                UncachedArticles = articles.Count,
+                EstimatedCost = 0,
+                ArticleStatuses = articles
+                    .Select(a => new ArticleCacheStatus { Url = a.Url, Title = a.Title, IsCached = false, EstimatedCost = 0 })
+                    .ToList(),
+            };
+        }
+
+        var statuses = new List<ArticleCacheStatus>(articles.Count);
+        for (var i = 0; i < articles.Count; i++)
+        {
+            var chapter = estimate.Chapters.FirstOrDefault(c => c.Index == i);
+            statuses.Add(new ArticleCacheStatus
+            {
+                Url = articles[i].Url,
+                Title = articles[i].Title,
+                IsCached = chapter is { ChunksTotal: > 0 } && chapter.ChunksCached == chapter.ChunksTotal,
+                EstimatedCost = chapter?.EstimateUsd ?? 0,
+            });
+        }
+
+        var cached = statuses.Count(st => st.IsCached);
+        return new CacheAnalysis
+        {
+            TotalArticles = articles.Count,
+            CachedArticles = cached,
+            UncachedArticles = articles.Count - cached,
+            EstimatedCost = estimate.EstimateUsd,
+            ArticleStatuses = statuses,
+        };
     }
 
     /// <summary>

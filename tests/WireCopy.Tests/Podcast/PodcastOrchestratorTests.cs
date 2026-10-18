@@ -36,9 +36,7 @@ public class PodcastOrchestratorTests : IDisposable
     private readonly IArticleContentCache _articleCache;
 
     // Direct dependencies of PodcastOrchestrator
-    private readonly ITtsService _ttsService;
-    private readonly ITtsAudioCache _audioCache;
-    private readonly IAudioAssembler _audioAssembler;
+    private readonly IPodcastNarrator _narrator;
     private readonly IPodcastPublisher _publisher;
 
     private readonly PodcastOrchestrator _sut;
@@ -70,9 +68,7 @@ public class PodcastOrchestratorTests : IDisposable
             NullLogger<ReadingListContentProvider>.Instance);
 
         // Direct dependencies
-        _ttsService = Substitute.For<ITtsService>();
-        _audioCache = Substitute.For<ITtsAudioCache>();
-        _audioAssembler = Substitute.For<IAudioAssembler>();
+        _narrator = Substitute.For<IPodcastNarrator>();
         _publisher = Substitute.For<IPodcastPublisher>();
 
         _tempDir = Path.Combine(Path.GetTempPath(), $"podcast-orch-test-{Guid.NewGuid():N}");
@@ -88,26 +84,23 @@ public class PodcastOrchestratorTests : IDisposable
             TempDirectory = _tempDir,
         });
 
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration
-        {
-            ApiKey = "test-key",
-            MaxBudgetUsd = 5.00m,
-        });
-
         _sut = new PodcastOrchestrator(
             contentProvider,
-            _ttsService,
-            _audioCache,
-            _audioAssembler,
+            _narrator,
             _publisher,
             podcastConfig,
-            ttsConfig,
             NullLogger<PodcastOrchestrator>.Instance);
 
-        // Default: TTS is configured, FFmpeg is available
-        _ttsService.IsConfigured.Returns(true);
-        _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>())
-            .Returns(true);
+        // Default: narrator is configured, estimates succeed, narration writes a small fake audio file
+        _narrator.IsConfigured.Returns(true);
+        _narrator.EngineName.Returns("openai");
+        _narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate { Success = true });
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => SuccessfulNarration());
     }
 
     public void Dispose()
@@ -184,85 +177,6 @@ public class PodcastOrchestratorTests : IDisposable
         }
     }
 
-    private void SetupCacheAnalysis(int cached = 0, int uncached = 1, decimal cost = 0.05m)
-    {
-        _audioCache.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
-            .Returns(new CacheAnalysis
-            {
-                TotalArticles = cached + uncached,
-                CachedArticles = cached,
-                UncachedArticles = uncached,
-                EstimatedCost = cost,
-                ArticleStatuses = [],
-            });
-    }
-
-    private void SetupTtsGeneration(byte[]? audioData = null, bool success = true, string? error = null)
-    {
-        var data = audioData ?? [1, 2, 3, 4, 5];
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(success
-                ? TtsGenerationResult.Successful(data, 100, 1)
-                : TtsGenerationResult.Failure(error ?? "TTS failed"));
-    }
-
-    private void SetupTtsAudioCacheMiss()
-    {
-        _audioCache.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((TtsAudioCacheEntry?)null);
-    }
-
-    private void SetupTtsAudioCacheHit(string audioFilePath = "/tmp/cached-audio.aac")
-    {
-        _audioCache.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "test-key",
-                AudioFilePath = audioFilePath,
-                FileSizeBytes = 1024,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "hash",
-                TtsConfigHash = "config-hash",
-            });
-    }
-
-    private void SetupTtsAudioCachePut(string audioFilePath = "/tmp/new-audio.aac")
-    {
-        _audioCache.PutAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<byte[]>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "new-key",
-                AudioFilePath = audioFilePath,
-                FileSizeBytes = 512,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "new-hash",
-                TtsConfigHash = "config-hash",
-            });
-    }
-
-    private void SetupAssemblySuccess(string? outputPath = null)
-    {
-        var path = outputPath ?? Path.Combine(_tempDir, "output.m4b");
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Successful(
-                path,
-                TimeSpan.FromMinutes(10),
-                1024 * 1024,
-                new List<AudioChapterMarker>
-                {
-                    new() { Title = "Chapter 1", StartTime = TimeSpan.Zero },
-                }));
-    }
-
     private void SetupPublishSuccess(string feedUrl = "https://storage.example.com/feed.xml")
     {
         _publisher.PublishFeedAsync(
@@ -284,17 +198,46 @@ public class PodcastOrchestratorTests : IDisposable
     }
 
     /// <summary>
-    /// Sets up a complete happy-path pipeline for one article.
+    /// A successful narration whose <see cref="NarrationResult.OutputPath"/> is a small real file
+    /// under <see cref="_tempDir"/>, so anything downstream that stats or reads the audio finds it.
+    /// </summary>
+    private NarrationResult SuccessfulNarration(
+        string fileName = "narration.m4b",
+        decimal costUsd = 0m,
+        IReadOnlyList<NarrationSkippedChapter>? skipped = null)
+    {
+        var path = Path.Combine(_tempDir, fileName);
+        File.WriteAllBytes(path, new byte[] { 1, 2, 3, 4 });
+        return new NarrationResult
+        {
+            Success = true,
+            OutputPath = path,
+            Bytes = 4,
+            Duration = TimeSpan.FromSeconds(30),
+            CostUsd = costUsd,
+            SkippedChapters = skipped ?? [],
+        };
+    }
+
+    /// <summary>
+    /// A failed narration result carrying the narrator's own message and error kind, the way
+    /// audio-engine reports synthesis, assembly and budget problems.
+    /// </summary>
+    private static NarrationResult FailedNarration(string message, NarrationErrorKind kind = NarrationErrorKind.Failed) => new()
+    {
+        Success = false,
+        ErrorMessage = message,
+        ErrorKind = kind,
+    };
+
+    /// <summary>
+    /// Sets up a complete happy-path pipeline for one article. Narration itself is covered by the
+    /// constructor's default <see cref="_narrator"/> stub.
     /// </summary>
     private void SetupHappyPath(string url = "https://example.com/article1")
     {
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
     }
 
@@ -309,40 +252,19 @@ public class PodcastOrchestratorTests : IDisposable
         await act.Should().ThrowAsync<ArgumentNullException>();
     }
 
+    // Guards:   an unconfigured narrator fails fast with an audio-engine message before any extraction
+    // Fails if: the IsConfigured preflight is removed or its message no longer names audio-engine
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_TtsNotConfigured_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_TtsNotConfigured_ReturnsFailure()
     {
-        _ttsService.IsConfigured.Returns(false);
+        _narrator.IsConfigured.Returns(false);
         var collection = CreateCollection("https://example.com/a");
 
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("Narration isn't ready");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_FfmpegMissing_ReturnsFailure()
-    {
-        _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>())
-            .Returns(false);
-        var collection = CreateCollection("https://example.com/a");
-
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("FFmpeg");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_TtsNotConfigured_DoesNotCallAssembler()
-    {
-        _ttsService.IsConfigured.Returns(false);
-        var collection = CreateCollection("https://example.com/a");
-
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _audioAssembler.DidNotReceive().ValidatePrerequisitesAsync(Arg.Any<CancellationToken>());
+        result.ErrorMessage.Should().Contain("audio-engine");
     }
 
     #endregion
@@ -381,6 +303,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Budget Validation
 
+    // Guards:   a BudgetExceeded narration result surfaces its 'would cost' message as a failure
+    // Fails if: the budget error message is rewritten or the failure swallowed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_CostExceedsBudget_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_CostExceedsBudget_ReturnsFailure()
     {
@@ -388,51 +313,15 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        // Cost exceeds the 5.00 budget
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 10.00m);
+        // Cost exceeds the 5.00 budget — audio-engine reports it as a budget failure
+        _narrator.NarrateAsync(Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(FailedNarration("audio-engine: narration would cost $10.00, over the $5.00 limit.", NarrationErrorKind.BudgetExceeded));
 
         var collection = CreateCollection(url);
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("exceeds budget");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CostExceedsBudget_DoesNotCallTts()
-    {
-        var url = "https://example.com/expensive";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 10.00m);
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _ttsService.DidNotReceive().GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CostExactlyAtBudget_Proceeds()
-    {
-        var url = "https://example.com/article";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 5.00m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeTrue();
+        result.ErrorMessage.Should().Contain("would cost");
     }
 
     #endregion
@@ -479,6 +368,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.LocalFilePath.Should().NotBeNullOrEmpty();
     }
 
+    // Guards:   every cached article in a three-article collection is narrated and counted as processed
+    // Fails if: the orchestrator drops an article or miscounts ArticlesProcessed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_MultipleArticles_ProcessesAll"
     [Fact]
     public async Task GeneratePodcastAsync_MultipleArticles_ProcessesAll()
     {
@@ -490,11 +382,6 @@ public class PodcastOrchestratorTests : IDisposable
             (url1, CreateExtractedArticle(url1, "Article 1")),
             (url2, CreateExtractedArticle(url2, "Article 2")),
             (url3, CreateExtractedArticle(url3, "Article 3")));
-        SetupCacheAnalysis(cached: 0, uncached: 3, cost: 0.15m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url1, url2, url3);
@@ -504,18 +391,26 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticlesProcessed.Should().Be(3);
     }
 
+    // Guards:   one cached article becomes one chapter with the article title and its spoken text
+    // Fails if: chapter Title or Text stop matching the article / BuildSpokenText
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_HappyPath_SendsChaptersToNarrator"
     [Fact]
-    public async Task GeneratePodcastAsync_HappyPath_CallsAssemblerWithCorrectSegments()
+    public async Task GeneratePodcastAsync_HappyPath_SendsChaptersToNarrator()
     {
         var url = "https://example.com/article1";
-        SetupHappyPath(url);
+        var article = CreateExtractedArticle(url);
+        SetupArticleCacheHits((url, article));
+        SetupPublishSuccess();
 
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _audioAssembler.Received(1).AssembleAsync(
-            Arg.Is<AssemblyRequest>(r => r.Segments.Count == 1),
-            Arg.Any<IProgress<AssemblyProgress>?>(),
+        await _narrator.Received(1).NarrateAsync(
+            Arg.Is<NarrationRequest>(r =>
+                r.Chapters.Count == 1 &&
+                r.Chapters[0].Title == "Test Article" &&
+                r.Chapters[0].Text == PodcastOrchestrator.BuildSpokenText(article)),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -537,92 +432,33 @@ public class PodcastOrchestratorTests : IDisposable
 
     #endregion
 
-    #region GeneratePodcastAsync — TTS Cache Hits
-
-    [Fact]
-    public async Task GeneratePodcastAsync_AllArticlesCached_DoesNotCallTtsService()
-    {
-        var url = "https://example.com/cached";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 1, uncached: 0, cost: 0m);
-        SetupTtsAudioCacheHit();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _ttsService.DidNotReceive().GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
-            Arg.Any<CancellationToken>());
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CacheHit_ReportsCachedCount()
-    {
-        var url = "https://example.com/cached";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 1, uncached: 0, cost: 0m);
-        SetupTtsAudioCacheHit();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeTrue();
-        result.ArticlesCached.Should().Be(1);
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CacheMiss_StoresInCache()
-    {
-        var url = "https://example.com/fresh";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection);
-
-        await _audioCache.Received(1).PutAsync(
-            Arg.Is<string>(key => !string.IsNullOrWhiteSpace(key)),
-            Arg.Is<string>(hash => !string.IsNullOrWhiteSpace(hash)),
-            Arg.Is<string>(configHash => !string.IsNullOrWhiteSpace(configHash)),
-            Arg.Is<byte[]>(data => data.Length > 0),
-            Arg.Any<CancellationToken>());
-    }
-
-    #endregion
-
     #region GeneratePodcastAsync — TTS Failures
 
+    // Guards:   a failed narration result becomes a failure whose message is the narrator's error
+    // Fails if: the narrator's ErrorMessage is replaced or ignored
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_SingleArticleTtsFails_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_SingleArticleTtsFails_ReturnsFailure()
     {
         var url = "https://example.com/fail";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration(success: false, error: "API error");
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(FailedNarration("audio-engine: synthesis failed"));
 
         var collection = CreateCollection(url);
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("All articles failed TTS generation");
+        result.ErrorMessage.Should().Be("audio-engine: synthesis failed");
     }
 
+    // Guards:   a narration that skips one of two chapters still succeeds with 1 processed and 1 failed
+    // Fails if: SkippedChapters stop reducing ArticlesProcessed or raising ArticlesFailed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PartialTtsFailure_StillSucceeds"
     [Fact]
     public async Task GeneratePodcastAsync_PartialTtsFailure_StillSucceeds()
     {
@@ -632,26 +468,14 @@ public class PodcastOrchestratorTests : IDisposable
         SetupArticleCacheHits(
             (url1, CreateExtractedArticle(url1, "Good Article")),
             (url2, CreateExtractedArticle(url2, "Bad Article")));
-        SetupCacheAnalysis(cached: 0, uncached: 2, cost: 0.10m);
-        SetupTtsAudioCacheMiss();
 
-        // Match by title parameter (2nd arg) which is unique per article
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Good Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
+        // audio-engine narrates the first chapter and skips the second (index 1)
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
+            .Returns(_ => SuccessfulNarration(skipped: [new NarrationSkippedChapter(1, "Bad Article", "Quota exceeded")]));
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Bad Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Failure("TTS API error"));
-
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url1, url2);
@@ -662,6 +486,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticlesFailed.Should().Be(1);
     }
 
+    // Guards:   a skipped chapter appears in FailedArticleDetails with its title, reason and source url
+    // Fails if: SkippedChapters are not mapped to ArticleFailure entries
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PartialTtsFailure_IncludesFailureDetails"
     [Fact]
     public async Task GeneratePodcastAsync_PartialTtsFailure_IncludesFailureDetails()
     {
@@ -671,219 +498,63 @@ public class PodcastOrchestratorTests : IDisposable
         SetupArticleCacheHits(
             (url1, CreateExtractedArticle(url1, "Good Article")),
             (url2, CreateExtractedArticle(url2, "Bad Article")));
-        SetupCacheAnalysis(cached: 0, uncached: 2, cost: 0.10m);
-        SetupTtsAudioCacheMiss();
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Good Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
+        // audio-engine skips the second chapter (index 1) and says why
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
+            .Returns(_ => SuccessfulNarration(skipped: [new NarrationSkippedChapter(1, "Bad Article", "Quota exceeded")]));
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Is("Bad Article"),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Failure("Quota exceeded"));
-
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url1, url2);
         var result = await _sut.GeneratePodcastAsync(collection);
 
+        result.Success.Should().BeTrue();
         result.FailedArticleDetails.Should().ContainSingle(f => f.Title == "Bad Article");
         result.FailedArticleDetails[0].Reason.Should().Contain("Quota exceeded");
-    }
-
-    // Guards:   a FATAL TTS failure (exhausted billing quota / bad API key) stops the whole run on the first
-    //           article instead of repeating the doomed request for every remaining article, and no partial
-    //           episode is published.
-    // Fails if: the orchestrator's TTS loop goes back to "record the failure and continue" for fatal results
-    //           (the service would then be called 3 times and the run would fail with "All articles failed").
-    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~FatalTtsFailure_StopsRunAfterFirstArticle"
-    [Fact]
-    public async Task GeneratePodcastAsync_FatalTtsFailure_StopsRunAfterFirstArticle()
-    {
-        var url1 = "https://example.com/a1";
-        var url2 = "https://example.com/a2";
-        var url3 = "https://example.com/a3";
-
-        SetupArticleCacheHits(
-            (url1, CreateExtractedArticle(url1, "Article One")),
-            (url2, CreateExtractedArticle(url2, "Article Two")),
-            (url3, CreateExtractedArticle(url3, "Article Three")));
-        SetupCacheAnalysis(cached: 0, uncached: 3, cost: 0.15m);
-        SetupTtsAudioCacheMiss();
-
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Failure("OpenAI quota exhausted \u2014 check billing.", isFatal: true));
-
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var result = await _sut.GeneratePodcastAsync(CreateCollection(url1, url2, url3));
-
-        await _ttsService.Received(1).GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
-            Arg.Any<CancellationToken>());
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("quota exhausted");
-        await _audioAssembler.DidNotReceive().AssembleAsync(
-            Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>());
-    }
-
-    // Guards:   the TTS audio cache is best-effort: if saving to it fails (disk full, permissions, index error)
-    //           the already-paid-for audio is still used and the podcast is still built from it.
-    // Fails if: _audioCache.PutAsync is awaited unguarded again (the IOException then fails the whole run), or the
-    //           fallback hands the assembler a path that does not hold the generated audio.
-    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~AudioCacheWriteFails_StillSucceeds"
-    [Fact]
-    public async Task GeneratePodcastAsync_AudioCacheWriteFails_StillSucceedsWithInMemoryAudio()
-    {
-        var url = "https://example.com/cache-write-fails";
-        SetupArticleCacheHits((url, CreateExtractedArticle(url, "Paid Article")));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-
-        byte[] paidAudio = [9, 8, 7, 6, 5];
-        SetupTtsGeneration(audioData: paidAudio);
-
-        _audioCache.PutAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<byte[]>(),
-                Arg.Any<CancellationToken>())
-            .Returns<TtsAudioCacheEntry>(_ => throw new IOException("No space left on device"));
-
-        // Capture what the assembler is handed, WHILE the run's temp files still exist.
-        byte[]? assembledBytes = null;
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(ci =>
-            {
-                var segment = ci.Arg<AssemblyRequest>().Segments.Single();
-                assembledBytes = File.Exists(segment.AudioFilePath) ? File.ReadAllBytes(segment.AudioFilePath) : null;
-                return AssemblyResult.Successful(
-                    Path.Combine(_tempDir, "output.m4b"),
-                    TimeSpan.FromMinutes(10),
-                    1024 * 1024,
-                    new List<AudioChapterMarker> { new() { Title = "Chapter 1", StartTime = TimeSpan.Zero } });
-            });
-        SetupPublishSuccess();
-
-        var result = await _sut.GeneratePodcastAsync(CreateCollection(url));
-
-        result.Success.Should().BeTrue(result.ErrorMessage);
-        result.ArticlesProcessed.Should().Be(1);
-        assembledBytes.Should().Equal(paidAudio, "the assembler must receive the in-memory audio the cache failed to store");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_TtsReturnsNullAudioData_TreatsAsFailure()
-    {
-        var url = "https://example.com/null-audio";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(new TtsGenerationResult
-            {
-                Success = true,
-                AudioData = null,
-                CharactersProcessed = 100,
-                ChunksCompleted = 1,
-            });
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("All articles failed TTS generation");
+        result.FailedArticleDetails[0].Url.Should().Be(url2);
     }
 
     #endregion
 
     #region GeneratePodcastAsync — Assembly Failure
 
+    // Guards:   a narration failure during assembly surfaces its message unchanged
+    // Fails if: the orchestrator rewrites or drops the narrator's error message
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_AssemblyFails_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_AssemblyFails_ReturnsFailure()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
 
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Failure("FFmpeg crashed"));
+        _narrator.NarrateAsync(Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(FailedNarration("audio-engine: assembly failed: FFmpeg crashed", NarrationErrorKind.Failed));
 
         var collection = CreateCollection(url);
         var result = await _sut.GeneratePodcastAsync(collection);
 
         result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("M4B assembly failed");
+        result.ErrorMessage.Should().Contain("assembly failed");
         result.ErrorMessage.Should().Contain("FFmpeg crashed");
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_AssemblyReturnsEmptyPath_ReturnsFailure()
-    {
-        var url = "https://example.com/article1";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(new AssemblyResult
-            {
-                Success = true,
-                OutputPath = string.Empty,
-            });
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("M4B assembly failed");
     }
 
     #endregion
 
     #region GeneratePodcastAsync — Publishing
 
+    // Guards:   a failed feed publish still yields a successful local podcast result
+    // Fails if: publish errors are turned into an overall failure
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PublishFails_StillReturnsSuccess"
     [Fact]
     public async Task GeneratePodcastAsync_PublishFails_StillReturnsSuccess()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishFailure("Cloud storage unavailable");
 
         var collection = CreateCollection(url);
@@ -906,18 +577,21 @@ public class PodcastOrchestratorTests : IDisposable
         result.FeedUrl.Should().Be("https://storage.example.com/feed.xml");
     }
 
+    // Guards:   the narrator's reported cost is surfaced as the result's TotalCost
+    // Fails if: CostUsd from the narration result is dropped or replaced
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PublishSuccess_IncludesCostInfo"
     [Fact]
     public async Task GeneratePodcastAsync_PublishSuccess_IncludesCostInfo()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.12m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(_ => SuccessfulNarration(costUsd: 0.12m));
 
         var collection = CreateCollection(url);
         var result = await _sut.GeneratePodcastAsync(collection);
@@ -929,11 +603,25 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Progress Reporting
 
+    // Guards:   the narrator's synthesizing and assembling progress is mapped onto the GeneratingAudio and AssemblingAudio podcast phases, alongside the orchestrator's own CachingContent and Publishing phases
+    // Fails if: MapNarrationProgress stops translating NarrationPhase.Assembling to PodcastPhase.AssemblingAudio, or the orchestrator stops forwarding narrator progress
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ReportsProgressPhases"
     [Fact]
     public async Task GeneratePodcastAsync_ReportsProgressPhases()
     {
         var url = "https://example.com/article1";
         SetupHappyPath(url);
+
+        // The AssemblingAudio phase comes from the narrator's own progress, so this stub reports
+        // a synthesizing and an assembling step through the sink the orchestrator hands it.
+        _narrator.NarrateAsync(Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var sink = ci.ArgAt<IProgress<NarrationProgress>?>(1);
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Synthesizing, Fraction = 0.5 });
+                sink?.Report(new NarrationProgress { Phase = NarrationPhase.Assembling, Fraction = 0.9 });
+                return SuccessfulNarration();
+            });
 
         var phases = new List<PodcastPhase>();
         var progress = new SynchronousProgress<PodcastProgress>(p => phases.Add(p.Phase));
@@ -951,13 +639,15 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Cancellation
 
+    // Guards:   a token cancelled before narration starts throws OperationCanceledException
+    // Fails if: the orchestrator stops checking the token before narrating
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_CancelledBeforeTts_ThrowsOperationCanceledException"
     [Fact]
     public async Task GeneratePodcastAsync_CancelledBeforeTts_ThrowsOperationCanceledException()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
 
         using var cts = new CancellationTokenSource();
         await cts.CancelAsync();
@@ -968,27 +658,27 @@ public class PodcastOrchestratorTests : IDisposable
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    // Guards:   cancellation raised inside the narrator propagates as OperationCanceledException
+    // Fails if: the orchestrator swallows the cancellation into a failure result
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_CancelledDuringTts_ThrowsOperationCanceledException"
     [Fact]
     public async Task GeneratePodcastAsync_CancelledDuringTts_ThrowsOperationCanceledException()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
 
         using var cts = new CancellationTokenSource();
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
             .Returns(async callInfo =>
             {
                 await cts.CancelAsync();
-                callInfo.ArgAt<CancellationToken>(3).ThrowIfCancellationRequested();
-                return TtsGenerationResult.Failure("Should not reach here");
+                callInfo.ArgAt<CancellationToken>(2).ThrowIfCancellationRequested();
+                return FailedNarration("Should not reach here");
             });
 
         var collection = CreateCollection(url);
@@ -1001,19 +691,19 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Exception Handling
 
+    // Guards:   a non-cancellation exception from the narrator becomes a failure result carrying its message
+    // Fails if: the orchestrator lets the exception escape or drops the message
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_UnexpectedExceptionDuringTts_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_UnexpectedExceptionDuringTts_ReturnsFailure()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
 
-        _ttsService.GenerateAudioAsync(
-                Arg.Any<string>(),
-                Arg.Any<string>(),
-                Arg.Any<IProgress<TtsProgress>>(),
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
                 Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Network error"));
 
@@ -1024,38 +714,15 @@ public class PodcastOrchestratorTests : IDisposable
         result.ErrorMessage.Should().Contain("Network error");
     }
 
-    [Fact]
-    public async Task GeneratePodcastAsync_AssemblerThrowsException_ReturnsFailure()
-    {
-        var url = "https://example.com/article1";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-
-        _audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .ThrowsAsync(new IOException("Disk full"));
-
-        var collection = CreateCollection(url);
-        var result = await _sut.GeneratePodcastAsync(collection);
-
-        result.Success.Should().BeFalse();
-        result.ErrorMessage.Should().Contain("Disk full");
-    }
-
+    // Guards:   an exception thrown by the publisher becomes a failure result instead of escaping
+    // Fails if: the orchestrator stops catching publisher exceptions
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PublisherThrowsException_ReturnsFailure"
     [Fact]
     public async Task GeneratePodcastAsync_PublisherThrowsException_ReturnsFailure()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
 
         _publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(),
@@ -1075,17 +742,15 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Cache Reuse from AnalyzeCacheStatusAsync
 
+    // Guards:   articles extracted during AnalyzeCacheStatusAsync are reused by a following generate for the same collection
+    // Fails if: the generate pass re-extracts articles it already has
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ReusesArticlesFromAnalyze_WhenCollectionNameMatches"
     [Fact]
     public async Task GeneratePodcastAsync_ReusesArticlesFromAnalyze_WhenCollectionNameMatches()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url);
@@ -1105,17 +770,15 @@ public class PodcastOrchestratorTests : IDisposable
         await _articleCache.DidNotReceive().TryGetAsync(Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
+    // Guards:   articles cached by analyze for one collection are not reused for a differently named collection
+    // Fails if: the collection-name check on the reuse path is dropped
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_DoesNotReuseCachedArticles_WhenCollectionNameDiffers"
     [Fact]
     public async Task GeneratePodcastAsync_DoesNotReuseCachedArticles_WhenCollectionNameDiffers()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var analyzeCollection = CreateNamedCollection("Analysis Collection", url);
@@ -1135,17 +798,15 @@ public class PodcastOrchestratorTests : IDisposable
         await _articleCache.Received().TryGetAsync(url, Arg.Any<CancellationToken>());
     }
 
+    // Guards:   reused analyze articles are cleared once consumed, so the next generate extracts fresh
+    // Fails if: the orchestrator keeps the analyze cache after using it
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ClearsCachedArticlesAfterUse"
     [Fact]
     public async Task GeneratePodcastAsync_ClearsCachedArticlesAfterUse()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url);
@@ -1162,6 +823,9 @@ public class PodcastOrchestratorTests : IDisposable
         await _articleCache.Received().TryGetAsync(url, Arg.Any<CancellationToken>());
     }
 
+    // Guards:   a generate that starts while analyze is still running waits for it instead of re-extracting
+    // Fails if: the pending-analysis await is removed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_AwaitsPendingAnalysis_WhenAnalysisStillRunning"
     [Fact]
     public async Task GeneratePodcastAsync_AwaitsPendingAnalysis_WhenAnalysisStillRunning()
     {
@@ -1189,11 +853,6 @@ public class PodcastOrchestratorTests : IDisposable
                 return Task.FromResult<ExtractedArticle?>(article);
             });
 
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url);
@@ -1248,6 +907,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticleStatuses.Should().BeEmpty();
     }
 
+    // Guards:   a narrator estimate with every chunk cached reports the article as cached
+    // Fails if: ChunksCached == ChunksTotal no longer counts as a cached article
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.AnalyzeCacheStatusAsync_WithArticles_ReturnsCacheAnalysis"
     [Fact]
     public async Task AnalyzeCacheStatusAsync_WithArticles_ReturnsCacheAnalysis()
     {
@@ -1255,18 +917,12 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        var expectedAnalysis = new CacheAnalysis
-        {
-            TotalArticles = 1,
-            CachedArticles = 1,
-            UncachedArticles = 0,
-            EstimatedCost = 0m,
-            ArticleStatuses = [],
-        };
-        _audioCache.AnalyzeCollectionAsync(
-                Arg.Any<IReadOnlyList<(string, string, string)>>(),
-                Arg.Any<CancellationToken>())
-            .Returns(expectedAnalysis);
+        _narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate
+            {
+                Success = true,
+                Chapters = [new NarrationChapterEstimate(0, "Test Article", 3, 3, 0m)],
+            });
 
         var collection = CreateCollection(url);
         var result = await _sut.AnalyzeCacheStatusAsync(collection);
@@ -1275,6 +931,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.CachedArticles.Should().Be(1);
     }
 
+    // Guards:   an exception from EstimateAsync yields an empty analysis instead of escaping
+    // Fails if: the orchestrator stops catching estimate exceptions
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.AnalyzeCacheStatusAsync_ExceptionDuringAnalysis_ReturnsEmptyAnalysis"
     [Fact]
     public async Task AnalyzeCacheStatusAsync_ExceptionDuringAnalysis_ReturnsEmptyAnalysis()
     {
@@ -1282,9 +941,7 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
 
-        _audioCache.AnalyzeCollectionAsync(
-                Arg.Any<IReadOnlyList<(string, string, string)>>(),
-                Arg.Any<CancellationToken>())
+        _narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
             .ThrowsAsync(new InvalidOperationException("Cache corrupted"));
 
         var collection = CreateCollection(url);
@@ -1306,13 +963,15 @@ public class PodcastOrchestratorTests : IDisposable
         await act.Should().ThrowAsync<OperationCanceledException>();
     }
 
+    // Guards:   AnalyzeCacheStatusAsync reports extraction progress to the caller
+    // Fails if: the progress sink is no longer invoked during analysis
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.AnalyzeCacheStatusAsync_ReportsProgress"
     [Fact]
     public async Task AnalyzeCacheStatusAsync_ReportsProgress()
     {
         var url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 1, uncached: 0, cost: 0m);
 
         var progressReports = new List<ContentExtractionProgress>();
         var progress = new SynchronousProgress<ContentExtractionProgress>(p => progressReports.Add(p));
@@ -1327,8 +986,11 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Assembly Request Metadata
 
+    // Guards:   the NarrationRequest carries the podcast config's title, author, album and genre
+    // Fails if: request metadata is no longer filled from PodcastConfiguration
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_PassesPodcastConfigToNarrator"
     [Fact]
-    public async Task GeneratePodcastAsync_PassesPodcastConfigToAssembly()
+    public async Task GeneratePodcastAsync_PassesPodcastConfigToNarrator()
     {
         var url = "https://example.com/article1";
         SetupHappyPath(url);
@@ -1336,14 +998,19 @@ public class PodcastOrchestratorTests : IDisposable
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _audioAssembler.Received(1).AssembleAsync(
-            Arg.Is<AssemblyRequest>(r =>
-                r.Metadata.Title.Contains("Test Podcast") &&
-                r.Metadata.Author == "Test Author"),
-            Arg.Any<IProgress<AssemblyProgress>?>(),
+        await _narrator.Received(1).NarrateAsync(
+            Arg.Is<NarrationRequest>(r =>
+                r.Title.Contains("Test Podcast") &&
+                r.Author == "Test Author" &&
+                r.Album == "Test Podcast" &&
+                r.Genre == "Podcast"),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
+    // Guards:   the narration output path includes the collection name
+    // Fails if: the output path is built without the collection name
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_AssemblyOutputPathIncludesCollectionName"
     [Fact]
     public async Task GeneratePodcastAsync_AssemblyOutputPathIncludesCollectionName()
     {
@@ -1353,9 +1020,9 @@ public class PodcastOrchestratorTests : IDisposable
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _audioAssembler.Received(1).AssembleAsync(
-            Arg.Is<AssemblyRequest>(r => r.OutputPath.Contains("Test Collection")),
-            Arg.Any<IProgress<AssemblyProgress>?>(),
+        await _narrator.Received(1).NarrateAsync(
+            Arg.Is<NarrationRequest>(r => r.OutputPath.Contains("Test Collection")),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1404,6 +1071,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Extraction Failures Propagation
 
+    // Guards:   articles that failed extraction appear in FailedArticleDetails of a successful result
+    // Fails if: extraction failures are dropped from the result
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ExtractionFailures_IncludedInSuccessResult"
     [Fact]
     public async Task GeneratePodcastAsync_ExtractionFailures_IncludedInSuccessResult()
     {
@@ -1422,11 +1092,6 @@ public class PodcastOrchestratorTests : IDisposable
         _preloadService.WaitForInFlightAsync(badUrl, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns((PageLoadResult?)null);
 
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(goodUrl, badUrl);
@@ -1438,6 +1103,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.FailedArticleDetails.Should().Contain(f => f.Url == badUrl);
     }
 
+    // Guards:   extraction failures recorded during analyze are carried into the following generate's result
+    // Fails if: the reuse path forgets analyze-time failures
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_CachedExtractionFailures_CarriedFromAnalyze"
     [Fact]
     public async Task GeneratePodcastAsync_CachedExtractionFailures_CarriedFromAnalyze()
     {
@@ -1453,11 +1121,6 @@ public class PodcastOrchestratorTests : IDisposable
         _preloadService.WaitForInFlightAsync(badUrl, Arg.Any<TimeSpan>(), Arg.Any<CancellationToken>())
             .Returns((PageLoadResult?)null);
 
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(goodUrl, badUrl);
@@ -1476,6 +1139,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Progress Detail Verification
 
+    // Guards:   narrator chapter progress maps to GeneratingAudio reports with the right TotalArticles and CurrentArticle
+    // Fails if: ChapterIndex/ChaptersTotal are no longer translated into PodcastProgress fields
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ProgressReportsCorrectArticleCounts"
     [Fact]
     public async Task GeneratePodcastAsync_ProgressReportsCorrectArticleCounts()
     {
@@ -1485,12 +1151,35 @@ public class PodcastOrchestratorTests : IDisposable
         SetupArticleCacheHits(
             (url1, CreateExtractedArticle(url1, "Article 1")),
             (url2, CreateExtractedArticle(url2, "Article 2")));
-        SetupCacheAnalysis(cached: 0, uncached: 2, cost: 0.10m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
+
+        // The narrator reports one Synthesizing step per chapter; the orchestrator must map
+        // ChapterIndex/ChaptersTotal onto CurrentArticle/TotalArticles.
+        _narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(),
+                Arg.Any<IProgress<NarrationProgress>?>(),
+                Arg.Any<CancellationToken>())
+            .Returns(ci =>
+            {
+                var sink = ci.ArgAt<IProgress<NarrationProgress>?>(1);
+                sink?.Report(new NarrationProgress
+                {
+                    Phase = NarrationPhase.Synthesizing,
+                    Fraction = 0.2,
+                    ChapterIndex = 0,
+                    ChapterTitle = "Article 1",
+                    ChaptersTotal = 2,
+                });
+                sink?.Report(new NarrationProgress
+                {
+                    Phase = NarrationPhase.Synthesizing,
+                    Fraction = 0.6,
+                    ChapterIndex = 1,
+                    ChapterTitle = "Article 2",
+                    ChaptersTotal = 2,
+                });
+                return SuccessfulNarration();
+            });
 
         var audioPhaseReports = new List<PodcastProgress>();
         var progress = new SynchronousProgress<PodcastProgress>(p =>
@@ -1507,33 +1196,6 @@ public class PodcastOrchestratorTests : IDisposable
         audioPhaseReports.Should().Contain(p => p.TotalArticles == 2);
         audioPhaseReports.Should().Contain(p => p.CurrentArticle == 1);
         audioPhaseReports.Should().Contain(p => p.CurrentArticle == 2);
-    }
-
-    [Fact]
-    public async Task GeneratePodcastAsync_CachedArticle_ReportsIsFromCache()
-    {
-        var url = "https://example.com/cached";
-        var article = CreateExtractedArticle(url);
-        SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 1, uncached: 0, cost: 0m);
-        SetupTtsAudioCacheHit();
-        SetupAssemblySuccess();
-        SetupPublishSuccess();
-
-        var cacheReports = new List<PodcastProgress>();
-        var progress = new SynchronousProgress<PodcastProgress>(p =>
-        {
-            if (p.IsFromCache)
-            {
-                cacheReports.Add(p);
-            }
-        });
-
-        var collection = CreateCollection(url);
-        await _sut.GeneratePodcastAsync(collection, progress);
-
-        cacheReports.Should().NotBeEmpty();
-        cacheReports.Should().AllSatisfy(p => p.Phase.Should().Be(PodcastPhase.GeneratingAudio));
     }
 
     [Fact]
@@ -1557,6 +1219,9 @@ public class PodcastOrchestratorTests : IDisposable
 
     #region GeneratePodcastAsync — Content Quality Gate
 
+    // Guards:   an article under the minimum word count is skipped by the quality gate
+    // Fails if: the word-count gate is removed or its threshold lowered
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ArticleBelowMinimumWordCount_IsSkipped"
     [Fact]
     public async Task GeneratePodcastAsync_ArticleBelowMinimumWordCount_IsSkipped()
     {
@@ -1569,11 +1234,6 @@ public class PodcastOrchestratorTests : IDisposable
         SetupArticleCacheHits(
             (goodUrl, goodArticle),
             (shortUrl, shortArticle));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(goodUrl, shortUrl);
@@ -1585,6 +1245,9 @@ public class PodcastOrchestratorTests : IDisposable
             f.Title == "Short Article" && f.Reason.Contains("too short"));
     }
 
+    // Guards:   an article with an empty title is skipped by the quality gate
+    // Fails if: the title check in the quality gate is removed
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ArticleWithEmptyTitle_IsSkipped"
     [Fact]
     public async Task GeneratePodcastAsync_ArticleWithEmptyTitle_IsSkipped()
     {
@@ -1603,11 +1266,6 @@ public class PodcastOrchestratorTests : IDisposable
         SetupArticleCacheHits(
             (goodUrl, goodArticle),
             (noTitleUrl, noTitleArticle));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(goodUrl, noTitleUrl);
@@ -1637,6 +1295,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.FailedArticleDetails.Should().HaveCount(2);
     }
 
+    // Guards:   an article whose WordCount is 0 is judged by counting its text instead of being skipped
+    // Fails if: the quality gate treats WordCount == 0 as too short without counting words
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ArticleWithZeroWordCountProperty_FallsBackToTextCounting"
     [Fact]
     public async Task GeneratePodcastAsync_ArticleWithZeroWordCountProperty_FallsBackToTextCounting()
     {
@@ -1650,11 +1311,6 @@ public class PodcastOrchestratorTests : IDisposable
         };
 
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url);
@@ -1664,6 +1320,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticlesProcessed.Should().Be(1);
     }
 
+    // Guards:   an article exactly at the minimum word count passes the quality gate
+    // Fails if: the gate uses > instead of >= at the threshold
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_ArticleExactlyAtMinimumWordCount_IsNotSkipped"
     [Fact]
     public async Task GeneratePodcastAsync_ArticleExactlyAtMinimumWordCount_IsNotSkipped()
     {
@@ -1675,11 +1334,6 @@ public class PodcastOrchestratorTests : IDisposable
         var article = CreateExtractedArticle(url, "Exact Minimum", exactText);
 
         SetupArticleCacheHits((url, article));
-        SetupCacheAnalysis(cached: 0, uncached: 1, cost: 0.05m);
-        SetupTtsAudioCacheMiss();
-        SetupTtsGeneration();
-        SetupTtsAudioCachePut();
-        SetupAssemblySuccess();
         SetupPublishSuccess();
 
         var collection = CreateCollection(url);
@@ -1689,6 +1343,9 @@ public class PodcastOrchestratorTests : IDisposable
         result.ArticlesProcessed.Should().Be(1);
     }
 
+    // Guards:   when every article fails the quality gate, the narrator is never called
+    // Fails if: the orchestrator narrates an empty chapter list
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastOrchestratorTests.GeneratePodcastAsync_QualitySkippedArticle_DoesNotCallTts"
     [Fact]
     public async Task GeneratePodcastAsync_QualitySkippedArticle_DoesNotCallTts()
     {
@@ -1699,10 +1356,9 @@ public class PodcastOrchestratorTests : IDisposable
         var collection = CreateCollection(url);
         await _sut.GeneratePodcastAsync(collection);
 
-        await _ttsService.DidNotReceive().GenerateAudioAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<IProgress<TtsProgress>>(),
+        await _narrator.DidNotReceive().NarrateAsync(
+            Arg.Any<NarrationRequest>(),
+            Arg.Any<IProgress<NarrationProgress>?>(),
             Arg.Any<CancellationToken>());
     }
 
@@ -1740,11 +1396,11 @@ public class PodcastOrchestratorTests : IDisposable
             articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
-        var ttsService = Substitute.For<ITtsService>();
-        ttsService.IsConfigured.Returns(true);
-        var audioCache = Substitute.For<ITtsAudioCache>();
-        var audioAssembler = Substitute.For<IAudioAssembler>();
-        audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
+        var narrator = Substitute.For<IPodcastNarrator>();
+        narrator.IsConfigured.Returns(true);
+        narrator.EngineName.Returns("openai");
+        narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate { Success = true });
         var publisher = Substitute.For<IPodcastPublisher>();
 
         var pConfig = Options.Create(podcastConfig ?? new PodcastConfiguration
@@ -1756,16 +1412,12 @@ public class PodcastOrchestratorTests : IDisposable
             Category = "Tech",
             // Leave OutputFolderPath null → falls back to LocalAppData default in ResolveOutputFolderPath.
         });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { ApiKey = "x" });
 
         var sut = new PodcastOrchestrator(
             contentProvider,
-            ttsService,
-            audioCache,
-            audioAssembler,
+            narrator,
             publisher,
             pConfig,
-            ttsConfig,
             NullLogger<PodcastOrchestrator>.Instance,
             store);
 
@@ -1958,48 +1610,16 @@ public class PodcastOrchestratorTests : IDisposable
     [Fact]
     public async Task GeneratePodcastAsync_PublishFails_WithBucketConfigured_ReturnsTotalFailureWithTypedDetail()
     {
-        var (sut, store, publisher, audioAssembler, audioCacheLocal, ttsService, articleCache) = BuildOrchestratorAllSubs();
+        var (sut, store, publisher, narrator, articleCache) = BuildOrchestratorAllSubs();
         store.Get("GcsBucketName").Returns("my-bucket");
 
         const string url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         articleCache.TryGetAsync(url, Arg.Any<CancellationToken>()).Returns(article);
 
-        audioCacheLocal.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
-            .Returns(new CacheAnalysis
-            {
-                TotalArticles = 1,
-                CachedArticles = 0,
-                UncachedArticles = 1,
-                EstimatedCost = 0.05m,
-                ArticleStatuses = [],
-            });
-
-        audioCacheLocal.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((TtsAudioCacheEntry?)null);
-
-        ttsService.GenerateAudioAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TtsProgress>>(), Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
-
-        audioCacheLocal.PutAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "k",
-                AudioFilePath = Path.Combine(_tempDir, "seg.aac"),
-                FileSizeBytes = 1,
-                CachedAtUtc = DateTime.UtcNow,
-                ContentHash = "h",
-                TtsConfigHash = "c",
-            });
-
-        audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Successful(
-                Path.Combine(_tempDir, "out.m4b"),
-                TimeSpan.FromMinutes(5),
-                1024,
-                new List<AudioChapterMarker> { new() { Title = "C1", StartTime = TimeSpan.Zero } }));
+        narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulNarration());
 
         publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
@@ -2034,37 +1654,16 @@ public class PodcastOrchestratorTests : IDisposable
     [Fact]
     public async Task GeneratePodcastAsync_PublishFails_WithoutBucketConfigured_StillReturnsLocalOnlySuccess()
     {
-        var (sut, store, publisher, audioAssembler, audioCacheLocal, ttsService, articleCache) = BuildOrchestratorAllSubs();
+        var (sut, store, publisher, narrator, articleCache) = BuildOrchestratorAllSubs();
         store.Get("GcsBucketName").Returns((string?)null);
 
         const string url = "https://example.com/article1";
         var article = CreateExtractedArticle(url);
         articleCache.TryGetAsync(url, Arg.Any<CancellationToken>()).Returns(article);
 
-        audioCacheLocal.AnalyzeCollectionAsync(Arg.Any<IReadOnlyList<(string, string, string)>>(), Arg.Any<CancellationToken>())
-            .Returns(new CacheAnalysis
-            {
-                TotalArticles = 1, CachedArticles = 0, UncachedArticles = 1,
-                EstimatedCost = 0.05m, ArticleStatuses = [],
-            });
-        audioCacheLocal.TryGetAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
-            .Returns((TtsAudioCacheEntry?)null);
-        ttsService.GenerateAudioAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<IProgress<TtsProgress>>(), Arg.Any<CancellationToken>())
-            .Returns(TtsGenerationResult.Successful([1, 2, 3], 100, 1));
-        audioCacheLocal.PutAsync(
-                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<byte[]>(), Arg.Any<CancellationToken>())
-            .Returns(new TtsAudioCacheEntry
-            {
-                CacheKey = "k", AudioFilePath = Path.Combine(_tempDir, "seg.aac"),
-                FileSizeBytes = 1, CachedAtUtc = DateTime.UtcNow, ContentHash = "h", TtsConfigHash = "c",
-            });
-        audioAssembler.AssembleAsync(Arg.Any<AssemblyRequest>(), Arg.Any<IProgress<AssemblyProgress>?>(), Arg.Any<CancellationToken>())
-            .Returns(AssemblyResult.Successful(
-                Path.Combine(_tempDir, "out.m4b"),
-                TimeSpan.FromMinutes(5),
-                1024,
-                new List<AudioChapterMarker> { new() { Title = "C1", StartTime = TimeSpan.Zero } }));
+        narrator.NarrateAsync(
+                Arg.Any<NarrationRequest>(), Arg.Any<IProgress<NarrationProgress>?>(), Arg.Any<CancellationToken>())
+            .Returns(SuccessfulNarration());
         publisher.PublishFeedAsync(
                 Arg.Any<PodcastMetadata>(), Arg.Any<IReadOnlyList<EpisodeSource>>(),
                 Arg.Any<IProgress<PublishProgress>?>(), Arg.Any<CancellationToken>())
@@ -2090,9 +1689,7 @@ public class PodcastOrchestratorTests : IDisposable
         PodcastOrchestrator sut,
         IUserSettingsStore store,
         IPodcastPublisher publisher,
-        IAudioAssembler audioAssembler,
-        ITtsAudioCache audioCache,
-        ITtsService ttsService,
+        IPodcastNarrator narrator,
         IArticleContentCache articleCache) BuildOrchestratorAllSubs()
     {
         var store = Substitute.For<IUserSettingsStore>();
@@ -2118,11 +1715,11 @@ public class PodcastOrchestratorTests : IDisposable
             articleCache,
             NullLogger<ReadingListContentProvider>.Instance);
 
-        var ttsService = Substitute.For<ITtsService>();
-        ttsService.IsConfigured.Returns(true);
-        var audioCache = Substitute.For<ITtsAudioCache>();
-        var audioAssembler = Substitute.For<IAudioAssembler>();
-        audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
+        var narrator = Substitute.For<IPodcastNarrator>();
+        narrator.IsConfigured.Returns(true);
+        narrator.EngineName.Returns("openai");
+        narrator.EstimateAsync(Arg.Any<NarrationRequest>(), Arg.Any<CancellationToken>())
+            .Returns(new NarrationEstimate { Success = true });
         var publisher = Substitute.For<IPodcastPublisher>();
 
         var pConfig = Options.Create(new PodcastConfiguration
@@ -2134,20 +1731,16 @@ public class PodcastOrchestratorTests : IDisposable
             Category = "Technology",
             TempDirectory = _tempDir,
         });
-        var ttsConfig = Options.Create(new OpenAiTtsConfiguration { ApiKey = "test-key", MaxBudgetUsd = 5.00m });
 
         var sut = new PodcastOrchestrator(
             contentProvider,
-            ttsService,
-            audioCache,
-            audioAssembler,
+            narrator,
             publisher,
             pConfig,
-            ttsConfig,
             NullLogger<PodcastOrchestrator>.Instance,
             store);
 
-        return (sut, store, publisher, audioAssembler, audioCache, ttsService, articleCache);
+        return (sut, store, publisher, narrator, articleCache);
     }
 
     #endregion
