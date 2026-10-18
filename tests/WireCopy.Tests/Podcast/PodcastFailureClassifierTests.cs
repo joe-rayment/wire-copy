@@ -370,4 +370,88 @@ public class PodcastFailureClassifierTests
 
         c.RelevantSetupRow.Should().BeNull();
     }
+
+    // ---- workspace-c3ec4.4: audio-engine narrator messages ----
+
+    // Guards:   "audio-engine isn't running" sends the user to start audio-engine or fix its address.
+    // Fails if: the audio-engine rule is removed or ordered after the generic network/unknown rules.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastFailureClassifierTests.Classify_AudioEngineNotRunning_PointsAtStartingIt"
+    [Fact]
+    public void Classify_AudioEngineNotRunning_PointsAtStartingIt()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            "audio-engine isn't running at http://127.0.0.1:8080. Start it or change its address in Settings.",
+            NoFailures);
+
+        c.Step.Should().Be("Audio engine");
+        c.Reason.Should().Contain("isn't running");
+        c.Fix.Should().Contain("Start audio-engine");
+        c.Fix.Should().Contain("address in Settings");
+    }
+
+    // Guards:   "audio-engine rejected the API key" means the key WireCopy sends TO audio-engine,
+    //           so the fix points at Settings -> Podcast narration, never at OpenAI's key page.
+    // Fails if: the generic "API key" rule (OpenAI credentials step) wins over the audio-engine rule.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastFailureClassifierTests.Classify_AudioEngineRejectedKey_PointsAtPodcastNarrationSettings"
+    [Fact]
+    public void Classify_AudioEngineRejectedKey_PointsAtPodcastNarrationSettings()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            "audio-engine rejected the API key. Set it in Settings -> Podcast narration.",
+            NoFailures);
+
+        c.Step.Should().Be("Audio engine");
+        c.Step.Should().NotContain("credentials", "this is audio-engine's key, not an OpenAI key");
+        c.Reason.Should().NotContain("OpenAI");
+        c.Fix.Should().Contain("Settings -> Podcast narration");
+        c.Fix.Should().NotContain("platform.openai.com");
+        c.RelevantSetupRow.Should().NotBe(SettingsCommandHandler.SetupRow.OpenAiKey);
+    }
+
+    // Guards:   "audio-engine has no OpenAI key" sends the user to audio-engine's own settings page,
+    //           because that key lives in audio-engine, not in WireCopy.
+    // Fails if: the "no OpenAI key" rule is checked after the "API key" rule (both match the text).
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastFailureClassifierTests.Classify_AudioEngineHasNoOpenAiKey_PointsAtAudioEngineSettingsPage"
+    [Fact]
+    public void Classify_AudioEngineHasNoOpenAiKey_PointsAtAudioEngineSettingsPage()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            "audio-engine has no OpenAI key. Add it in audio-engine's settings (http://127.0.0.1:8080).",
+            NoFailures);
+
+        c.Step.Should().Be("Audio engine");
+        c.Fix.Should().Contain("audio-engine's settings page");
+        c.Fix.Should().NotContain("Settings -> Podcast narration");
+    }
+
+    // Guards:   an over-budget run ("would cost") tells the user to raise audio-engine's budget or
+    //           shorten the list.
+    // Fails if: the "would cost" rule is dropped and the message falls through to "check logs".
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastFailureClassifierTests.Classify_AudioEngineOverBudget_PointsAtBudgetOrShorterList"
+    [Fact]
+    public void Classify_AudioEngineOverBudget_PointsAtBudgetOrShorterList()
+    {
+        var c = PodcastFailureClassifier.Classify(
+            "audio-engine: narration would cost $7.50, over the $5.00 limit.",
+            NoFailures);
+
+        c.Step.Should().Be("Audio engine");
+        c.Reason.Should().Contain("$7.50");
+        c.Fix.Should().Contain("Raise the budget");
+        c.Fix.Should().Contain("shorten the reading list");
+    }
+
+    // Guards:   any other audio-engine message still lands on the Audio engine step and points at
+    //           audio-engine's logs rather than the generic "Unknown" tuple.
+    // Fails if: the audio-engine prefix rule stops matching unrecognised audio-engine text.
+    // Run:      ./dotnet test tests/WireCopy.Tests/WireCopy.Tests.csproj --filter "FullyQualifiedName~PodcastFailureClassifierTests.Classify_AudioEngineUnknownMessage_PointsAtItsLogs"
+    [Fact]
+    public void Classify_AudioEngineUnknownMessage_PointsAtItsLogs()
+    {
+        var c = PodcastFailureClassifier.Classify("audio-engine returned 500 while narrating.", NoFailures);
+
+        c.Step.Should().Be("Audio engine");
+        c.Reason.Should().Be("audio-engine returned 500 while narrating.");
+        c.Fix.Should().Contain("audio-engine's own logs");
+    }
 }
