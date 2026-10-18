@@ -25,6 +25,10 @@
   <ItemGroup>
     <PackageReference Include="FFMpegCore" Version="5.1.0" />
     <PackageReference Include="Google.Cloud.Storage.V1" Version="4.13.0" />
+    <!-- Transitive via Google.Cloud.Storage.V1 / DataProtection; pinned to the first version that clears
+         GHSA-846f-f764-76mx, GHSA-2fmv-rv2c-59x7 (Pkcs) and GHSA-7hqp-7c5m-4vq6, GHSA-c399-9853-6jmj, GHSA-r955-8q5j-3h83 (Xml), all published 2026-10-13, which NuGetAuditMode=all turns into a Release build error. -->
+    <PackageReference Include="System.Security.Cryptography.Pkcs" Version="10.0.13" />
+    <PackageReference Include="System.Security.Cryptography.Xml" Version="10.0.13" />
     <PackageReference Include="HtmlAgilityPack" Version="1.12.4" />
     <PackageReference Include="Microsoft.AspNetCore.DataProtection" Version="10.0.10" />
     <PackageReference Include="Microsoft.EntityFrameworkCore" Version="10.0.10" />
