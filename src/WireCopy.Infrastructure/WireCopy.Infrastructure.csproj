@@ -17,12 +17,6 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Content Include="..\..\tools\chatterbox-worker\chatterbox_worker.py"
-             Link="chatterbox-worker\chatterbox_worker.py"
-             CopyToOutputDirectory="PreserveNewest" />
-  </ItemGroup>
-
-  <ItemGroup>
     <PackageReference Include="FFMpegCore" Version="5.1.0" />
     <PackageReference Include="Google.Cloud.Storage.V1" Version="4.13.0" />
     <!-- Transitive via Google.Cloud.Storage.V1 / DataProtection; pinned to the first version that clears

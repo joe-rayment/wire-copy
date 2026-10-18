@@ -9,7 +9,6 @@ using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Configuration.Validation;
 using WireCopy.Infrastructure.Podcast.AudioEngine;
 using WireCopy.Infrastructure.Podcast.Cache;
-using WireCopy.Infrastructure.Podcast.Chatterbox;
 
 namespace WireCopy.Infrastructure.Podcast;
 
@@ -42,10 +41,6 @@ public static class PodcastDependencyInjection
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(TtsAudioCacheConfiguration.SectionName).Bind(opts));
 
-        services.AddOptions<ChatterboxConfiguration>()
-            .Configure<IConfiguration>((opts, config) =>
-                config.GetSection(ChatterboxConfiguration.SectionName).Bind(opts));
-
         services.AddOptions<AudioEngineConfiguration>()
             .Configure<IConfiguration>((opts, config) =>
                 config.GetSection(AudioEngineConfiguration.SectionName).Bind(opts));
@@ -55,19 +50,13 @@ public static class PodcastDependencyInjection
         services.AddSingleton<IValidateOptions<PodcastConfiguration>, PodcastConfigurationValidator>();
         services.AddSingleton<IValidateOptions<GcsConfiguration>, GcsConfigurationValidator>();
         services.AddSingleton<IValidateOptions<TtsAudioCacheConfiguration>, TtsAudioCacheConfigurationValidator>();
-        services.AddSingleton<IValidateOptions<ChatterboxConfiguration>, ChatterboxConfigurationValidator>();
 
         // Register user settings store (must be before services that consume it)
         services.AddSingleton<IUserSettingsStore, UserSettingsStore>();
 
-        // Register services. ITtsService is the ENGINE ROUTER — it re-reads the
-        // TtsEngine setting on every call, so a Settings switch applies instantly.
+        // Register services.
         services.AddSingleton<OpenAiTtsService>();
-        services.AddSingleton<IChatterboxSidecar, ChatterboxSidecar>();
-        services.AddSingleton<ChatterboxTtsService>();
-        services.AddSingleton<TtsEngineRouter>();
-        services.AddSingleton<ITtsService>(sp => sp.GetRequiredService<TtsEngineRouter>());
-        services.AddSingleton<ITtsCacheKeyProvider>(sp => sp.GetRequiredService<TtsEngineRouter>());
+        services.AddSingleton<ITtsService>(sp => sp.GetRequiredService<OpenAiTtsService>());
         services.AddSingleton<IPodcastFeedGenerator, PodcastFeedGenerator>();
         services.AddSingleton<ICloudStorageClient, GcsStorageClient>();
         services.AddSingleton<IFeedReachabilityProbe, HttpFeedReachabilityProbe>();
