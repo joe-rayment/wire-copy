@@ -10,7 +10,6 @@ using WireCopy.Application.DTOs;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces;
-using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Entities.Collections;
@@ -44,7 +43,6 @@ public class PodcastCommandHandlerTests
     private readonly IPodcastOrchestrator _orchestrator;
     private readonly IUserSettingsStore _settingsStore;
     private readonly GcsConfiguration _gcsConfig;
-    private readonly IAudioAssembler _audioAssembler;
     private readonly IPreloadService _preloadService;
     private readonly CommandContext _ctx;
     private readonly RenderOptions _options;
@@ -68,8 +66,6 @@ public class PodcastCommandHandlerTests
         _narrator.CheckAsync(Arg.Any<CancellationToken>())
             .Returns(new NarratorStatus { Ready = true, Message = "audio-engine ready" });
         _orchestrator = Substitute.For<IPodcastOrchestrator>();
-        _audioAssembler = Substitute.For<IAudioAssembler>();
-        _audioAssembler.ValidatePrerequisitesAsync(Arg.Any<CancellationToken>()).Returns(true);
         _settingsStore = Substitute.For<IUserSettingsStore>();
         _gcsConfig = new GcsConfiguration();
         _preloadService = Substitute.For<IPreloadService>();
@@ -608,7 +604,6 @@ public class PodcastCommandHandlerTests
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
             .Returns(Options.Create(new GcsConfiguration { BucketName = "test-bucket" }));
-        serviceProvider.GetService(typeof(IAudioAssembler)).Returns(_audioAssembler);
         serviceProvider.GetService(typeof(ICloudStorageClient)).Returns(null as object);
         serviceProvider.GetService(typeof(IPodcastPublisher)).Returns(null as object);
         serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>))
@@ -938,7 +933,6 @@ public class PodcastCommandHandlerTests
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
             .Returns(Options.Create(_gcsConfig));
-        serviceProvider.GetService(typeof(IAudioAssembler)).Returns(_audioAssembler);
         serviceProvider.GetService(typeof(ICloudStorageClient)).Returns(cloudStorageOverride);
         serviceProvider.GetService(typeof(IPodcastPublisher)).Returns(publisher);
         serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>))
@@ -979,7 +973,6 @@ public class PodcastCommandHandlerTests
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>))
             .Returns(Options.Create(_gcsConfig));
-        serviceProvider.GetService(typeof(IAudioAssembler)).Returns(_audioAssembler);
         serviceProvider.GetService(typeof(ICloudStorageClient)).Returns(cloudStorage);
         serviceProvider.GetService(typeof(IPodcastPublisher)).Returns(publisher);
         serviceProvider.GetService(typeof(IOptions<PodcastConfiguration>))

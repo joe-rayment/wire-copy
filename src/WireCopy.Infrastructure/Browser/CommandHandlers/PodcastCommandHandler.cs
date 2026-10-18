@@ -7,7 +7,6 @@ using Microsoft.Extensions.Options;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces;
-using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Domain.Enums.Browser;
@@ -199,15 +198,6 @@ internal static class PodcastCommandHandler
             }
 
             var engineIsLocal = string.Equals(narrator.EngineName, "chatterbox", StringComparison.OrdinalIgnoreCase);
-
-            // Pre-flight FFmpeg check: fail fast before slow cache analysis
-            var audioAssembler = scope.ServiceProvider.GetRequiredService<IAudioAssembler>();
-            if (!await audioAssembler.ValidatePrerequisitesAsync(ct).ConfigureAwait(false))
-            {
-                await PodcastProgressScreens.ShowErrorScreenAsync(ctx, options, "FFmpeg is not installed or not found in PATH.", [], ct).ConfigureAwait(false);
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return false;
-            }
 
             // Pre-flight GCS validation: check credentials BEFORE slow cache
             // analysis. workspace-ny44 (Phase 6) retired the confirmation
