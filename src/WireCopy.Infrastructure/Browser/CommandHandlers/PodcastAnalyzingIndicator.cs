@@ -65,6 +65,41 @@ internal static class PodcastAnalyzingIndicator
     }
 
     /// <summary>
+    /// Renders the same bottom box with a free-text line and no progress bar — used while
+    /// audio-engine is being started for the user (workspace-08e4u), where there is no count
+    /// to show. <see cref="Clear"/> blanks it like the analyzing box.
+    /// </summary>
+    /// <param name="options">The render options (terminal size).</param>
+    /// <param name="palette">The active theme palette.</param>
+    /// <param name="summary">The bold line on the left, e.g. "Starting audio-engine…".</param>
+    /// <param name="hint">The dim hint on the right, e.g. "up to 90 s".</param>
+    public static void RenderMessage(RenderOptions options, ThemePalette palette, string summary, string hint)
+    {
+        ArgumentNullException.ThrowIfNull(options);
+        ArgumentNullException.ThrowIfNull(palette);
+        ArgumentNullException.ThrowIfNull(summary);
+        ArgumentNullException.ThrowIfNull(hint);
+
+        var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+        var boxWidth = Math.Max(60, Math.Min(options.TerminalWidth - 4, 120));
+        var leftPad = Math.Max(0, (options.TerminalWidth - boxWidth) / 2);
+        var pad = new string(' ', leftPad);
+        var borderFg = palette.HeaderBorderFg.AnsiFg;
+
+        var contentWidth = boxWidth - 4;
+        var summaryPlain = RenderHelpers.TruncateText(summary, Math.Max(1, contentWidth - RenderHelpers.GetDisplayWidth(hint) - 2));
+        var gapWidth = Math.Max(2, contentWidth - RenderHelpers.GetDisplayWidth(summaryPlain) - RenderHelpers.GetDisplayWidth(hint));
+
+        var styledSummary = $"{Bold}{palette.PrimaryText.AnsiFg}{summaryPlain}{Reset}";
+        var styledHint = $"{palette.SecondaryText.AnsiFg}{hint}{Reset}";
+
+        var topRow = Math.Max(0, options.TerminalHeight - 5);
+        helpers.WriteAt(0, topRow, $"{pad}{borderFg}╭{new string('─', boxWidth - 2)}╮{Reset}");
+        helpers.WriteAt(0, topRow + 1, $"{pad}{borderFg}│{Reset} {styledSummary}{new string(' ', gapWidth)}{styledHint} {borderFg}│{Reset}");
+        helpers.WriteAt(0, topRow + 2, $"{pad}{borderFg}╰{new string('─', boxWidth - 2)}╯{Reset}");
+    }
+
+    /// <summary>
     /// Blanks the three rows the indicator wrote to so the next full repaint
     /// (typically the cost-gate modal or the progress screen) starts from a
     /// clean state. Mirrors <c>PodcastCostGateModal.ClearBoxRows</c>.
