@@ -66,6 +66,9 @@ public static class PodcastDependencyInjection
         services.AddHttpClient("AudioEngine", c => c.Timeout = Timeout.InfiniteTimeSpan);
         services.AddSingleton<IPodcastNarrator, AudioEngineNarrator>();
 
+        // workspace-08e4u: starts a local audio-engine when nothing answers at its URL.
+        services.AddSingleton<IAudioEngineLauncher, AudioEngineLauncher>();
+
         // workspace-frpl.1 (B0): one process-wide generation gate shared by the
         // manual modal and the scheduler so podcast runs never overlap.
         services.AddSingleton<IPodcastGenerationGate, PodcastGenerationGate>();

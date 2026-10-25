@@ -63,6 +63,7 @@ internal static class SettingsCommandHandler
     // workspace-c3ec4.3: audio-engine connection (must match AudioEngineSettings.Resolve).
     internal const string KeyAudioEngineUrl = "AudioEngineUrl";
     internal const string KeyAudioEngineApiKey = "AudioEngineApiKey";
+    internal const string KeyAudioEngineProgram = "AudioEngineProgram";  // workspace-08e4u: folder or executable WireCopy starts for the user
 
     // workspace-r8on: layout-judge model + optional local (Ollama) endpoint.
     internal const string KeyLayoutModel = "LayoutModel";
