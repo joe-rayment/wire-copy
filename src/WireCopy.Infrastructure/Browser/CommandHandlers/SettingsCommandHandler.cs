@@ -101,6 +101,7 @@ internal static class SettingsCommandHandler
 
         // workspace-c3ec4.3: audio-engine connection rows.
         AudioEngine,
+        AudioEngineProgram,  // workspace-08e4u: folder or executable WireCopy starts when nothing answers
         AudioEngineKey,
 
         // workspace-2xej.7: narration engine picker + Chatterbox (local) rows.
@@ -167,6 +168,10 @@ internal static class SettingsCommandHandler
         NarratorStatus? narratorStatus = null;
         var narratorStatusFresh = false;
 
+        // workspace-08e4u: the status words last painted on the Audio engine row, so the 3 s
+        // refresh repaints "starting…" → "ready ✓" / "not running" even when the probe looks the same.
+        string? paintedNarratorText = null;
+
         // workspace-c3ec4.6: the input wait outlives a status-driven repaint so a keystroke
         // that lands mid-repaint is still consumed by the next iteration, never dropped.
         Task<NavigationCommand>? pendingInput = null;
@@ -175,10 +180,18 @@ internal static class SettingsCommandHandler
         {
             using var scope = ctx.ScopeFactory.CreateScope();
             var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+            var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
             if (!narratorStatusFresh)
             {
                 narratorStatus = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
                 narratorStatusFresh = true;
+
+                // workspace-08e4u: nothing answers at a local URL — start audio-engine for the user
+                // (one automatic attempt per URL per session; the row shows "starting…" meanwhile).
+                if (narratorStatus?.ErrorKind == NarrationErrorKind.Unreachable && AudioEngineLauncher.IsLocal(narratorStatus.Url))
+                {
+                    _ = launcher.BeginStart(narratorStatus.Url);
+                }
             }
 
             // workspace-2xej.7: the row list depends on the active narration engine,
@@ -267,7 +280,13 @@ internal static class SettingsCommandHandler
             }
 
             var audioEngineReady = narratorStatus?.Ready == true;
-            var audioEngineValue = $"{audioEngineUrl} · {DescribeNarratorStatus(narratorStatus)}";
+            paintedNarratorText = DescribeNarratorStatus(narratorStatus, narratorStatus is not null && launcher.IsStarting(narratorStatus.Url));
+            var audioEngineValue = $"{audioEngineUrl} · {paintedNarratorText}";
+
+            // workspace-08e4u: the program WireCopy starts when nothing answers at the URL above.
+            var programDiscovery = launcher.Discover();
+            var programFound = programDiscovery.Program is not null;
+            var programValue = programFound ? programDiscovery.Program!.Display : "not found";
             string narrationTestValue;
             if (DateTime.TryParse(
                 settingsStore.Get(KeyChatterboxLastTestOk),
@@ -360,6 +379,21 @@ internal static class SettingsCommandHandler
                 "Change",
                 helperText: "audio-engine makes the audio. Run it locally (see its README) — default http://127.0.0.1:8080",
                 isWarning: !audioEngineReady);
+
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.AudioEngineProgram,
+                programFound ? "●" : "○",
+                programFound ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Audio engine program",
+                programValue,
+                programFound ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                programFound ? "Change" : "Set",
+                helperText: "Started for you when nothing answers at the URL above · folder or executable");
 
             RenderRow(
                 helpers,
@@ -595,7 +629,7 @@ internal static class SettingsCommandHandler
                 }
 
                 var probed = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
-                if (probed is not null && DescribeNarratorStatus(probed) != DescribeNarratorStatus(narratorStatus))
+                if (probed is not null && DescribeNarratorStatus(probed, launcher.IsStarting(probed.Url)) != paintedNarratorText)
                 {
                     narratorStatus = probed;
                     statusChanged = true;
@@ -653,7 +687,7 @@ internal static class SettingsCommandHandler
                 var dispatched = rows[selectedIndex];
                 await DispatchRowAsync(ctx, options, dispatched, ct).ConfigureAwait(false);
 
-                if (dispatched is SetupRow.AudioEngine or SetupRow.AudioEngineKey or SetupRow.NarrationEngine
+                if (dispatched is SetupRow.AudioEngine or SetupRow.AudioEngineProgram or SetupRow.AudioEngineKey or SetupRow.NarrationEngine
                     or SetupRow.ChatterboxSample or SetupRow.ChatterboxExaggeration
                     or SetupRow.Voice or SetupRow.Model or SetupRow.TtsInstructions)
                 {
@@ -768,6 +802,10 @@ internal static class SettingsCommandHandler
                 await HandleSetAudioEngineUrlAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
 
+            case SetupRow.AudioEngineProgram:
+                await HandleSetAudioEngineProgramAsync(ctx, options, ct).ConfigureAwait(false);
+                return;
+
             case SetupRow.AudioEngineKey:
                 await HandleSetAudioEngineKeyAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
@@ -808,6 +846,7 @@ internal static class SettingsCommandHandler
             SetupRow.GcsKey,
             SetupRow.GcsBucket,
             SetupRow.AudioEngine,
+            SetupRow.AudioEngineProgram,
             SetupRow.AudioEngineKey,
             SetupRow.NarrationEngine,
         };
@@ -865,8 +904,9 @@ internal static class SettingsCommandHandler
     /// Short status word for the Audio engine row (workspace-c3ec4.3).
     /// </summary>
     /// <param name="status">The last probe; null while none has completed.</param>
+    /// <param name="isStarting">True while WireCopy is starting audio-engine itself (workspace-08e4u).</param>
     /// <returns>A few words the row shows after the URL.</returns>
-    internal static string DescribeNarratorStatus(NarratorStatus? status)
+    internal static string DescribeNarratorStatus(NarratorStatus? status, bool isStarting = false)
     {
         if (status is null)
         {
@@ -880,7 +920,7 @@ internal static class SettingsCommandHandler
 
         return status.ErrorKind switch
         {
-            NarrationErrorKind.Unreachable => "not running",
+            NarrationErrorKind.Unreachable => isStarting ? "starting…" : "not running",
             NarrationErrorKind.Unauthorized => "key rejected",
             NarrationErrorKind.NotConfigured => "no key",
             NarrationErrorKind.EngineNotConfigured => "engine not configured",
@@ -2542,6 +2582,90 @@ internal static class SettingsCommandHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Enter on the Audio engine program row (workspace-08e4u): prompts for the folder or executable
+    /// WireCopy starts when nothing answers at the audio-engine URL. Blank forgets the setting so the
+    /// <c>AUDIO_ENGINE_HOME</c> / <c>~/audio-engine</c> lookup applies again; either way the launcher's
+    /// one-attempt guard is reset so the next probe tries the new program.
+    /// </summary>
+    private static async Task HandleSetAudioEngineProgramAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var field = new FormFieldConfig
+        {
+            Label = "Audio engine program",
+            Placeholder = "~/audio-engine",
+            HelpText = "Folder or executable WireCopy starts for you · blank to forget · Enter to save · Esc to cancel",
+            IsSecret = false,
+            MaxLength = 400,
+            InitialValue = settingsStore.Get(KeyAudioEngineProgram) ?? string.Empty,
+            Validate = ValidateAudioEngineProgram,
+        };
+
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Min(UI.OverlayViewport.Width - 6, 60);
+        var input = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
+        if (input is null)
+        {
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        var trimmed = input.Trim();
+        try
+        {
+            if (trimmed.Length == 0)
+            {
+                settingsStore.Remove(KeyAudioEngineProgram);
+                ctx.NavigationService.SetStatusMessage("Audio engine program → found automatically");
+            }
+            else
+            {
+                settingsStore.Set(KeyAudioEngineProgram, trimmed);
+                ctx.NavigationService.SetStatusMessage($"Audio engine program → {trimmed}");
+            }
+
+            launcher.ResetAttempts();
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to save audio-engine program");
+            ctx.NavigationService.SetStatusMessage("Failed to save audio-engine program", StatusSeverity.Error);
+        }
+
+        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>
+    /// Validates the Audio engine program field (workspace-08e4u): blank is allowed (forgets the
+    /// setting); otherwise the path, with <c>~</c> expanded, must be an existing file or folder.
+    /// </summary>
+    /// <param name="value">The typed path.</param>
+    /// <returns>Null when acceptable; the problem otherwise.</returns>
+    internal static string? ValidateAudioEngineProgram(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return null;
+        }
+
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        string full;
+        try
+        {
+            full = AudioEngineLauncher.ExpandHome(value.Trim(), home);
+        }
+        catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
+        {
+            return "Not a valid path";
+        }
+
+        return File.Exists(full) || Directory.Exists(full) ? null : $"Not found: {full}";
     }
 
     /// <summary>
