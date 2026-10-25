@@ -26,6 +26,12 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private const string UnauthorizedText = "audio-engine rejected the API key. Set it in Settings -> Podcast narration.";
     private const string UrlSeparator = "/";
 
+    /// <summary>
+    /// Container the narration test asks audio-engine for: AAC in MP4, so the bytes match the
+    /// <c>.m4a</c> name the Settings screen saves them under (audio-engine defaults to mp3).
+    /// </summary>
+    private const string TestClipFormat = "aac";
+
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(10);
 
@@ -354,7 +360,8 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                 text,
                 s.IsChatterbox ? null : s.Voice,
                 s.IsChatterbox ? null : s.Instructions,
-                s.IsChatterbox ? null : s.Speed);
+                s.IsChatterbox ? null : s.Speed,
+                TestClipFormat);
 
             using var request = NewRequest(HttpMethod.Post, "v1/audio/speech", s.ApiKey);
             request.Content = JsonContent.Create(speech, options: Json);
@@ -697,7 +704,13 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
 
     private sealed record EngineDto(string? Name, bool IsConfigured, List<string>? Voices, string? DefaultVoice);
 
-    private sealed record SpeechRequest(string Model, string Input, string? Voice, string? Instructions, double? Speed);
+    private sealed record SpeechRequest(
+        string Model,
+        string Input,
+        string? Voice,
+        string? Instructions,
+        double? Speed,
+        [property: JsonPropertyName("response_format")] string ResponseFormat);
 
     /// <summary>Reports each audio-engine event to the caller's callback synchronously, on the thread that raised it.</summary>
     private sealed class ProgressSink : IProgress<JobEvent>
