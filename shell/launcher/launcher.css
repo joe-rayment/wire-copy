@@ -327,6 +327,7 @@ html, body {
   white-space: nowrap;
   margin-bottom: 12px;
 }
+#extensionhint .key { color: var(--tr-cyan); }
 #footer-row {
   display: flex;
   align-items: baseline;
