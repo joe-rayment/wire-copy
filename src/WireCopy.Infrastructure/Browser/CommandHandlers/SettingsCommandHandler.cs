@@ -3082,17 +3082,52 @@ internal static class SettingsCommandHandler
             WritePanelLine(0, $"{palette.GetAccentFg().AnsiFg}Test narration — {engineLabel}{Reset}");
             WritePanelLine(1, $"{palette.SecondaryText.AnsiFg}{RenderHelpers.TruncateText(expectation, panelWidth - 4)}{Reset}");
             WritePanelLine(2, $"{palette.SecondaryText.AnsiFg}Esc cancels.{Reset}");
-            WritePanelLine(4, $"{palette.PrimaryText.AnsiFg}Generating…{Reset}");
+            var phase = "Generating…";
+            var paintedPhase = phase;
+            WritePanelLine(4, $"{palette.PrimaryText.AnsiFg}{phase}{Reset}");
 
-            var genTask = ExecuteNarrationTestAsync(narrator, outputFolder, cts.Token);
+            // workspace-08e4u: a local audio-engine that isn't answering is started before the
+            // clip is generated; the panel's phase line follows along ("Starting audio-engine…"
+            // then back to "Generating…"). Every other readiness outcome falls through to the
+            // narrator, whose own error message the panel already shows.
+            async Task<NarrationTestOutcome> GenerateAsync()
+            {
+                var status = await PodcastCommandHandler.CheckNarratorAsync(narrator, cts.Token).ConfigureAwait(false);
+                if (!status.Ready
+                    && status.ErrorKind == NarrationErrorKind.Unreachable
+                    && AudioEngineLauncher.IsLocal(status.Url))
+                {
+                    var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
+                    phase = "Starting audio-engine…";
+                    var startResult = await launcher.StartAndWaitAsync(status.Url, cts.Token).ConfigureAwait(false);
+                    if (!startResult.Ready)
+                    {
+                        return new NarrationTestOutcome(false, null, startResult.Message ?? "audio-engine didn't start");
+                    }
+
+                    phase = "Generating…";
+                }
+
+                return await ExecuteNarrationTestAsync(narrator, outputFolder, cts.Token).ConfigureAwait(false);
+            }
+
+            var genTask = GenerateAsync();
 
             // Race generation against Esc; a pending input wait doubles as the
             // final "press any key" consumer so no keystroke is ever swallowed.
+            // The 200 ms tick lets the phase line repaint when the start step
+            // begins or ends without waiting for a keypress.
             Task<NavigationCommand>? pendingInput = null;
             while (!genTask.IsCompleted)
             {
                 pendingInput ??= ctx.InputHandler.WaitForInputAsync(cts.Token);
-                var finished = await Task.WhenAny(genTask, pendingInput).ConfigureAwait(false);
+                var finished = await Task.WhenAny(genTask, pendingInput, Task.Delay(200, cts.Token)).ConfigureAwait(false);
+                if (!string.Equals(paintedPhase, phase, StringComparison.Ordinal))
+                {
+                    paintedPhase = phase;
+                    WritePanelLine(4, $"{palette.PrimaryText.AnsiFg}{paintedPhase}{Reset}");
+                }
+
                 if (finished == pendingInput)
                 {
                     NavigationCommand cmd;
