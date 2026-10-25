@@ -10,7 +10,7 @@ namespace WireCopy.Infrastructure.Configuration;
 /// <summary>
 /// Validates an OpenAI API key with one minimal TTS call (~4 characters, well under a cent).
 /// Standalone on purpose (workspace-c3ec4.3): narration moved to audio-engine, so the settings
-/// screen no longer has an <c>ITtsService</c> to borrow a validator from, but the OpenAI key
+/// screen no longer has a TTS service to borrow a validator from, but the OpenAI key
 /// still powers AI layout and article extraction and must be checked when the user sets it.
 /// </summary>
 public sealed class OpenAiKeyValidator

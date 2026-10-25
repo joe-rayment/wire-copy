@@ -199,78 +199,6 @@ public class ProgressScreenAggregatorRenderTests
         output.Should().Contain("attempt 2/3");
     }
 
-    /// <summary>
-    /// workspace-rz1c: pins the message wire-format produced by
-    /// <c>OpenAiTtsService.BuildRetryProgress</c>. The screen renderer just
-    /// echoes <c>progress.Message</c>; the user-visible copy is determined
-    /// here. Together with the screen test above, this proves the full
-    /// chain from (attempt, delayMs, status) input to rendered terminal
-    /// output.
-    /// </summary>
-    [Fact]
-    public void BuildRetryProgress_429_FormatsRateLimitedMessage()
-    {
-        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
-            attempt: 2,
-            delayMs: 4000,
-            status: 429,
-            chunkIndex: 3,
-            totalChunks: 7,
-            charactersProcessed: 1200,
-            totalCharacters: 5400,
-            maxRetries: 5);
-
-        progress.IsRetrying.Should().BeTrue();
-        progress.RetryAttempt.Should().Be(2);
-        progress.RetryMaxAttempts.Should().Be(5);
-        progress.RetryDelaySeconds.Should().Be(4);
-        progress.Message.Should().Be("Rate-limited by OpenAI (HTTP 429), retrying in 4s (attempt 2/5)",
-            "the wire-format copy MUST stay stable — the renderer just echoes Message");
-    }
-
-    [Fact]
-    public void BuildRetryProgress_5xx_FormatsServerErrorMessage()
-    {
-        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
-            attempt: 1, delayMs: 1500, status: 503,
-            chunkIndex: 1, totalChunks: 2,
-            charactersProcessed: 0, totalCharacters: 800, maxRetries: 3);
-
-        progress.Message.Should().Contain("HTTP 503");
-        progress.Message.Should().Contain("retrying in 2s",
-            "1500ms rounds UP to 2s — the user shouldn't see fractional waits");
-        progress.Message.Should().Contain("attempt 1/3");
-    }
-
-    /// <summary>
-    /// workspace-roab: DNS failures, connection-refused, and TLS handshake
-    /// errors arrive at OpenAiTtsService as HttpRequestException with a
-    /// null StatusCode. BuildRetryProgress receives status=0 in that case
-    /// and must render network-specific copy (no "HTTP 0", no "Rate-limited
-    /// by OpenAI" misleading text).
-    /// </summary>
-    [Fact]
-    public void BuildRetryProgress_NetworkLayer_FormatsNetworkIssueMessage()
-    {
-        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
-            attempt: 2,
-            delayMs: 3000,
-            status: 0,
-            chunkIndex: 1,
-            totalChunks: 4,
-            charactersProcessed: 0,
-            totalCharacters: 2000,
-            maxRetries: 3);
-
-        progress.IsRetrying.Should().BeTrue();
-        progress.Message.Should().Be("Network issue, retrying in 3s (attempt 2/3)",
-            "DNS/connection-refused must surface as 'Network issue' — not 'HTTP 0' garbage");
-        progress.Message.Should().NotContain("HTTP",
-            "the network-layer path must NOT mention an HTTP status code");
-        progress.Message.Should().NotContain("OpenAI",
-            "network connectivity isn't OpenAI's fault — don't blame the API");
-    }
-
     [Fact]
     [Trait("Collection", "ConsoleOutput")]
     public void RenderProgressContent_NetworkRetry_RendersNetworkIssueBanner()
@@ -305,21 +233,6 @@ public class ProgressScreenAggregatorRenderTests
         output.Should().Contain("attempt 1/3");
         output.Should().NotContain("Rate-limited",
             "the network-layer banner must NOT carry rate-limit copy");
-    }
-
-    [Fact]
-    public void BuildRetryProgress_SubSecondDelay_RoundsUpToOneSecond()
-    {
-        // Defensive: a 300ms backoff (e.g. RetryBaseDelayMs=300, attempt 0)
-        // would format as "retrying in 0s" without the Math.Max(1, ...) clamp.
-        // The user shouldn't see a zero-second wait.
-        var progress = WireCopy.Infrastructure.Podcast.OpenAiTtsService.BuildRetryProgress(
-            attempt: 1, delayMs: 300, status: 429,
-            chunkIndex: 1, totalChunks: 1,
-            charactersProcessed: 0, totalCharacters: 100, maxRetries: 3);
-
-        progress.RetryDelaySeconds.Should().Be(1);
-        progress.Message.Should().Contain("retrying in 1s");
     }
 
     /// <summary>

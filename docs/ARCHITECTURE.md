@@ -15,7 +15,7 @@ WireCopy follows **Clean Architecture** with strict dependency direction: `API �
 │  WireCopy.Infrastructure                                │
 │    Browser/   Patchright automation, link extraction,      │
 │               reader-view rendering, terminal UI shell     │
-│    Podcast/   OpenAI TTS, FFmpeg, M4B chapter markers,     │
+│    Podcast/   audio-engine narration client, RSS feed,     │
 │               GCS feed publishing                          │
 │    Configuration/  Options classes + validators            │
 └──────────────────┬───────────────────────────────────────┘
@@ -82,7 +82,7 @@ Rules:
 Everything that talks to the outside world.
 
 - `Browser/` — Patchright (patched Playwright) automation, navigation, page caching, the Helix-style input router, and the custom ANSI terminal renderer and input handling under `Browser/UI/` (hosted in the Electron desktop shell under `shell/`; no TUI framework).
-- `Podcast/` — `OpenAiTtsService`, `M4bAudioAssembler` (FFmpeg), `PodcastFeedGenerator`, `GcsStorageClient` for optional cloud publishing.
+- `Podcast/` — `AudioEngineNarrator` (sends article text to audio-engine, which synthesizes and assembles the chaptered audio), `PodcastFeedGenerator`, `GcsStorageClient` for optional cloud publishing.
 - `Configuration/` — strongly typed options classes (`OpenAiTtsConfiguration`, `AnthropicConfiguration`, `BrowserConfiguration`, `PodcastConfiguration`, `GcsConfiguration`) and corresponding `IValidateOptions<T>` validators.
 
 Rules:

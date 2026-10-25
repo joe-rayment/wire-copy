@@ -78,14 +78,13 @@ public record PodcastProgress
     public int CurrentArticleChunkIndex { get; init; }
 
     /// <summary>
-    /// Total TTS chunks the current article was split into. Reported by
-    /// <see cref="WireCopy.Application.DTOs.TtsProgress"/> (workspace-74zy).
+    /// Total TTS chunks the current article was split into (workspace-74zy).
     /// </summary>
     public int CurrentArticleChunkTotal { get; init; }
 
     /// <summary>
     /// Percent (0–100) of the current article's text that the TTS pipeline
-    /// has finished synthesising. Computed from TtsProgress.PercentComplete
+    /// has finished synthesising. Computed from the narrator's chunk progress
     /// so weighted-ETA consumers do not have to interpolate (workspace-74zy).
     /// </summary>
     public double CurrentArticleChunkPercent { get; init; }

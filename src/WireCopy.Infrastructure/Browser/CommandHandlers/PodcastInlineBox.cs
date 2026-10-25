@@ -9,8 +9,8 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// <summary>
 /// Shared renderer for the small 3-row bordered inline box that sits above
 /// the status bar (workspace-nahg). Extracted from the duplicated private
-/// RenderBox/ClearBoxRows in <see cref="PodcastCostGateModal"/> and
-/// <see cref="PodcastMissingKeyModal"/> so the cancellation confirm and the
+/// RenderBox/ClearBoxRows in <see cref="PodcastCostGateModal"/> (and the
+/// since-removed missing-key modal) so the cancellation confirm and the
 /// invalid-key border flash share a single layout implementation.
 /// </summary>
 internal static class PodcastInlineBox

@@ -91,19 +91,6 @@ internal static class PodcastFailureClassifier
             return ClassifyAudioEngine(error);
         }
 
-        // ---- Local narration engine (Chatterbox) — keyed on the sentinel prefix
-        // the local-engine preflight stamps on every failure (workspace-2xej.10). Must
-        // come FIRST so a local failure never advises checking platform.openai.com. ----
-        if (error.StartsWith("Local narration: ", StringComparison.Ordinal))
-        {
-            var detail = error["Local narration: ".Length..];
-            return new PodcastFailureClassification(
-                Step: "Local narration (Chatterbox)",
-                Reason: string.IsNullOrWhiteSpace(detail) ? "The local voice engine failed" : detail,
-                Fix: "Run the Test in Settings (c → Local engine) to see details; if it's the first run the model download may have been interrupted — just retry. uv installed? → curl -LsSf https://astral.sh/uv/install.sh | sh",
-                RelevantSetupRow: SettingsCommandHandler.SetupRow.NarrationTest);
-        }
-
         // ---- Pre-flight failures (FFmpeg, missing API key) ----
         if (error.Contains("FFmpeg", StringComparison.OrdinalIgnoreCase) ||
             error.Contains("ffmpeg", StringComparison.Ordinal))

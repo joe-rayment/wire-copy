@@ -5,7 +5,6 @@ using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.DTOs.Podcast;
 using WireCopy.Application.Interfaces;
-using WireCopy.Application.Interfaces.Audio;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Infrastructure.Browser;
 using WireCopy.Infrastructure.Podcast;
@@ -50,43 +49,13 @@ public class PodcastPipelineIntegrationTests : IDisposable
     {
         var services = BuildServiceProvider();
 
-        var tts = services.GetService<ITtsService>();
-        var assembler = services.GetService<IAudioAssembler>();
+        var narrator = services.GetService<IPodcastNarrator>();
         var publisher = services.GetService<IPodcastPublisher>();
         var orchestrator = services.GetService<IPodcastOrchestrator>();
 
-        tts.Should().NotBeNull();
-        assembler.Should().NotBeNull();
+        narrator.Should().NotBeNull();
         publisher.Should().NotBeNull();
         orchestrator.Should().NotBeNull();
-    }
-
-    [Fact(Skip = "Requires OpenAI API key, FFmpeg, GCS credentials, and browser stack")]
-    public void TtsService_WithApiKey_IsConfigured()
-    {
-        var services = BuildServiceProvider();
-        var tts = services.GetRequiredService<ITtsService>();
-
-        // Only passes when OPENAI_API_KEY or config key is set
-        if (!string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("OPENAI_API_KEY")))
-        {
-            tts.IsConfigured.Should().BeTrue();
-        }
-    }
-
-    [Fact(Skip = "Requires OpenAI API key, FFmpeg, GCS credentials, and browser stack")]
-    public async Task AudioAssembler_ValidatePrerequisites_ReturnsTrueWhenFfmpegAvailable()
-    {
-        var services = BuildServiceProvider();
-        var assembler = services.GetRequiredService<IAudioAssembler>();
-
-        var result = await assembler.ValidatePrerequisitesAsync();
-
-        // Only passes when FFmpeg is on PATH
-        if (IsFfmpegAvailable())
-        {
-            result.Should().BeTrue();
-        }
     }
 
     [Fact(Skip = "Requires OpenAI API key, FFmpeg, GCS credentials, and browser stack")]
@@ -164,33 +133,5 @@ public class PodcastPipelineIntegrationTests : IDisposable
         services.AddPodcast();
 
         return services.BuildServiceProvider();
-    }
-
-    private static bool IsFfmpegAvailable()
-    {
-        try
-        {
-            var process = System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
-            {
-                FileName = "ffmpeg",
-                Arguments = "-version",
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-                UseShellExecute = false,
-                CreateNoWindow = true,
-            });
-
-            if (process != null)
-            {
-                process.WaitForExit(5000);
-                return process.ExitCode == 0;
-            }
-        }
-        catch
-        {
-            // Not available
-        }
-
-        return false;
     }
 }

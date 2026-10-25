@@ -72,10 +72,9 @@ boot_mark start
 API_OUT="src/WireCopy.API/bin/Release/net10.0"
 BUILD_STAMP="$API_OUT/.wc-build-stamp"
 # Everything MSBuild treats as an input to the 5-project graph, from the csprojs: sources,
-# the PreserveNewest content (assets/podcast-cover.png, demo/site/**, the chatterbox
-# worker), the shared props, .editorconfig (EnforceCodeStyleInBuild makes it a compile
-# input), and the toolchain wiring itself.
-BUILD_INPUTS=(src assets demo/site extension tools/chatterbox-worker \
+# the PreserveNewest content (assets/podcast-cover.png, demo/site/**), the shared props,
+# .editorconfig (EnforceCodeStyleInBuild makes it a compile input), and the toolchain wiring.
+BUILD_INPUTS=(src assets demo/site extension \
               Directory.Build.props .editorconfig dotnet scripts/bootstrap-dotnet.sh run)
 needs_build=1
 if [ "${WIRECOPY_FORCE_BUILD:-}" != "1" ] && [ -f "$BUILD_STAMP" ] && [ -f "$API_OUT/WireCopy.API.dll" ]; then

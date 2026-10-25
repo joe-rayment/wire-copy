@@ -28,7 +28,6 @@ public class SetCommandTests
     private readonly RenderOptions _options;
     private readonly IInputHandler _inputHandler;
     private readonly IUserSettingsStore _settingsStore;
-    private readonly ITtsService _ttsService;
     private readonly GcsConfiguration _gcsConfig;
     private bool _renderCalled;
 
@@ -45,7 +44,6 @@ public class SetCommandTests
 
         _inputHandler = Substitute.For<IInputHandler>();
         _settingsStore = Substitute.For<IUserSettingsStore>();
-        _ttsService = Substitute.For<ITtsService>();
         _gcsConfig = new GcsConfiguration();
 
         var gcsOptions = Substitute.For<IOptions<GcsConfiguration>>();
@@ -57,7 +55,6 @@ public class SetCommandTests
         var serviceProvider = Substitute.For<IServiceProvider>();
 
         serviceProvider.GetService(typeof(IUserSettingsStore)).Returns(_settingsStore);
-        serviceProvider.GetService(typeof(ITtsService)).Returns(_ttsService);
         serviceProvider.GetService(typeof(IOptions<GcsConfiguration>)).Returns(gcsOptions);
         scope.ServiceProvider.Returns(serviceProvider);
         scopeFactory.CreateScope().Returns(scope);
@@ -150,7 +147,6 @@ public class SetCommandTests
             _ctx, "clear apikey", _options, CancellationToken.None);
 
         _settingsStore.Received(1).Remove("OpenAiApiKey");
-        _ttsService.Received(1).SetApiKeyOverride(string.Empty);
 
         // workspace-igh6.1: the destructive clear tells the user how to recover.
         _navigationService.CurrentContext.StatusMessage.Should().Contain("cleared");
