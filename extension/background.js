@@ -12,15 +12,53 @@ const PROTOCOL_VERSION = 1
 // Chrome allows 64 MiB browser->host; keep headroom for the JSON envelope/escaping.
 const MAX_HTML_BYTES = 60 * 1024 * 1024
 const BADGE_MS = 2000
+const WELCOME_URL = chrome.runtime.getURL('welcome.html')
+// How long to wait for the local guide page to hand over to welcome.html on install.
+const HANDOFF_POLL_MS = 200
+const HANDOFF_MAX_MS = 3000
 
 // A badge left over from a worker that was stopped mid-flash must not linger.
 chrome.action.setBadgeText({ text: '' })
 
 chrome.runtime.onInstalled.addListener(details => {
-  if (details.reason === 'install') {
-    chrome.tabs.create({ url: chrome.runtime.getURL('welcome.html') })
-  }
+  if (details.reason === 'install') openWelcome()
 })
+
+// ── welcome page ────────────────────────────────────────────────────────────
+
+const sleep = ms => new Promise(resolve => setTimeout(resolve, ms))
+
+// The tab context showing welcome.html (with any query string), if one exists.
+async function findWelcomeTab () {
+  try {
+    const contexts = await chrome.runtime.getContexts({ contextTypes: ['TAB'] })
+    return contexts.find(c => (c.documentUrl || '').startsWith(WELCOME_URL)) || null
+  } catch {
+    return null
+  }
+}
+
+async function focusTab (ctx) {
+  try {
+    await chrome.tabs.update(ctx.tabId, { active: true })
+    await chrome.windows.update(ctx.windowId, { focused: true })
+    return true
+  } catch {
+    return false // the tab went away while we looked
+  }
+}
+
+// When the user installs from the local add-extension guide page, that page
+// notices the install and navigates itself to welcome.html?from=guide. Give it
+// a moment and bring that tab forward rather than opening a second welcome tab.
+async function openWelcome () {
+  for (let waited = 0; waited <= HANDOFF_MAX_MS; waited += HANDOFF_POLL_MS) {
+    const ctx = await findWelcomeTab()
+    if (ctx && await focusTab(ctx)) return
+    await sleep(HANDOFF_POLL_MS)
+  }
+  chrome.tabs.create({ url: WELCOME_URL })
+}
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   // Only our own pages (popup, welcome) may drive the worker.
@@ -176,7 +214,7 @@ async function saveActiveTab () {
   if (result) return result
 
   flashBadge()
-  return {
+  const saved = {
     ok: true,
     state: 'saved',
     title: reply.title || page.title || page.url,
@@ -184,6 +222,14 @@ async function saveActiveTab () {
     source: reply.source || 'none',
     alreadySaved: reply.alreadySaved === true
   }
+  broadcastSaved(saved)
+  return saved
+}
+
+// Tell our other pages (the welcome page ticks off "save your first article").
+// Rejects when nobody is listening; that is the normal case.
+function broadcastSaved ({ title, alreadySaved }) {
+  chrome.runtime.sendMessage({ type: 'saved', title, alreadySaved }).catch(() => {})
 }
 
 function flashBadge () {
