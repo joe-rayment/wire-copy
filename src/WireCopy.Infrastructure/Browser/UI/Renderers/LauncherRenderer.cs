@@ -117,12 +117,6 @@ internal class LauncherRenderer
     private const string SetupHintLabel = "→ Optional: add API keys for podcasts & AI layout";
     private const string SetupHintSuffix = " · press c";
 
-    // workspace-58l5s: the browser-extension install hint, shared between the TUI
-    // footer (RenderFooter) and the exported view-model (LauncherViewState.ExtensionHint).
-    // "c" is the Settings hotkey; "Browser extension" is the Settings row that opens
-    // the install card.
-    private const string ExtensionHintText = "Save articles from Chrome: press c → Browser extension";
-
     // The launcher tagline (Launcher.dc.html) — shared between BuildHeaderLines
     // and the exported view-model.
     private const string TaglineText = "All copy, no nonsense";
@@ -153,6 +147,26 @@ internal class LauncherRenderer
     {
         _helpers = helpers;
         _themeProvider = themeProvider;
+    }
+
+    // workspace-58l5s / workspace-rzz8o.1: the browser-extension install hint, shared
+    // between the TUI footer (RenderFooter) and the exported view-model
+    // (LauncherViewState.ExtensionHint). "e" opens the install card straight from the
+    // launcher; the browser name is the detected default (Chrome preferred), so the
+    // hint reads "Save articles from Firefox in one click — press e" on a Firefox box.
+    private static string ExtensionHintText
+    {
+        get
+        {
+            CommandHandlers.BrowserExtensionCard.WarmUp();
+            var regs = CommandHandlers.BrowserExtensionCard.CachedRegistrations;
+            var detected = regs?.FirstOrDefault(r => r.Detected && r.Id == "chrome")
+                ?? regs?.FirstOrDefault(r => r.Detected);
+            var browser = detected is null
+                ? "Chrome"
+                : CommandHandlers.BrowserExtensionCard.ShortName(detected.DisplayName);
+            return $"Save articles from {browser} in one click — press e";
+        }
     }
 
     /// <summary>
@@ -215,12 +229,13 @@ internal class LauncherRenderer
         else if (extensionHint)
         {
             // workspace-58l5s: the extension install hint takes the rule's slot
-            // (still 2 footer lines → no layout shift); the "c" hotkey is accented.
+            // (still 2 footer lines → no layout shift); the "press e" phrase is accented.
             var text = RenderHelpers.TruncateText(ExtensionHintText, Math.Max(1, contentWidth - 1));
-            var hotkeyAt = text.IndexOf("press c", StringComparison.Ordinal);
+            const string hotkeyPhrase = "press e";
+            var hotkeyAt = text.IndexOf(hotkeyPhrase, StringComparison.Ordinal);
             var muted = p.GetMutedFg().AnsiFg;
             var rendered = hotkeyAt >= 0
-                ? $"{muted}{text[..(hotkeyAt + 6)]}{p.GetAccentFg().AnsiFg}c{muted}{text[(hotkeyAt + 7)..]}{Reset}"
+                ? $"{muted}{text[..hotkeyAt]}{p.GetAccentFg().AnsiFg}{hotkeyPhrase}{muted}{text[(hotkeyAt + hotkeyPhrase.Length)..]}{Reset}"
                 : $"{muted}{text}{Reset}";
             _helpers.WriteLine($"{margin} {rendered}");
         }

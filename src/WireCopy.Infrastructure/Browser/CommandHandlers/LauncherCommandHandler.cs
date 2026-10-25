@@ -69,6 +69,20 @@ internal static class LauncherCommandHandler
             }
         }
 
+        // workspace-rzz8o.1: lowercase 'e' opens the Browser extension card straight
+        // from the launcher — the footer hint advertises it — and Esc on the card
+        // lands back here. Deliberately AFTER the URL-bar capture above so an 'e'
+        // typed into the URL field still types; it only fires while a tile is
+        // selected. The card paints straight into the terminal like Settings does,
+        // so the shell's HTML launcher pane is hidden first (no-op in terminal mode).
+        if (command.RawKeyChar == 'e')
+        {
+            ctx.Renderer.LeaveHtmlPanes();
+            await BrowserExtensionCard.RunAsync(ctx, options, ct).ConfigureAwait(false);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return true;
+        }
+
         switch (command.Type)
         {
             case CommandType.Quit:

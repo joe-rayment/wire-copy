@@ -229,7 +229,12 @@ function paintExtensionHint (state) {
   const rule = $('footer-rule')
   if (state.extensionHint) {
     el.style.display = ''
-    el.textContent = state.extensionHint
+    // workspace-rzz8o.1: the "press e" hotkey phrase is accented like the footer keys.
+    const text = state.extensionHint
+    const at = text.indexOf('press e')
+    el.innerHTML = at >= 0
+      ? `${esc(text.slice(0, at))}<span class="key">press e</span>${esc(text.slice(at + 7))}`
+      : esc(text)
     rule.style.display = 'none'
   } else {
     el.style.display = 'none'

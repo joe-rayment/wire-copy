@@ -128,6 +128,7 @@ internal static class KeybindingPopup
                 ("J / K", "reorder bookmarks"),
                 (":rename", "rename bookmark"),
                 (KeyFor(CommandType.OpenCollections), "Setup / settings"),
+                ("e", "add Wire Copy to your browser"),
                 (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
             ],
