@@ -176,6 +176,10 @@ internal static class SettingsCommandHandler
         // that lands mid-repaint is still consumed by the next iteration, never dropped.
         Task<NavigationCommand>? pendingInput = null;
 
+        // workspace-rzz8o.1: first body line on screen. Lives outside the loop so the view
+        // stays put across the 3 s status repaints and only moves when the selection leaves it.
+        var bodyOffset = 0;
+
         while (!ct.IsCancellationRequested)
         {
             using var scope = ctx.ScopeFactory.CreateScope();
@@ -300,6 +304,11 @@ internal static class SettingsCommandHandler
             {
                 narrationTestValue = "not tested yet";
             }
+
+            // workspace-rzz8o.1: the sections below are captured, not painted — there are more
+            // rows than a short terminal has lines, so a window of them is painted after the
+            // last row, scrolled to keep the selected row on screen.
+            helpers.BeginCapture();
 
             // ---- Credentials (single OpenAI key powers both TTS and AI Curated) ----
             helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Credentials{Reset}");
@@ -606,6 +615,67 @@ internal static class SettingsCommandHandler
                 extensionConnected ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 "Set up",
                 helperText: "Save the article you're reading to your Reading List from Chrome, Vivaldi, Brave or Edge");
+
+            // workspace-rzz8o.1: paint the captured body through a window that leaves room for
+            // the footer (blank + hint bar = 2 lines). A "▲ more" / "▼ more" marker takes a
+            // line at whichever edge has hidden rows; the offset is settled in a few passes
+            // because the marker set depends on the offset it produces.
+            var body = helpers.EndCapture();
+            var budget = Math.Max(1, options.TerminalHeight - helpers.LinesWritten - 2);
+            var total = body.Count;
+            if (total <= budget)
+            {
+                bodyOffset = 0;
+                foreach (var line in body)
+                {
+                    helpers.WriteLine(line);
+                }
+            }
+            else
+            {
+                var focus = helpers.CapturedFocus;
+                var window = budget;
+                var offset = Math.Clamp(bodyOffset, 0, Math.Max(0, total - window));
+                var topMarker = false;
+                var bottomMarker = false;
+                for (var pass = 0; pass < 3; pass++)
+                {
+                    topMarker = offset > 0;
+                    bottomMarker = offset + window < total;
+                    window = Math.Max(1, budget - (topMarker ? 1 : 0) - (bottomMarker ? 1 : 0));
+                    if (focus is { } f)
+                    {
+                        if (f.Start < offset)
+                        {
+                            offset = f.Start;
+                        }
+                        else if (f.End >= offset + window)
+                        {
+                            offset = f.End - window + 1;
+                        }
+                    }
+
+                    offset = Math.Clamp(offset, 0, Math.Max(0, total - window));
+                }
+
+                bodyOffset = offset;
+                var dim = palette.GetDimFg().AnsiFg;
+                if (topMarker)
+                {
+                    helpers.WriteLine($"  {dim}▲ more{Reset}");
+                }
+
+                var end = Math.Min(total, offset + window);
+                for (var i = offset; i < end; i++)
+                {
+                    helpers.WriteLine(body[i]);
+                }
+
+                if (bottomMarker)
+                {
+                    helpers.WriteLine($"  {dim}▼ more{Reset}");
+                }
+            }
 
             // Bottom hint bar
             helpers.WriteLine();
@@ -1155,10 +1225,17 @@ internal static class SettingsCommandHandler
             actionLabel,
             warningText,
             helperText);
+        var firstLine = helpers.CapturedLineCount;
         helpers.WriteLine(mainLine);
         if (subLine != null)
         {
             helpers.WriteLine(subLine);
+        }
+
+        if (isSelected)
+        {
+            // workspace-rzz8o.1: tell the window painter which captured lines must stay visible.
+            helpers.CapturedFocus = (firstLine, helpers.CapturedLineCount - 1);
         }
     }
 

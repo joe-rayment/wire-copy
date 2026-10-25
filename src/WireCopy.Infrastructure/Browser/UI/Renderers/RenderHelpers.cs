@@ -39,6 +39,13 @@ internal class RenderHelpers
     private int _linesWritten;
     private int _terminalHeight;
 
+    /// <summary>
+    /// workspace-rzz8o.1: while non-null, WriteLine* calls append their text here instead of
+    /// painting, so a screen can lay out a body taller than the terminal and then paint
+    /// a window of it (Settings scrolling).
+    /// </summary>
+    private List<string>? _capturedLines;
+
     public int LinesWritten => _linesWritten;
 
     public int TerminalHeight
@@ -46,6 +53,15 @@ internal class RenderHelpers
         get => _terminalHeight > 0 ? _terminalHeight : Console.WindowHeight;
         set => _terminalHeight = value;
     }
+
+    /// <summary>Lines captured since <see cref="BeginCapture"/>; 0 when not capturing.</summary>
+    public int CapturedLineCount => _capturedLines?.Count ?? 0;
+
+    /// <summary>
+    /// Inclusive range of captured lines the caller wants kept on screen (the selected row);
+    /// set by whoever writes that row, read by the window painter after <see cref="EndCapture"/>.
+    /// </summary>
+    public (int Start, int End)? CapturedFocus { get; set; }
 
     /// <summary>
     /// Left margin in columns for centering content (e.g., reader view).
@@ -411,6 +427,25 @@ internal class RenderHelpers
         }
     }
 
+    /// <summary>
+    /// Starts capturing: until <see cref="EndCapture"/>, every WriteLine* call records its
+    /// text (the plain <c>WriteLine</c> string; highlight variants record their raw text)
+    /// and paints nothing. Resets <see cref="CapturedFocus"/>.
+    /// </summary>
+    public void BeginCapture()
+    {
+        _capturedLines = new List<string>();
+        CapturedFocus = null;
+    }
+
+    /// <summary>Stops capturing and returns the recorded lines in order.</summary>
+    public List<string> EndCapture()
+    {
+        var lines = _capturedLines ?? new List<string>();
+        _capturedLines = null;
+        return lines;
+    }
+
     public void WriteLine(string text = "")
         => WriteLineCore(text, "WriteLine", text, () => EmitWrite(text));
 
@@ -674,6 +709,12 @@ internal class RenderHelpers
     /// </summary>
     private void WriteLineCore(string fallbackText, string debugSource, string debugText, Action emitBody)
     {
+        if (_capturedLines is not null)
+        {
+            _capturedLines.Add(fallbackText);
+            return;
+        }
+
         try
         {
             if (_linesWritten >= TerminalHeight)
