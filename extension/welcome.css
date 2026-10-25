@@ -1,47 +1,37 @@
-body { min-height: 100vh; }
+/* Wire Copy welcome page. Shares the look of the app's add-extension guide page: the guide's tab
+   turns into this page on install, so the type scale, step rhythm and colours match it. */
+:root { --wc-text: #e4e4e4; --wc-text-soft: #a9c3a9; }
+body { min-height: 100vh; font: 16px/1.55 var(--wc-ui); color: var(--wc-text); }
 
 #page {
-  max-width: 600px;
+  max-width: 720px;
   margin: 0 auto;
-  padding: clamp(24px, 6vh, 72px) 24px 40px;
+  padding: clamp(20px, 5vh, 56px) 24px 40px;
 }
 
-.brand {
-  font-family: var(--wc-mono);
-  font-weight: 700;
-  font-size: clamp(36px, 9vw, 52px);
-  line-height: 1;
-  letter-spacing: -0.015em;
-  margin-top: 16px;
-  color: var(--tr-green);
-  text-shadow: 0 0 10px rgba(0, 215, 0, 0.55), 0 0 28px rgba(0, 215, 0, 0.3),
-               0 0 56px rgba(0, 215, 0, 0.14);
+.brand { color: var(--tr-green); }
+
+h1 {
+  margin: 0;
+  font: 700 clamp(24px, 4.5vw, 32px)/1.15 var(--wc-mono);
+  letter-spacing: -0.01em;
 }
+.lead { margin: 8px 0 0; font-size: 17px; color: var(--wc-text-soft); }
+.detail { margin: 10px 0 0; color: var(--tr-muted); font-size: 14px; }
 
-.panel {
-  margin-top: 28px;
-  padding: 28px 28px 28px;
-  border: 1px solid var(--tr-dim);
-  background: var(--tr-bg);
-}
-.panel > * { margin: 0; }
-.panel > * + * { margin-top: 12px; }
-
-h1 { font-size: 22px; line-height: 1.25; }
-.lead { font-size: 16px; color: var(--tr-green); }
-.lead strong { color: var(--tr-white); }
-.detail { color: var(--tr-muted); font-size: 13px; }
-.panel > .btn { margin-top: 20px; }
-
-.warn { border-color: #6b4a00; }
+.state { margin-top: 14px; }
 .warn h1 { color: var(--tr-amber); }
+.warn .btn { margin-top: 20px; }
 
-.ok { border-color: var(--tr-med); }
-.ok h1 { color: var(--tr-success); }
+.hero { display: flex; align-items: center; gap: 18px; }
+.ok h1 {
+  color: var(--tr-green);
+  text-shadow: 0 0 10px rgba(0, 215, 0, 0.45), 0 0 28px rgba(0, 215, 0, 0.22);
+}
 .mark {
-  width: 60px;
-  height: 60px;
-  display: block;
+  flex: none;
+  width: 56px;
+  height: 56px;
   fill: none;
   stroke: var(--tr-success);
   stroke-width: 3;
@@ -52,71 +42,88 @@ h1 { font-size: 22px; line-height: 1.25; }
 }
 .mark circle { stroke: var(--tr-dim); }
 
-.steps {
-  list-style: none;
-  padding: 0;
-  margin-top: 24px;
-  border-top: 1px solid var(--tr-dim);
-}
-.steps li {
-  display: flex;
-  gap: 16px;
-  padding: 16px 0 4px;
-}
-.steps li + li { margin-top: 0; }
+/* Steps: same rhythm as the guide page. */
+.steps { list-style: none; padding: 0; margin: 26px 0 0; }
+.steps li { display: flex; gap: 20px; padding: 20px 0 14px; border-top: 1px solid var(--tr-dim); }
 .num {
   flex: none;
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: 1px solid var(--tr-muted);
+  width: 36px;
+  height: 36px;
+  border: 2px solid var(--tr-bright);
   border-radius: 50%;
-  font-family: var(--wc-mono);
-  font-weight: 700;
-  font-size: 13px;
-  line-height: 1;
+  font: 700 16px/1 var(--wc-mono);
   color: var(--tr-bright);
   transition: border-color 0.25s ease, box-shadow 0.25s ease;
 }
 .num .check {
   display: none;
-  width: 16px;
-  height: 16px;
+  width: 18px;
+  height: 18px;
   fill: none;
   stroke: var(--tr-success);
   stroke-width: 2.25;
   stroke-linecap: round;
   stroke-linejoin: round;
 }
-.steps h2 { margin: 2px 0 6px; font-size: 15px; color: var(--tr-bright); }
-.steps p { margin: 0 0 8px; color: var(--tr-med); }
-.steps strong { color: var(--tr-green); }
+.body { flex: 1; min-width: 0; position: relative; }
+.steps h2 { margin: 3px 0 10px; font: 700 19px/1.3 var(--wc-mono); color: var(--tr-white); }
+.steps p { margin: 0 0 10px; color: var(--wc-text); }
+.steps p.soft { color: var(--wc-text-soft); font-size: 15px; }
+.steps strong { color: var(--tr-white); }
 
-/* A finished step: the number becomes a green check, the done line replaces
-   the instruction. */
-.step .done { display: none; color: var(--tr-success); }
-.step.is-done .num {
-  border-color: var(--tr-success);
-  box-shadow: 0 0 8px rgba(135, 255, 95, 0.45);
+/* Toolbar look-alikes (decorative): a light rounded square holding the icon. */
+.tb {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  margin: 0 2px;
+  vertical-align: middle;
+  border-radius: 50%;
+  background: #f1f3f4;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
 }
+.tb svg { width: 17px; height: 17px; fill: #3c4043; }
+.kebab { display: inline-flex; flex-direction: column; gap: 2px; }
+.kebab i { display: block; width: 3.5px; height: 3.5px; border-radius: 50%; background: #3c4043; }
+img.w { width: 22px; height: 22px; vertical-align: middle; margin: 0 2px; border-radius: 4px; }
+
+/* Points at the browser toolbar (right above the page) until the button is pinned. */
+.toolbar-hint {
+  position: fixed;
+  top: 6px;
+  right: 22px;
+  font: 700 14px var(--wc-mono);
+  color: var(--tr-cyan);
+  animation: wc-nudge 1.6s ease-in-out infinite;
+}
+
+/* A finished step: the number becomes a green check, the done line replaces the instruction. */
+.step .done { display: none; color: var(--tr-success); }
+.step.is-done .num { border-color: var(--tr-success); box-shadow: 0 0 8px rgba(135, 255, 95, 0.45); }
 .step.is-done .num .n { display: none; }
 .step.is-done .num .check { display: block; animation: wc-pop 0.3s ease-out; }
-.step.is-done .todo { display: none; }
+.step.is-done .todo, .step.is-done .toolbar-hint { display: none; }
 .step.is-done .done { display: block; animation: wc-fade 0.3s ease-out; }
 
-.panel > .all-set {
-  margin-top: 20px;
-  padding-top: 16px;
-  border-top: 1px solid var(--tr-dim);
-  font-size: 15px;
+.all-set {
+  margin: 6px 0 0;
+  padding: 16px 18px;
+  border: 1px solid var(--tr-success);
+  border-radius: 6px;
+  background: #050f05;
+  font: 700 15px/1.45 var(--wc-mono);
   color: var(--tr-success);
   animation: wc-fade 0.3s ease-out;
 }
 
 @keyframes wc-fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@keyframes wc-nudge { 0%, 100% { transform: none; } 50% { transform: translateY(-4px); } }
 @media (prefers-reduced-motion: reduce) {
   .num { transition: none; }
-  .step.is-done .num .check, .step.is-done .done, .panel > .all-set { animation: none; }
+  .mark, .toolbar-hint, .step.is-done .num .check, .step.is-done .done, .all-set { animation: none; }
 }

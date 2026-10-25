@@ -2,6 +2,7 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Wire Copy — setup</title>
 <link rel="icon" href="icons/icon32.png">
 <link rel="stylesheet" href="tokens.css">
@@ -9,21 +10,24 @@
 </head>
 <body>
 <main id="page">
-  <div class="eyebrow"><span class="tick">▌</span>Setup</div>
-  <div class="brand">Wire Copy</div>
+  <div class="eyebrow"><span class="tick">▌</span><span class="brand">Wire Copy</span> · Setup</div>
 
   <!-- Not connected yet: shown first and whenever the check fails. -->
-  <section id="waiting" class="panel warn" role="status">
+  <section id="waiting" class="state warn" role="status">
     <h1>Almost there</h1>
     <p class="lead">Open the Wire Copy app on this computer — this page turns green by itself.</p>
     <p id="waiting-detail" class="detail" hidden></p>
     <button id="check-again" class="btn" type="button">Check again</button>
   </section>
 
-  <section id="connected" class="panel ok" role="status" hidden>
-    <svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21"/><path d="M14 25.5l7.5 7.5L34.5 16"/></svg>
-    <h1 id="title">Wire Copy is in your browser</h1>
-    <p id="lead" class="lead">Connected to Wire Copy on this computer.</p>
+  <section id="connected" class="state ok" role="status" hidden>
+    <div class="hero">
+      <svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21"/><path d="M14 25.5l7.5 7.5L34.5 16"/></svg>
+      <div>
+        <h1 id="title">Wire Copy is in your browser</h1>
+        <p id="lead" class="lead">Connected to Wire Copy on this computer.</p>
+      </div>
+    </div>
 
     <!-- Each step shows its number and instruction until it is done, then a green
          check and the done line. welcome.js flips the is-done class. -->
@@ -33,10 +37,21 @@
           <span class="n">1</span>
           <svg class="check" viewBox="0 0 16 16"><path d="M3.5 8.5l3.2 3.2L12.5 5.2"/></svg>
         </span>
-        <div>
-          <h2>Pin the W button</h2>
-          <p class="todo">Click the puzzle piece in the toolbar, then the pin next to Wire Copy. If you see <strong>⋮</strong> instead, choose <strong>Pin to toolbar</strong>.</p>
-          <p class="done">Pinned — it's in your toolbar now.</p>
+        <div class="body">
+          <h2>Pin the Wire Copy button</h2>
+          <p class="todo">
+            Click the puzzle piece
+            <span class="tb" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M20.5 11H19V7c0-1.1-.9-2-2-2h-4V3.5C13 2.12 11.88 1 10.5 1S8 2.12 8 3.5V5H4c-1.1 0-2 .9-2 2v3.8h1.5c1.49 0 2.7 1.21 2.7 2.7s-1.21 2.7-2.7 2.7H2V20c0 1.1.9 2 2 2h3.8v-1.5c0-1.49 1.21-2.7 2.7-2.7s2.7 1.21 2.7 2.7V22H17c1.1 0 2-.9 2-2v-4h1.5c1.38 0 2.5-1.12 2.5-2.5S21.88 11 20.5 11z"/></svg></span>
+            at the top-right, then the pin
+            <span class="tb" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M16 9V4h1c.55 0 1-.45 1-1s-.45-1-1-1H7c-.55 0-1 .45-1 1s.45 1 1 1h1v5c0 1.66-1.34 3-3 3v2h5.97v7l1 1 1-1v-7H19v-2c-1.66 0-3-1.34-3-3z"/></svg></span>
+            next to Wire Copy.
+          </p>
+          <p class="todo soft">No pin? Click
+            <span class="tb" aria-hidden="true"><span class="kebab"><i></i><i></i><i></i></span></span>
+            next to Wire Copy and choose <strong>Pin to toolbar</strong>.</p>
+          <p class="done">Pinned — there it is, top-right.</p>
+          <!-- Points at the toolbar while the button still needs pinning. -->
+          <div class="toolbar-hint" aria-hidden="true">↑ up here</div>
         </div>
       </li>
       <li id="step-save" class="step">
@@ -44,15 +59,15 @@
           <span class="n">2</span>
           <svg class="check" viewBox="0 0 16 16"><path d="M3.5 8.5l3.2 3.2L12.5 5.2"/></svg>
         </span>
-        <div>
+        <div class="body">
           <h2>Save your first article</h2>
-          <p class="todo">Open any article and click <strong>W</strong>.</p>
+          <p class="todo">Open any article and click <img class="w" src="icons/icon32.png" alt="the Wire Copy button">.</p>
           <p id="saved-text" class="done"></p>
         </div>
       </li>
     </ol>
 
-    <p id="all-set" class="all-set" hidden>You're all set. Everything you save shows up in Wire Copy's Reading List.</p>
+    <p id="all-set" class="all-set" hidden>You’re all set. Everything you save shows up in Wire Copy’s Reading List.</p>
   </section>
 </main>
 <script src="welcome.js"></script>

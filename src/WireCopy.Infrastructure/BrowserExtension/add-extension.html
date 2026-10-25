@@ -71,6 +71,7 @@ code {
 /* Keycap lines */
 .keys { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 8px; margin: 4px 0 0; color: var(--wc-text-soft); font-size: 15px; }
 .lead-in { margin-right: 2px; }
+.keys + p { margin-top: 12px; }
 .chord { display: inline-flex; align-items: center; gap: 3px; }
 .plus { color: var(--wc-text-soft); font-size: 13px; padding: 0 2px; }
 .arrow { color: var(--tr-muted); font-size: 16px; padding: 0 2px; }
@@ -80,6 +81,10 @@ kbd {
   background: linear-gradient(180deg, #303030, var(--wc-key-face)); border: 1px solid var(--wc-key-edge); border-radius: 6px;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.12), 0 2px 0 var(--wc-key-base), 0 3px 5px rgba(0, 0, 0, 0.7);
 }
+code.inline { display: inline; flex: none; padding: 3px 8px; font-size: 14px; border-radius: 4px; user-select: all; }
+p.soft { color: var(--wc-text-soft); font-size: 15px; margin: 0; }
+.btn.primary { background: var(--tr-sel-bg); color: var(--tr-white); border-color: var(--tr-green); }
+.btn.primary.done { background: transparent; color: var(--tr-success); border-color: var(--tr-success); }
 .ui-btn {
   display: inline-block; padding: 3px 11px; border: 1px solid var(--wc-text-soft); border-radius: 4px; white-space: nowrap;
   background: rgba(255, 255, 255, 0.06); color: var(--tr-white); font: 600 13px/1.4 var(--wc-ui);
@@ -117,64 +122,56 @@ kbd {
 <main id="page">
   <div class="eyebrow"><span class="tick">▌</span><span class="brand">Wire Copy</span> · Setup</div>
   <h1 id="heading">Add Wire Copy to your browser</h1>
-  <p class="lead">Three steps, about a minute. When you’re done, this page carries on by itself.</p>
+  <p class="lead">Three steps, about a minute. This page carries on by itself when you’re done.</p>
 
   <ol class="steps">
     <li>
       <span class="num">1</span>
       <div class="body">
-        <h2>Open Extensions in a new tab</h2>
+        <h2>Copy the Wire Copy folder</h2>
         <div class="copy-row">
-          <code id="url">chrome://extensions</code>
-          <button class="btn" type="button" data-copy="url" id="copy-url">Copy</button>
+          <code id="folder">the WireCopy-Extension folder</code>
+          <button class="btn primary" type="button" data-copy="folder" id="copy-folder">Copy</button>
         </div>
-        <p class="keys" data-platform="mac">
-          <span class="lead-in">Then press</span>
-          <span class="chord"><kbd>⌘</kbd><kbd>T</kbd></span>
-          <span class="chord"><kbd>⌘</kbd><kbd>V</kbd></span>
-          <kbd>return</kbd>
-        </p>
-        <p class="keys" data-platform="win linux">
-          <span class="lead-in">Then press</span>
-          <span class="chord"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>T</kbd></span>
-          <span class="chord"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>V</kbd></span>
-          <kbd>Enter</kbd>
-        </p>
+        <p class="soft">You’ll paste it in step 3 — no need to come back here.</p>
       </div>
     </li>
     <li>
       <span class="num">2</span>
       <div class="body">
-        <h2>Turn on Developer mode</h2>
-        <p>Flip the <span class="illus devmode" aria-hidden="true"><span>Developer mode</span><span class="toggle"></span></span>
-          switch in the top-right corner of the Extensions page.</p>
+        <h2>Open Extensions, turn on Developer mode</h2>
+        <p class="keys" data-platform="mac">
+          <span class="chord"><kbd>⌘</kbd><kbd>T</kbd></span><span class="arrow">→</span>
+          <span>type</span> <code class="inline">chrome://extensions</code><span class="arrow">→</span>
+          <kbd>return</kbd>
+        </p>
+        <p class="keys" data-platform="win linux">
+          <span class="chord"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>T</kbd></span><span class="arrow">→</span>
+          <span>type</span> <code class="inline">chrome://extensions</code><span class="arrow">→</span>
+          <kbd>Enter</kbd>
+        </p>
+        <p>Then flip the <span class="illus devmode" aria-hidden="true"><span>Developer mode</span><span class="toggle"></span></span>
+          switch in the top-right corner.</p>
       </div>
     </li>
     <li>
       <span class="num">3</span>
       <div class="body">
-        <h2>Load the Wire Copy folder</h2>
+        <h2>Load Wire Copy</h2>
         <p>Click <span class="illus chip" aria-hidden="true">Load unpacked</span><span class="sr-only">Load unpacked</span>
-          (top-left), then choose this folder:</p>
-        <div class="copy-row">
-          <code id="folder">the WireCopy-Extension folder</code>
-          <button class="btn" type="button" data-copy="folder" id="copy-folder">Copy</button>
-        </div>
+          at the top-left, then paste the folder into the picker:</p>
         <p class="keys" data-platform="mac">
-          <span class="lead-in">In the folder picker:</span>
           <span class="chord"><kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd></span><span class="arrow">→</span>
           <span class="chord"><kbd>⌘</kbd><kbd>V</kbd></span><span class="arrow">→</span>
           <kbd>return</kbd><span class="arrow">→</span>
           <span class="ui-btn">Select</span>
         </p>
         <p class="keys" data-platform="linux">
-          <span class="lead-in">In the folder picker:</span>
           <span class="chord"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>L</kbd></span><span class="arrow">→</span>
           <span class="chord"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>V</kbd></span><span class="arrow">→</span>
-          <span>click</span> <span class="ui-btn">Open</span>
+          <span class="ui-btn">Open</span>
         </p>
         <p class="keys" data-platform="win">
-          <span class="lead-in">In the folder picker:</span>
           <span class="chord"><kbd>Ctrl</kbd><span class="plus">+</span><kbd>V</kbd></span> <span>in the folder box</span><span class="arrow">→</span>
           <kbd>Enter</kbd><span class="arrow">→</span>
           <span class="ui-btn">Select Folder</span>
@@ -257,12 +254,12 @@ kbd {
     button.addEventListener('click', function () {
       var text = document.getElementById(button.getAttribute('data-copy')).textContent;
       copyText(text).then(function () {
+        // Stays "Copied" — step 1 is done, and the reader can see it before leaving for step 2.
         button.textContent = 'Copied ✓';
         button.classList.add('done');
       }, function () {
         button.textContent = 'Select it';
-      }).then(function () {
-        setTimeout(function () { button.textContent = 'Copy'; button.classList.remove('done'); }, 2000);
+        setTimeout(function () { button.textContent = 'Copy'; }, 2000);
       });
     });
   });
