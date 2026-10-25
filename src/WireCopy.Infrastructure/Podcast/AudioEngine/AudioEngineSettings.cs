@@ -18,6 +18,9 @@ internal sealed record AudioEngineSettings
     /// <summary>The engine id for local Chatterbox speech.</summary>
     internal const string EngineChatterbox = "chatterbox";
 
+    /// <summary>Environment variable that supplies the audio-engine API key when none is saved.</summary>
+    internal const string ApiKeyEnvVar = "AUDIO_ENGINE_API_KEY";
+
     /// <summary>Gets the audio-engine base address; null when none is set.</summary>
     public string? Url { get; init; }
 
@@ -63,7 +66,7 @@ internal sealed record AudioEngineSettings
         ArgumentNullException.ThrowIfNull(getEnv);
 
         var url = Clean(store.Get("AudioEngineUrl")) ?? Clean(getEnv("AUDIO_ENGINE_URL")) ?? Clean(config.Url);
-        var apiKey = Clean(store.Get("AudioEngineApiKey")) ?? Clean(getEnv("AUDIO_ENGINE_API_KEY"));
+        var apiKey = Clean(store.Get("AudioEngineApiKey")) ?? Clean(getEnv(ApiKeyEnvVar));
 
         var chatterbox = string.Equals(
             store.Get(SettingsCommandHandler.KeyTtsEngine)?.Trim(),

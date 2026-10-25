@@ -72,8 +72,14 @@ internal static class SettingsCommandHandler
 
     private const string Reset = "\x1b[0m";
 
+    /// <summary>Rows the inline narration-test panel owns (cleared before drawing and on exit).</summary>
+    private const int NarrationTestPanelRows = 7;
+
     /// <summary>Upper bound on one audio-engine status probe from the Setup screen.</summary>
     private static readonly TimeSpan NarratorProbeTimeout = TimeSpan.FromSeconds(2);
+
+    /// <summary>How often the idle Settings screen re-probes audio-engine (workspace-c3ec4.6).</summary>
+    private static readonly TimeSpan NarratorStatusRefresh = TimeSpan.FromSeconds(3);
 
     /// <summary>
     /// Selectable rows on the unified Setup screen. Each row dispatches Enter to
@@ -160,6 +166,10 @@ internal static class SettingsCommandHandler
         NarratorStatus? narratorStatus = null;
         var narratorStatusFresh = false;
 
+        // workspace-c3ec4.6: the input wait outlives a status-driven repaint so a keystroke
+        // that lands mid-repaint is still consumed by the next iteration, never dropped.
+        Task<NavigationCommand>? pendingInput = null;
+
         while (!ct.IsCancellationRequested)
         {
             using var scope = ctx.ScopeFactory.CreateScope();
@@ -237,7 +247,24 @@ internal static class SettingsCommandHandler
             var exaggerationDisplay = ResolveChatterboxExaggeration(scope, settingsStore)
                 .ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture);
             var audioEngineUrl = settingsStore.Get(KeyAudioEngineUrl) ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
-            var hasAudioEngineKey = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyAudioEngineApiKey));
+
+            // workspace-c3ec4.6: the key row mirrors AudioEngineSettings.Resolve — a saved key
+            // first, else the AUDIO_ENGINE_API_KEY environment variable — so an env-supplied
+            // key never reads "not set" while narration is in fact authorised.
+            var storedAudioEngineKey = !string.IsNullOrWhiteSpace(settingsStore.Get(KeyAudioEngineApiKey));
+            var envAudioEngineKey = !storedAudioEngineKey
+                && !string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable(AudioEngineSettings.ApiKeyEnvVar));
+            var hasAudioEngineKey = storedAudioEngineKey || envAudioEngineKey;
+            var audioEngineKeyValue = "not set";
+            if (storedAudioEngineKey)
+            {
+                audioEngineKeyValue = "configured";
+            }
+            else if (envAudioEngineKey)
+            {
+                audioEngineKeyValue = $"from {AudioEngineSettings.ApiKeyEnvVar}";
+            }
+
             var audioEngineReady = narratorStatus?.Ready == true;
             var audioEngineValue = $"{audioEngineUrl} · {DescribeNarratorStatus(narratorStatus)}";
             string narrationTestValue;
@@ -343,7 +370,7 @@ internal static class SettingsCommandHandler
                 hasAudioEngineKey ? "●" : "○",
                 hasAudioEngineKey ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 "Audio engine key",
-                hasAudioEngineKey ? "configured" : "not set",
+                audioEngineKeyValue,
                 hasAudioEngineKey ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
                 hasAudioEngineKey ? "Change" : "Set",
                 helperText: "Only needed when audio-engine was started with an API key");
@@ -361,7 +388,7 @@ internal static class SettingsCommandHandler
                 engineIsChatterbox ? "Chatterbox (local)" : "OpenAI (cloud)",
                 palette.PromptFg.AnsiFg,
                 "Change",
-                helperText: "Generate audio via the OpenAI API or locally with Chatterbox");
+                helperText: "Generate audio through audio-engine — OpenAI (cloud) or Chatterbox (local)");
 
             if (engineIsChatterbox)
             {
@@ -554,7 +581,34 @@ internal static class SettingsCommandHandler
                 $"{palette.GetAccentFg().AnsiFg}:{Reset}{palette.GetDimFg().AnsiFg}:run command{Reset}");
             helpers.ClearRemainingLines();
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            // workspace-c3ec4.6: while the screen idles, re-probe audio-engine every
+            // NarratorStatusRefresh so starting or stopping it shows up without a keypress.
+            pendingInput ??= ctx.InputHandler.WaitForInputAsync(ct);
+            var statusChanged = false;
+            while (!pendingInput.IsCompleted && !ct.IsCancellationRequested)
+            {
+                var finished = await Task.WhenAny(pendingInput, Task.Delay(NarratorStatusRefresh, ct)).ConfigureAwait(false);
+                if (finished == pendingInput)
+                {
+                    break;
+                }
+
+                var probed = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
+                if (probed is not null && DescribeNarratorStatus(probed) != DescribeNarratorStatus(narratorStatus))
+                {
+                    narratorStatus = probed;
+                    statusChanged = true;
+                    break;
+                }
+            }
+
+            if (statusChanged)
+            {
+                continue;
+            }
+
+            var command = await pendingInput.ConfigureAwait(false);
+            pendingInput = null;
 
             if (command.Type == CommandType.TerminalResized)
             {
@@ -2847,12 +2901,27 @@ internal static class SettingsCommandHandler
         var panelRow = Math.Max(1, (options.TerminalHeight / 2) - 3);
         var panelWidth = Math.Max(40, Math.Min(options.TerminalWidth - 4, 100));
 
-        void WritePanelLine(int row, string text)
+        // workspace-c3ec4.6: every panel row is blanked edge to edge — the Settings rows
+        // underneath are wider than the panel text, so a narrower clear left their tails
+        // (and the untouched blank rows) showing through the panel.
+        void ClearPanelRow(int row)
         {
             try
             {
-                Console.SetCursorPosition(UI.OverlayViewport.Left + 2, panelRow + row);
-                Console.Write(new string(' ', panelWidth));
+                Console.SetCursorPosition(UI.OverlayViewport.Left, panelRow + row);
+                Console.Write(new string(' ', Math.Max(20, UI.OverlayViewport.Width - 1)));
+            }
+            catch (ArgumentOutOfRangeException)
+            {
+                // Terminal shrank mid-test — skip the paint, never crash the panel.
+            }
+        }
+
+        void WritePanelLine(int row, string text)
+        {
+            ClearPanelRow(row);
+            try
+            {
                 Console.SetCursorPosition(UI.OverlayViewport.Left + 2, panelRow + row);
                 Console.Write(text);
             }
@@ -2865,6 +2934,11 @@ internal static class SettingsCommandHandler
         using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
         try
         {
+            for (var i = 0; i < NarrationTestPanelRows; i++)
+            {
+                ClearPanelRow(i);
+            }
+
             var engineLabel = engineIsChatterbox ? "Chatterbox (local)" : "OpenAI (cloud)";
             var expectation = engineIsChatterbox
                 ? "audio-engine runs Chatterbox locally — the first clip can take a while"
@@ -2963,18 +3037,9 @@ internal static class SettingsCommandHandler
         }
         finally
         {
-            for (var i = 0; i < 7; i++)
+            for (var i = 0; i < NarrationTestPanelRows; i++)
             {
-                try
-                {
-                    Console.SetCursorPosition(UI.OverlayViewport.Left, panelRow + i);
-                }
-                catch (ArgumentOutOfRangeException)
-                {
-                    break;
-                }
-
-                Console.Write(new string(' ', Math.Max(20, UI.OverlayViewport.Width - 1)));
+                ClearPanelRow(i);
             }
         }
     }
