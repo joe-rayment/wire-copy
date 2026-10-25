@@ -15,33 +15,44 @@
   <!-- Not connected yet: shown first and whenever the check fails. -->
   <section id="waiting" class="panel warn" role="status">
     <h1>Almost there</h1>
-    <p class="lead">Open Wire Copy and go to <strong>Settings → Browser extension</strong>; this page turns green by itself.</p>
+    <p class="lead">Open the Wire Copy app on this computer — this page turns green by itself.</p>
     <p id="waiting-detail" class="detail" hidden></p>
     <button id="check-again" class="btn" type="button">Check again</button>
   </section>
 
   <section id="connected" class="panel ok" role="status" hidden>
     <svg class="mark" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r="21"/><path d="M14 25.5l7.5 7.5L34.5 16"/></svg>
-    <h1>Wire Copy is connected</h1>
-    <p id="count" class="lead"></p>
+    <h1 id="title">Wire Copy is in your browser</h1>
+    <p id="lead" class="lead">Connected to Wire Copy on this computer.</p>
 
+    <!-- Each step shows its number and instruction until it is done, then a green
+         check and the done line. welcome.js flips the is-done class. -->
     <ol class="steps">
-      <li>
-        <span class="num">1</span>
+      <li id="step-pin" class="step">
+        <span class="num" aria-hidden="true">
+          <span class="n">1</span>
+          <svg class="check" viewBox="0 0 16 16"><path d="M3.5 8.5l3.2 3.2L12.5 5.2"/></svg>
+        </span>
         <div>
-          <h2>Pin the button</h2>
-          <p><strong>Chrome, Brave, Edge:</strong> click the puzzle-piece icon in the toolbar, then the pin next to Wire Copy.</p>
-          <p><strong>Vivaldi:</strong> the Wire Copy button appears to the right of the address bar.</p>
+          <h2>Pin the W button</h2>
+          <p class="todo">Click the puzzle piece in the toolbar, then the pin next to Wire Copy. If you see <strong>⋮</strong> instead, choose <strong>Pin to toolbar</strong>.</p>
+          <p class="done">Pinned — it's in your toolbar now.</p>
         </div>
       </li>
-      <li>
-        <span class="num">2</span>
+      <li id="step-save" class="step">
+        <span class="num" aria-hidden="true">
+          <span class="n">2</span>
+          <svg class="check" viewBox="0 0 16 16"><path d="M3.5 8.5l3.2 3.2L12.5 5.2"/></svg>
+        </span>
         <div>
-          <h2>Save an article</h2>
-          <p>On any article, click the Wire Copy button to save it — it works offline too.</p>
+          <h2>Save your first article</h2>
+          <p class="todo">Open any article and click <strong>W</strong>.</p>
+          <p id="saved-text" class="done"></p>
         </div>
       </li>
     </ol>
+
+    <p id="all-set" class="all-set" hidden>You're all set. Everything you save shows up in Wire Copy's Reading List.</p>
   </section>
 </main>
 <script src="welcome.js"></script>
