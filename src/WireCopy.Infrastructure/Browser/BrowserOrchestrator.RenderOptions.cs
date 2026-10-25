@@ -85,6 +85,7 @@ public partial class BrowserOrchestrator
                 : _preloadService.GetMissingPaywalledCookieDomains(
                     navContext.CurrentPage?.Url),
             ShowSetupHint = HasIncompleteSetup(),
+            ShowExtensionHint = isLauncher && !CommandHandlers.BrowserExtensionCard.AnyConnected(),
             ScheduledRunBadge = isLauncher ? GetScheduledRunBadge() : null,
             ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,
             RequiredAction = requiredAction,

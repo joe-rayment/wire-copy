@@ -38,6 +38,9 @@ public sealed record LauncherViewState
     /// <summary>The "add API keys" setup-hint copy when shown; null otherwise.</summary>
     public string? SetupHint { get; init; }
 
+    /// <summary>workspace-58l5s: the browser-extension install hint when shown (no extension connected yet); null otherwise.</summary>
+    public string? ExtensionHint { get; init; }
+
     /// <summary>The paging window: which slice of the full slot list is visible.</summary>
     public required LauncherPaging Paging { get; init; }
 

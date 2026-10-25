@@ -156,6 +156,13 @@ public record RenderOptions
     public bool ShowSetupHint { get; init; }
 
     /// <summary>
+    /// workspace-58l5s: when true the launcher footer shows a one-line hint on how to
+    /// install the browser extension (Settings → Browser extension). Visible on the
+    /// launcher while no browser extension has ever connected.
+    /// </summary>
+    public bool ShowExtensionHint { get; init; }
+
+    /// <summary>
     /// workspace-frpl.13 (B11) — launcher badge text for unacknowledged scheduled-run
     /// failures/recoveries, or null when nothing needs attention. Surfaced on the
     /// launcher footer so a scheduled run that failed while the user was away is never

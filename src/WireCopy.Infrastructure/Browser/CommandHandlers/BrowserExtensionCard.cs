@@ -91,6 +91,13 @@ internal static class BrowserExtensionCard
     }
 
     /// <summary>
+    /// workspace-58l5s: true once any browser extension has said hello — the same notion the Settings
+    /// row uses (<see cref="RowSummary"/> != "Not set up"). Drives the launcher's install hint.
+    /// </summary>
+    internal static bool AnyConnected() =>
+        RowSummary(CachedRegistrations ?? [], BrowserConnections.Read(BrowserExtensionPaths.ConnectionsPath())) != "Not set up";
+
+    /// <summary>
     /// The Settings row value: "Not set up", or "Connected · Chrome" (several: "Connected · Chrome, Vivaldi",
     /// most recently seen first).
     /// </summary>

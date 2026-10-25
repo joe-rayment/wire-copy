@@ -319,6 +319,14 @@ html, body {
   white-space: nowrap;
   margin-bottom: 12px;
 }
+#extensionhint {
+  color: var(--tr-muted);
+  font-size: 15px;
+  line-height: 1;
+  overflow: hidden;
+  white-space: nowrap;
+  margin-bottom: 12px;
+}
 #footer-row {
   display: flex;
   align-items: baseline;
