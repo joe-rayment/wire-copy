@@ -21,6 +21,9 @@ internal sealed record AudioEngineSettings
     /// <summary>Environment variable that supplies the audio-engine API key when none is saved.</summary>
     internal const string ApiKeyEnvVar = "AUDIO_ENGINE_API_KEY";
 
+    /// <summary>Environment variable that supplies the audio-engine URL when none is saved.</summary>
+    internal const string UrlEnvVar = "AUDIO_ENGINE_URL";
+
     /// <summary>Gets the audio-engine base address; null when none is set.</summary>
     public string? Url { get; init; }
 
@@ -65,7 +68,7 @@ internal sealed record AudioEngineSettings
         ArgumentNullException.ThrowIfNull(config);
         ArgumentNullException.ThrowIfNull(getEnv);
 
-        var url = Clean(store.Get("AudioEngineUrl")) ?? Clean(getEnv("AUDIO_ENGINE_URL")) ?? Clean(config.Url);
+        var url = Clean(store.Get("AudioEngineUrl")) ?? Clean(getEnv(UrlEnvVar)) ?? Clean(config.Url);
         var apiKey = Clean(store.Get("AudioEngineApiKey")) ?? Clean(getEnv(ApiKeyEnvVar));
 
         var chatterbox = string.Equals(

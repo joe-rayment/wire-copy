@@ -246,7 +246,7 @@ internal static class SettingsCommandHandler
             var sampleExists = samplePath is not null && File.Exists(samplePath);
             var exaggerationDisplay = ResolveChatterboxExaggeration(scope, settingsStore)
                 .ToString("0.0#", System.Globalization.CultureInfo.InvariantCulture);
-            var audioEngineUrl = settingsStore.Get(KeyAudioEngineUrl) ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
+            var audioEngineUrl = settingsStore.Get(KeyAudioEngineUrl) ?? AudioEngineUrlFromEnv() ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
 
             // workspace-c3ec4.6: the key row mirrors AudioEngineSettings.Resolve — a saved key
             // first, else the AUDIO_ENGINE_API_KEY environment variable — so an env-supplied
@@ -885,6 +885,17 @@ internal static class SettingsCommandHandler
             NarrationErrorKind.EngineNotConfigured => "engine not configured",
             _ => string.IsNullOrWhiteSpace(status.Message) ? "not ready" : status.Message,
         };
+    }
+
+    /// <summary>
+    /// The audio-engine URL supplied by <c>AUDIO_ENGINE_URL</c>, or null when unset — the
+    /// row shows the URL narration actually talks to (mirrors AudioEngineSettings.Resolve).
+    /// </summary>
+    /// <returns>The trimmed environment URL, or null.</returns>
+    internal static string? AudioEngineUrlFromEnv()
+    {
+        var value = Environment.GetEnvironmentVariable(AudioEngineSettings.UrlEnvVar);
+        return string.IsNullOrWhiteSpace(value) ? null : value.Trim();
     }
 
     /// <summary>
@@ -2495,7 +2506,7 @@ internal static class SettingsCommandHandler
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-        var current = settingsStore.Get(KeyAudioEngineUrl) ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
+        var current = settingsStore.Get(KeyAudioEngineUrl) ?? AudioEngineUrlFromEnv() ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
         var field = new FormFieldConfig
         {
