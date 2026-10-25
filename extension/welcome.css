@@ -66,6 +66,9 @@ h1 { font-size: 22px; line-height: 1.25; }
 .steps li + li { margin-top: 0; }
 .num {
   flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 28px;
   height: 28px;
   border: 1px solid var(--tr-muted);
@@ -73,10 +76,47 @@ h1 { font-size: 22px; line-height: 1.25; }
   font-family: var(--wc-mono);
   font-weight: 700;
   font-size: 13px;
-  line-height: 26px;
-  text-align: center;
+  line-height: 1;
   color: var(--tr-bright);
+  transition: border-color 0.25s ease, box-shadow 0.25s ease;
+}
+.num .check {
+  display: none;
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--tr-success);
+  stroke-width: 2.25;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .steps h2 { margin: 2px 0 6px; font-size: 15px; color: var(--tr-bright); }
 .steps p { margin: 0 0 8px; color: var(--tr-med); }
 .steps strong { color: var(--tr-green); }
+
+/* A finished step: the number becomes a green check, the done line replaces
+   the instruction. */
+.step .done { display: none; color: var(--tr-success); }
+.step.is-done .num {
+  border-color: var(--tr-success);
+  box-shadow: 0 0 8px rgba(135, 255, 95, 0.45);
+}
+.step.is-done .num .n { display: none; }
+.step.is-done .num .check { display: block; animation: wc-pop 0.3s ease-out; }
+.step.is-done .todo { display: none; }
+.step.is-done .done { display: block; animation: wc-fade 0.3s ease-out; }
+
+.panel > .all-set {
+  margin-top: 20px;
+  padding-top: 16px;
+  border-top: 1px solid var(--tr-dim);
+  font-size: 15px;
+  color: var(--tr-success);
+  animation: wc-fade 0.3s ease-out;
+}
+
+@keyframes wc-fade { from { opacity: 0; transform: translateY(3px); } to { opacity: 1; transform: none; } }
+@media (prefers-reduced-motion: reduce) {
+  .num { transition: none; }
+  .step.is-done .num .check, .step.is-done .done, .panel > .all-set { animation: none; }
+}
