@@ -25,7 +25,7 @@ public class OpenAiTtsConfigurationValidator : IValidateOptions<OpenAiTtsConfigu
         }
 
         // Voice is deliberately NOT whitelisted: the API's catalogue evolves (verse/marin/cedar
-        // post-date the original ten) and OpenAiTtsService forwards the string VERBATIM, so a hard
+        // post-date the original ten) and the string is forwarded VERBATIM, so a hard
         // whitelist here made valid new voices unusable at options resolution. The API is the
         // source of truth — a genuinely bad voice surfaces as an actionable 400 at key-validation
         // or generation time. Only emptiness is rejected.
