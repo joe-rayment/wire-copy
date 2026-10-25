@@ -601,7 +601,7 @@ public class TerminalPageRenderer : IPageRenderer
         _helpers.ColumnOffset = options.ContentLeftOffset; // workspace-8fkv: shift into the uncovered columns when docked
         _launcherRenderer.RenderLauncher(bookmarks, selectedIndex, scrollOffset, options);
         _helpers.PositionAtBottom();
-        _launcherRenderer.RenderFooter(options.TerminalWidth, bookmarks.Count, options.ScheduledRunBadge, options.StatusMessage);
+        _launcherRenderer.RenderFooter(options.TerminalWidth, bookmarks.Count, options.ScheduledRunBadge, options.StatusMessage, options.ShowExtensionHint);
         RenderPreloadDetailOverlay(options);
 
         // workspace-0jxo: mirror the launcher to the shell as an HTML pane. The

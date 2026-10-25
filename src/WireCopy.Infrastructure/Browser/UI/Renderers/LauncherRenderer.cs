@@ -117,6 +117,12 @@ internal class LauncherRenderer
     private const string SetupHintLabel = "→ Optional: add API keys for podcasts & AI layout";
     private const string SetupHintSuffix = " · press c";
 
+    // workspace-58l5s: the browser-extension install hint, shared between the TUI
+    // footer (RenderFooter) and the exported view-model (LauncherViewState.ExtensionHint).
+    // "c" is the Settings hotkey; "Browser extension" is the Settings row that opens
+    // the install card.
+    private const string ExtensionHintText = "Save articles from Chrome: press c → Browser extension";
+
     // The launcher tagline (Launcher.dc.html) — shared between BuildHeaderLines
     // and the exported view-model.
     private const string TaglineText = "All copy, no nonsense";
@@ -185,7 +191,7 @@ internal class LauncherRenderer
     /// Version is not shown here — it lives under the tagline in the header
     /// card (workspace-m8x2).
     /// </summary>
-    public void RenderFooter(int width, int bookmarkCount, string? scheduledRunBadge = null, string? statusMessage = null)
+    public void RenderFooter(int width, int bookmarkCount, string? scheduledRunBadge = null, string? statusMessage = null, bool extensionHint = false)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
         var contentWidth = ContentWidthFor(width);
@@ -205,6 +211,18 @@ internal class LauncherRenderer
         else if (!string.IsNullOrEmpty(scheduledRunBadge))
         {
             _helpers.WriteLine($"{margin} {p.GetWarningFg().AnsiFg}{scheduledRunBadge}{Reset}");
+        }
+        else if (extensionHint)
+        {
+            // workspace-58l5s: the extension install hint takes the rule's slot
+            // (still 2 footer lines → no layout shift); the "c" hotkey is accented.
+            var text = RenderHelpers.TruncateText(ExtensionHintText, Math.Max(1, contentWidth - 1));
+            var hotkeyAt = text.IndexOf("press c", StringComparison.Ordinal);
+            var muted = p.GetMutedFg().AnsiFg;
+            var rendered = hotkeyAt >= 0
+                ? $"{muted}{text[..(hotkeyAt + 6)]}{p.GetAccentFg().AnsiFg}c{muted}{text[(hotkeyAt + 7)..]}{Reset}"
+                : $"{muted}{text}{Reset}";
+            _helpers.WriteLine($"{margin} {rendered}");
         }
         else
         {
@@ -579,6 +597,7 @@ internal class LauncherRenderer
         var setupHint = options.ShowSetupHint
             ? SetupHintLabel + SetupHintSuffix
             : null;
+        var extensionHint = options.ShowExtensionHint ? ExtensionHintText : null;
         var tagline = TaglineText;
         var version = $"v{ResolveLauncherVersion()}";
 
@@ -595,6 +614,7 @@ internal class LauncherRenderer
                 Columns = columns,
                 UrlTyping = urlTyping,
                 SetupHint = setupHint,
+                ExtensionHint = extensionHint,
                 Paging = new LauncherPaging { Offset = 0, Visible = 0, Total = 0 },
                 BookmarkCount = 0,
                 Footer = footer,
@@ -647,6 +667,7 @@ internal class LauncherRenderer
             Columns = columns,
             UrlTyping = urlTyping,
             SetupHint = setupHint,
+            ExtensionHint = extensionHint,
             Paging = new LauncherPaging { Offset = offset, Visible = visible, Total = total },
             BookmarkCount = bookmarks.Count,
             Footer = footer,

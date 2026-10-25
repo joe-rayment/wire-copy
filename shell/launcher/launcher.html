@@ -38,6 +38,7 @@
       <div id="footer">
         <div id="paging-bottom" class="paging hidden"></div>
         <div id="footer-rule"></div>
+        <div id="extensionhint" style="display:none"></div>
         <div id="footer-row">
           <div id="footer-hints"></div>
           <div id="footer-right"></div>
@@ -221,6 +222,21 @@ function paintPromptLine (state) {
     `<span class="typed">${esc(after)}</span>`
 }
 
+// workspace-58l5s: the browser-extension install hint takes the footer rule's
+// slot (same box as #footer-rule) so the grid above never shifts.
+function paintExtensionHint (state) {
+  const el = $('extensionhint')
+  const rule = $('footer-rule')
+  if (state.extensionHint) {
+    el.style.display = ''
+    el.textContent = state.extensionHint
+    rule.style.display = 'none'
+  } else {
+    el.style.display = 'none'
+    rule.style.display = ''
+  }
+}
+
 function paintSetupHint (state) {
   const el = $('setuphint')
   if (state.setupHint) {
@@ -240,6 +256,7 @@ window.__renderLauncher = function (msg) {
   paintHeaderRight(state)
   paintUrlBar(state)
   paintSetupHint(state)
+  paintExtensionHint(state)
   paintGrid(state)
   paintPaging(state)
   paintFooter(state)
