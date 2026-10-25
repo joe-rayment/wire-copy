@@ -227,6 +227,25 @@ internal static class PodcastFailureClassifier
     {
         const string Step = "Audio engine";
 
+        // workspace-08e4u: the launcher's own messages — checked before the generic "isn't
+        // running" rule, whose "start it yourself" remediation is wrong once we tried to.
+        if (error.Contains("couldn't find it", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: "Set the audio-engine folder in Settings → Audio engine program, or start it yourself, then press p again");
+        }
+
+        if (error.Contains("didn't start within", StringComparison.OrdinalIgnoreCase) ||
+            error.Contains("exited before", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: "Open the audio-engine.log it names for the reason, then press p again");
+        }
+
         if (error.Contains("isn't running", StringComparison.OrdinalIgnoreCase))
         {
             return new PodcastFailureClassification(
