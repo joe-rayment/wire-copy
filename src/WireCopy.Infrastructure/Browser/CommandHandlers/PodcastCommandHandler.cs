@@ -17,6 +17,7 @@ using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast;
+using WireCopy.Infrastructure.Podcast.AudioEngine;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -185,6 +186,40 @@ internal static class PodcastCommandHandler
             // "audio-engine" — the failure classifier turns it into a remediation screen. The check
             // gets 5 s so an unreachable address never hangs the keypress.
             var status = await CheckNarratorAsync(narrator, ct).ConfigureAwait(false);
+            if (!status.Ready
+                && status.ErrorKind == NarrationErrorKind.Unreachable
+                && AudioEngineLauncher.IsLocal(status.Url))
+            {
+                // workspace-08e4u: a local audio-engine that isn't answering is started for the
+                // user — the launcher finds the checkout, spawns it and waits for /health. On
+                // success the readiness check runs again and the flow continues; on failure the
+                // launcher's message (not found / timed out / exited) replaces the "isn't
+                // running" one and takes the same error screen below.
+                var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
+                var startPalette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                PodcastAnalyzingIndicator.RenderMessage(options, startPalette, "Starting audio-engine…", "up to 90 s");
+
+                AudioEngineStartResult startResult;
+                try
+                {
+                    startResult = await launcher.StartAndWaitAsync(status.Url, ct).ConfigureAwait(false);
+                }
+                finally
+                {
+                    PodcastAnalyzingIndicator.Clear(options);
+                }
+
+                if (startResult.Ready)
+                {
+                    status = await CheckNarratorAsync(narrator, ct).ConfigureAwait(false);
+                }
+                else if (!string.IsNullOrWhiteSpace(startResult.Message))
+                {
+                    status = status with { Message = startResult.Message };
+                }
+            }
+
             if (!status.Ready)
             {
                 await PodcastProgressScreens.ShowErrorScreenAsync(
