@@ -647,7 +647,9 @@ internal static class SettingsCommandHandler
                     {
                         if (f.Start < offset)
                         {
-                            offset = f.Start;
+                            // Keep one line of context (usually the section header) above the
+                            // row, and snap to the very top when only a line or two would hide.
+                            offset = f.Start - 1 <= 2 ? 0 : f.Start - 1;
                         }
                         else if (f.End >= offset + window)
                         {
