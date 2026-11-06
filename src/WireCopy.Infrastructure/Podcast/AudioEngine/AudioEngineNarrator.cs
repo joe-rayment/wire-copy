@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using System.Globalization;
+using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 using System.Security.Cryptography;
@@ -23,6 +24,12 @@ namespace WireCopy.Infrastructure.Podcast.AudioEngine;
 /// </summary>
 public sealed class AudioEngineNarrator : IPodcastNarrator
 {
+    /// <summary>
+    /// What Test narration says when audio-engine answers 504: its speech lane stayed busy (usually with a
+    /// podcast job) past its own wait limit (workspace-z9kq4).
+    /// </summary>
+    internal const string SpeechBusyMessage = "audio-engine is busy with another job — try Test narration again when it finishes.";
+
     private const string UnauthorizedText = "audio-engine rejected the API key. Set it in Settings -> Podcast narration.";
     private const string UrlSeparator = "/";
 
@@ -366,6 +373,12 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             using var request = NewRequest(HttpMethod.Post, "v1/audio/speech", s.ApiKey);
             request.Content = JsonContent.Create(speech, options: Json);
             using var response = await session.Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
+            if (response.StatusCode == HttpStatusCode.GatewayTimeout)
+            {
+                _logger.LogWarning("audio-engine test narration timed out waiting for the speech lane (504)");
+                return new NarrationResult { ErrorKind = NarrationErrorKind.Transient, ErrorMessage = SpeechBusyMessage };
+            }
+
             if (!response.IsSuccessStatusCode)
             {
                 var failure = await FailureFromResponseAsync(response, s, ct).ConfigureAwait(false);
@@ -596,6 +609,14 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                     {
                         return value.GetString();
                     }
+                }
+
+                // The OpenAI-compatible endpoints (v1/audio/speech) answer {"error":{"message":"…"}}.
+                if (doc.RootElement.TryGetProperty("error", out var error) && error.ValueKind == JsonValueKind.Object
+                    && error.TryGetProperty("message", out var message) && message.ValueKind == JsonValueKind.String
+                    && !string.IsNullOrWhiteSpace(message.GetString()))
+                {
+                    return message.GetString();
                 }
             }
         }
