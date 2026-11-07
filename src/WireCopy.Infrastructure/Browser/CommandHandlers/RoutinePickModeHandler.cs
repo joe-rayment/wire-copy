@@ -80,6 +80,13 @@ internal static class RoutinePickModeHandler
                 };
             }
 
+            if (config.Sections.Count == 0 && tree.SectionHeaders.Count == 0)
+            {
+                // A flat page has no header to Space on: show one in-memory "All stories" group
+                // (view only - never persisted; the pick saves as the WholePage step).
+                page.SetLinkTree(WithAllStoriesHeader(tree));
+            }
+
             IReadOnlyList<LinkInfo> todays = Array.Empty<LinkInfo>();
             var loader = sp.GetService<IUnattendedSectionLoader>();
             if (loader is not null)
@@ -346,6 +353,36 @@ internal static class RoutinePickModeHandler
         }
 
         return changed;
+    }
+
+    /// <summary>Copy of a flat tree with every story under one "All stories" sub-section header; chrome groups (More, External) stay at the root.</summary>
+    private static NavigationTree WithAllStoriesHeader(NavigationTree flat)
+    {
+        var root = LinkNode.CreateRoot();
+        var all = root.AddChild(LinkInfo.CreateSubSectionHeader(RecipeStep.WholePageSectionName, LinkType.Content));
+        var groups = new List<LinkNode>();
+        foreach (var child in flat.Root.Children)
+        {
+            if (child.IsGroupHeader)
+            {
+                groups.Add(child);
+            }
+            else
+            {
+                all.AddChild(child.Link);
+            }
+        }
+
+        foreach (var g in groups)
+        {
+            var copy = root.AddChild(g.Link);
+            foreach (var c in g.Children)
+            {
+                copy.AddChild(c.Link);
+            }
+        }
+
+        return NavigationTree.BuildFromRoot(root);
     }
 
     private static void Status(CommandContext ctx, string text, StatusSeverity severity = StatusSeverity.Info) =>
