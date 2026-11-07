@@ -16,6 +16,9 @@ from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 # side info + main data = a valid frame that decodes to silence.
 FRAME = bytes([0xFF, 0xFB, 0x90, 0x64]) + bytes(417 - 4)
 MP3 = FRAME * 40
+def _box(t, d): return (8 + len(d)).to_bytes(4, "big") + t + d
+# Pipeline only saves the bytes (format "m4b"): minimal MP4-family container, ftyp M4B + mdat.
+M4B = _box(b"ftyp", b"M4B \0\0\0\0M4B mp42isom") + _box(b"mdat", bytes(64))
 DURATION = 40 * 1152 / 44100
 JOBS = {}
 LOCK = threading.Lock()
@@ -30,22 +33,32 @@ def now(): return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%
 
 def job_json(j):
     return dict(id=j["id"], status="succeeded", phase="done", progress=1, chunksDone=j["chunks"],
-                chunksTotal=j["chunks"], title=j["title"], engine="fake", voice="fake", format="mp3",
-                priority=0, attempts=1, estCostUsd=0, durationSeconds=DURATION, bytes=len(MP3),
+                chunksTotal=j["chunks"], title=j["title"], engine="fake", voice="fake", format="m4b",
+                priority=0, attempts=1, estCostUsd=0, durationSeconds=DURATION, bytes=len(M4B),
                 createdAt=j["createdAt"], startedAt=j["createdAt"], finishedAt=j["createdAt"],
                 updatedAt=j["createdAt"], metadata=j["metadata"], audioUrl=f"/v1/jobs/{j['id']}/audio")
 
 class H(BaseHTTPRequestHandler):
-    protocol_version = "HTTP/1.1"
+    protocol_version = "HTTP/1.0"  # one request per connection: no keep-alive bookkeeping
     def log_message(self, *a): pass
     def send(self, code, body, ctype="application/json"):
         if not isinstance(body, bytes): body = json.dumps(body).encode()
         self.send_response(code); self.send_header("Content-Type", ctype)
-        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        self.send_header("Content-Length", str(len(body))); self.send_header("Connection", "close"); self.end_headers()
         if self.command != "HEAD": self.wfile.write(body)
     def body(self):
-        n = int(self.headers.get("Content-Length") or 0)
-        try: return json.loads(self.rfile.read(n) or b"{}")
+        try:
+            if "chunked" in (self.headers.get("Transfer-Encoding") or "").lower():
+                raw = b""
+                while True:
+                    size = int(self.rfile.readline().split(b";")[0].strip() or b"0", 16)
+                    if size == 0:
+                        while self.rfile.readline().strip(): pass  # trailers
+                        break
+                    raw += self.rfile.read(size); self.rfile.readline()
+            else:
+                raw = self.rfile.read(int(self.headers.get("Content-Length") or 0))
+            return json.loads(raw or b"{}")
         except Exception: return {}
     def do_GET(self):
         p = self.path.split("?")[0]; log(f"GET {p}")
@@ -61,7 +74,7 @@ class H(BaseHTTPRequestHandler):
                 ev = dict(jobId=m.group(1), type="job.completed", status="succeeded", progress=1)
                 return self.send(200, f"data: {json.dumps(ev)}\n\n".encode(), "text/event-stream")
             if not j: return self.send(404, {"error": "not found"})
-            if m.group(2) == "audio": return self.send(200, MP3, "audio/mpeg")
+            if m.group(2) == "audio": return self.send(200, M4B, "audio/mp4")
             return self.send(200, job_json(j))
         self.send(404, {"error": "not found"})
     def do_DELETE(self):
