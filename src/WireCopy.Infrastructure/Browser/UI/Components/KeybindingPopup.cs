@@ -53,7 +53,7 @@ internal static class KeybindingPopup
                 (KeyFor(CommandType.SwitchView), "switch to reader view"),
                 (readerTree, "reader / tree view"),
                 (KeyFor(CommandType.ChooseLayout), "set up site layout (AI)"),
-                (KeyFor(CommandType.AddToSchedule), "add section to a schedule"),
+                (KeyFor(CommandType.AddToSchedule), "add to a routine"),
                 (KeyFor(CommandType.Search), "search"),
                 (searchNextPrev, "next / prev match"),
                 ("R", "refresh (bypass cache)"),
@@ -131,6 +131,18 @@ internal static class KeybindingPopup
                 ("e", "add Wire Copy to your browser"),
                 (KeyFor(CommandType.CycleTheme), "cycle theme"),
                 ("q / Ctrl+C", "quit"),
+
+                // Routines section (workspace-wyvga.8): the keys of the Routines screens are not
+                // launcher keys, so they are text rows with an empty key column, and
+                // only the launcher ROUTINES-half keys are real, checked keys.
+                (string.Empty, "-- Routines --"),
+                (KeyFor(CommandType.JumpToIndex) + " / Enter", "ROUTINES half: open the Routines home"),
+                (":routines", "open the Routines home from anywhere"),
+                (string.Empty, "Home: arrows/hjkl move · Enter open/create · n new · r run now · Space on/off · d delete · Esc back"),
+                (string.Empty, "Editor: Up/Down move · Enter edit · x remove · r run now · Esc back"),
+                (string.Empty, "Pick mode: Space include section / toggle a story's position · Enter on a story does nothing"),
+                (string.Empty, "  T take (All / Top 3 / Top 5 / Top N / First story) · Esc save & back"),
+                (KeyFor(CommandType.AddToSchedule), "add to a routine (from a link list)"),
             ],
             _ =>
             [
@@ -161,7 +173,7 @@ internal static class KeybindingPopup
             (":new <name>", "create a collection"),
             (":export [format]", "export the open collection"),
             (":podcast", "generate / restore a podcast"),
-            (":schedules", "recurring podcast schedules"),
+            (":routines", "podcast routines (also :schedules)"),
             (":settings", "podcast settings"),
             (":config", "settings screen"),
             (":set apikey|bucket|key", "set a credential/setting"),

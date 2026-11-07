@@ -535,7 +535,7 @@ internal class StatusBarRenderer
                         new[]
                         {
                             new StatusSegment("g s", StatusStyle.Accent),
-                            new StatusSegment(":schedule", StatusStyle.Dim),
+                            new StatusSegment("routine", StatusStyle.Dim),
                         },
                     },
                 });

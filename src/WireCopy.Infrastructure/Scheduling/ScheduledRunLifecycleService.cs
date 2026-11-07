@@ -81,7 +81,7 @@ internal sealed class ScheduledRunLifecycleService : IHostedService
 
         foreach (var run in active)
         {
-            run.MarkInterrupted("App restarted before the scheduled run completed");
+            run.MarkInterrupted("App restarted before the routine run completed");
             await repo.UpdateAsync(run, cancellationToken).ConfigureAwait(false);
             _logger.LogInformation(
                 "ScheduledRun {RunId} ({Recipe} @ {Occurrence}) marked Interrupted on startup",

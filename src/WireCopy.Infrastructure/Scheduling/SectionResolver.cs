@@ -57,7 +57,7 @@ internal sealed class SectionResolver : ISectionResolver
             // as site drift; a layout that never HAD sections needs a different fix
             // (switch the step to All stories), so name that case explicitly.
             var diagnostic = config.Sections.Count == 0
-                ? $"The saved layout for {config.Domain} is a single list without sections — edit the schedule and " +
+                ? $"The saved layout for {config.Domain} is a single list without sections — edit the routine and " +
                   $"pick '{RecipeStep.WholePageSectionName}' for this source instead of a section."
                 : $"Section '{step.SectionName}' (or SortOrder {step.SortOrderFallback}) is not in the " +
                   $"saved layout for {config.Domain} — re-run AI setup (g l) for this site.";
@@ -138,7 +138,7 @@ internal sealed class SectionResolver : ISectionResolver
             Diagnostic = recovered
                 ? $"Recovered '{section.Name}' on {config.Domain} via re-derived selector(s) " +
                   $"[{string.Join(", ", recoveredSelectors)}] after the saved selector matched 0 today — " +
-                  "ratify the layout in Schedules (the recovery is not saved)."
+                  "ratify the layout in Routines (the recovery is not saved)."
                 : null,
         };
     }

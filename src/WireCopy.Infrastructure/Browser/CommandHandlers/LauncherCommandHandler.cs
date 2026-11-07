@@ -276,7 +276,7 @@ internal static class LauncherCommandHandler
                 // workspace-42q8.4: g s needs an open page — say so (the launcher
                 // footer renders the status in the badge slot) instead of no-oping.
                 ctx.NavigationService.SetStatusMessage(
-                    "Open a site's link list first — g s schedules a section of the page you're on.",
+                    "Open a site's link list first — g s adds the page you're on to a routine.",
                     TimeSpan.FromSeconds(6));
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;

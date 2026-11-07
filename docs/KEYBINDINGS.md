@@ -55,6 +55,7 @@ different screens (the **Overloaded keys** section lists those).
 | `s` / `Shift+S` | Save selected to default list / to a chosen list | |
 | `A` | Save **all** visible links to a list | *(capital kept: in the `s`/`S` save family)* |
 | `g l` | Set up site layout (AI wizard) — also `:layout` | ⟳ *was `Ctrl+L`* |
+| `g s` | **Add to routine** — pick a routine (or `+ New routine`), then choose sections / positions in pick mode (see below) | |
 | `|` | Dock / undock the live browser sidecar | ⟳ *was `Shift+O`* |
 | `y` | Adopt the sidecar's current page into the app | |
 | `Shift+R` | Force refresh (bypass cache) | |
@@ -111,6 +112,27 @@ Amber "routine mode"; the first card is `+ New routine`, then one card per routi
 | `d` | Delete the selected routine (`y` / `n` to confirm) |
 | `Esc` | Back to where you came from |
 
+## Routine editor (Enter on a routine in the Routines home)
+
+| Key | Action |
+|-----|--------|
+| `↑` / `↓` | Move between rows (name, frequency, sites, steps) |
+| `Enter` | Edit the selected row (rename, change frequency, add a site, open a site in pick mode) |
+| `x` | Remove the selected site / step |
+| `r` | Run this routine now |
+| `Esc` | Back to the Routines home |
+
+## Pick mode (choosing a routine's sections and positions)
+
+Opened from the editor, or from `g s` on a link list. The list looks like the normal article list, but a routine follows **sections and positions, not specific links**.
+
+| Key | Action |
+|-----|--------|
+| `Space` | On a section header: include / exclude the whole section · on a story: toggle that story's **position** (e.g. #1, #3) |
+| `T` | Choose what to take from the section: All / Top 3 / Top 5 / Top N / First story |
+| `Enter` | On a story: does nothing (it never opens the article) |
+| `Esc` | Save and go back (from `g s` you return to the same list position in normal colours) |
+
 ---
 
 ## Setup wizard (after `g l`)
@@ -148,7 +170,7 @@ Open with `:`. Available everywhere.
 | `:new <name>` | Create a reading list |
 | `:clear`, `:export`, `:cache` | Clear / export a list · cache controls |
 | `:podcast` | Podcast generation |
-| `:schedule` / `:schedules` | Recurring-episode recipes |
+| `:routines` (alias `:schedules`) | Routines home — recurring episodes |
 | `:layout` | Set up site layout (AI) — same as `g l` |
 | `:layout clear` | Forget the saved link-list layout for this site |
 | `:layout reset` | Forget the tuned/AI **article** selectors for this site |

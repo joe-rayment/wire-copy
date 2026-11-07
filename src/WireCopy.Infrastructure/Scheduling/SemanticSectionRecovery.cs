@@ -164,7 +164,7 @@ internal sealed class SemanticSectionRecovery : ISemanticSectionRecovery
             Tier = SectionMatchTier.HeadingName,
             Diagnostic = $"Semantically recovered '{step.SectionName}' as today's heading " +
                          $"'{classification.CandidateLabel}' (confidence {classification.Confidence:P0}) — " +
-                         "ratify the layout in Schedules (the recovery is not saved).",
+                         "ratify the layout in Routines (the recovery is not saved).",
         };
     }
 

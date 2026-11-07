@@ -40,23 +40,23 @@ internal static class ScheduledRunBadge
 
         if (attention.Count > 1)
         {
-            return $"⚠ {attention.Count} scheduled runs need attention — open :schedules";
+            return $"⚠ {attention.Count} routine runs need attention — open :routines";
         }
 
         var run = attention[0];
         if (run.Status is ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted)
         {
             var reason = string.IsNullOrWhiteSpace(run.ErrorMessage) ? string.Empty : $" — {Trim(run.ErrorMessage!)}";
-            return $"⚠ Scheduled run failed: {run.RecipeName}{reason} — open :schedules";
+            return $"⚠ Routine run failed: {run.RecipeName}{reason} — open :routines";
         }
 
         if (IsRecovered(run))
         {
-            return $"⚠ {run.RecipeName}: a scheduled run used a re-derived section — ratify in :schedules";
+            return $"⚠ {run.RecipeName}: a routine run used a re-derived section — ratify in :routines";
         }
 
         // PartialSuccess without a recovery flag (an optional source was degraded).
-        return $"⚠ {run.RecipeName}: scheduled run published with a degraded source — open :schedules";
+        return $"⚠ {run.RecipeName}: routine run published with a degraded source — open :routines";
     }
 
     private static bool IsRecovered(ScheduledRun run) =>

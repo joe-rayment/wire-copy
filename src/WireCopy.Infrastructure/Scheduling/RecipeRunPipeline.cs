@@ -228,7 +228,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             // attempt unattended re-auth; the user refreshes by browsing the site once.
             var diagnostic = load.Outcome == LoadOutcome.Blocked
                 ? $"{HostOf(step.SourceUrl)}: appears logged-out or paywalled — open it in WireCopy and sign in to refresh your session. " +
-                  "The scheduled run skipped this step rather than publish an empty episode."
+                  "The routine run skipped this step rather than publish an empty episode."
                 : $"Background load failed ({load.Outcome}) for {step.SourceUrl}.";
             return (load.Outcome.ToString(), 0, diagnostic);
         }
@@ -246,8 +246,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         {
             var diagnostic = lookup is { SiteHasAnyConfig: true }
                 ? $"The saved layout for {HostOf(step.SourceUrl)} (covers {ScheduleConfigResolution.DescribeSitePatterns(lookup.SiteConfigs)}) " +
-                  $"no longer matches {step.SourceUrl} — re-add this step in :schedules to re-pin it"
-                : $"No saved layout for {HostOf(step.SourceUrl)} yet — set the site up once (g l) so scheduled runs can resolve sections";
+                  $"no longer matches {step.SourceUrl} — re-add this step in :routines to re-pin it"
+                : $"No saved layout for {HostOf(step.SourceUrl)} yet — set the site up once (g l) so routine runs can resolve sections";
             return (ResolutionStatus.SectionNotFound.ToString(), 0, diagnostic);
         }
 
