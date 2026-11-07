@@ -48,6 +48,11 @@ internal static class RoutinePickModeHandler
             modeService.Set(UiMode.Routine);
         }
 
+        // Pick mode loads the site as its own page; on the way out the user returns to where they were
+        // (the launcher, or the list they pressed g s on) - the Esc chain never strands them on the site.
+        var startedInLauncher = ctx.NavigationService.InLauncherMode;
+        var startPage = ctx.NavigationService.CurrentPage;
+
         try
         {
             ctx.NavigationService.SetStatusMessage("Loading " + request.SiteUrl + " …", TimeSpan.FromSeconds(30));
@@ -121,6 +126,16 @@ internal static class RoutinePickModeHandler
                         : StepScope.PinnedSection,
                     TakeMode = TakeMode.WholeSection,
                 };
+
+                // Start on the section g s added, so its "● all N" chip is the first thing in view.
+                var preTree = ctx.NavigationService.CurrentPage?.LinkTree;
+                var header = preTree?.SectionHeaders.FirstOrDefault(h =>
+                    string.Equals(h.Link.DisplayText?.Trim(), pre, StringComparison.OrdinalIgnoreCase));
+                if (header is not null)
+                {
+                    preTree!.SelectNodeById(header.Id);
+                    ctx.AdjustScrollForSelection(preTree, options);
+                }
             }
 
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
@@ -134,6 +149,16 @@ internal static class RoutinePickModeHandler
         {
             session.Active = false;
             ctx.SetOverlayPainter(null);
+            if (startPage is not null && !ReferenceEquals(ctx.NavigationService.CurrentPage, startPage) && ctx.NavigationService.CanGoBack)
+            {
+                ctx.NavigationService.GoBack();
+            }
+
+            if (startedInLauncher && !ctx.NavigationService.InLauncherMode)
+            {
+                ctx.NavigationService.EnterLauncher();
+            }
+
             if (turnedOn)
             {
                 modeService.Set(UiMode.Normal);
