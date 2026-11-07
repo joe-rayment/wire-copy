@@ -144,14 +144,19 @@ function cardHtml (slot, selected) {
   // Selected card: sel-bg fill + a glowing 4px green rail on the left edge
   // (Launcher Responsive.dc.html) — recolors only, the footprint never changes.
   const rail = selected ? `<div class="card-rail"></div>` : ''
+  // Routines home (workspace-wyvga.4): optional third line, dimmed when disabled, and the
+  // "+ New routine" card gets its own look. Plain launcher slots carry neither field.
+  const detail = slot.detail ? `<div class="card-url detail">${esc(slot.detail)}</div>` : ''
+  const kindCls = slot.kind === 'newRoutine' ? ' new-routine' : (slot.kind === 'routine' ? ' routine' : '')
   return (
-    `<div class="card${selected ? ' selected' : ''}">` +
+    `<div class="card${selected ? ' selected' : ''}${kindCls}${slot.disabled ? ' disabled' : ''}">` +
       rail +
       `<div class="card-title-row">` +
         `<span class="card-title">${esc(slot.title || '')}${star}</span>` +
         idx +
       `</div>` +
       second +
+      detail +
       `<div class="card-sep"><span>${'─'.repeat(220)}</span></div>` +
     `</div>`
   )
@@ -304,12 +309,15 @@ function paintMode (state) {
 window.__renderLauncher = function (msg) {
   lastMsg = msg
   const state = (msg && msg.state) || {}
+  // Routines home reuses this pane but hides the launcher-only chrome.
+  const routines = state.screen === 'routines'
+  document.documentElement.dataset.screen = routines ? 'routines' : 'launcher'
   paintMode(state)
   paintTagline(state)
   paintHeaderRight(state)
   paintUrlBar(state)
-  paintSetupHint(state)
-  paintExtensionHint(state)
+  paintSetupHint(routines ? Object.assign({}, state, { setupHint: null }) : state)
+  paintExtensionHint(routines ? Object.assign({}, state, { extensionHint: null }) : state)
   paintGrid(state)
   paintPaging(state)
   paintFooter(state)

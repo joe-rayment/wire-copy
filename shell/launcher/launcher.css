@@ -394,3 +394,19 @@ html, body {
   background: var(--tr-green);
   color: var(--tr-bg-pure);
 }
+
+/* Routines home (workspace-wyvga.4): state.screen == "routines". Same pane and grid; the
+   URL bar and the bookmark counts are launcher-only, so they are hidden here (the setup and
+   extension hints are simply not painted by launcher.html). */
+html[data-screen="routines"] #urlbar-wrap,
+html[data-screen="routines"] #header-right .hr-count,
+html[data-screen="routines"] #footer-right .count { display: none; }
+.card.disabled { opacity: .55; }
+.card .detail { margin-top: 3px; }
+.card.routine .card-title { color: var(--tr-routine); }
+.card.routine.selected .card-title { color: var(--tr-white); }
+.card.routine .card-rail { background: var(--tr-routine); box-shadow: 0 0 10px var(--tr-routine); }
+.card.new-routine { border: 1px dashed var(--tr-routine); }
+.card.new-routine .card-title { color: var(--tr-routine); }
+.card.new-routine.selected .card-title { color: var(--tr-white); }
+.card.new-routine .card-rail { background: var(--tr-routine); box-shadow: 0 0 10px var(--tr-routine); }

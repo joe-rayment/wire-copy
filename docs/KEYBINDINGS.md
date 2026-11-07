@@ -95,6 +95,22 @@ different screens (the **Overloaded keys** section lists those).
 | `:rename` | Rename the selected bookmark |
 | `Ctrl+P` | Cycle theme |
 
+The launcher's bottom-right cell is split: the READING LIST half and the ROUTINES half (amber). Select ROUTINES and press `Enter` (or jump to it with its digit, e.g. `3`) to open the Routines home. `:routines` opens the same screen from anywhere.
+
+## Routines home (`:routines`, or the ROUTINES half of the launcher)
+
+Amber "routine mode"; the first card is `+ New routine`, then one card per routine sorted by name.
+
+| Key | Action |
+|-----|--------|
+| Arrows / `h` `j` `k` `l` | Move between cards |
+| `Enter` | Open the routine's editor; on `+ New routine`, create a routine (asks for a name) |
+| `n` | New routine |
+| `r` | Run the selected routine now |
+| `Space` | Switch the selected routine on / off |
+| `d` | Delete the selected routine (`y` / `n` to confirm) |
+| `Esc` | Back to where you came from |
+
 ---
 
 ## Setup wizard (after `g l`)
