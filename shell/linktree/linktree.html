@@ -115,11 +115,17 @@ function itemHtml (item, selected) {
   const rail = selected ? `<div class="card-rail"></div>` : ''
   const tick = item.toggled ? `<span class="c-tick">✓ </span>` : ''
   const meta = item.meta ? `<div class="card-meta">${bylineHtml(item.meta)}</div>` : ''
+  // Routine pick mode (workspace-wyvga.7): a story picked as its position carries a
+  // slotBadge ("#3 · Science"). The pill sits inline on the title row and the headline
+  // reads as a placeholder ("today: " + title, muted) — the card's footprint is unchanged.
+  const slot = item.slotBadge != null
+  const badge = slot ? `<span class="c-slot">${esc(item.slotBadge)}</span>` : ''
+  const headline = slot ? 'today: ' + (item.title || '') : (item.title || '')
   return (
     `<div class="cell">` +
-      `<div class="card${selected ? ' selected' : ''}">` +
+      `<div class="card${selected ? ' selected' : ''}${slot ? ' slotted' : ''}">` +
         rail +
-        `<div class="card-title t-${esc(item.linkType || 'content')}">${tick}${esc(item.title || '')}</div>` +
+        `<div class="card-title t-${esc(item.linkType || 'content')}">${badge}${tick}${esc(headline)}</div>` +
         meta +
       `</div>` +
       `<div class="card-sep"><span>${CARD_SEP}</span></div>` +

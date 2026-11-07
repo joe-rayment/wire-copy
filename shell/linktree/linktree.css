@@ -366,3 +366,28 @@ html, body {
   font-weight: 700;
 }
 .section.included.selected .s-name { color: var(--tr-white); }
+
+/* Routine pick mode (workspace-wyvga.7): slot badge pill inline on the title row, same
+   look as the included-header chip; the headline turns muted so it reads as a placeholder.
+   Inline, one line, ellipsized — the card's height is unchanged. */
+.card-title .c-slot {
+  display: inline-block;
+  max-width: 60%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-right: 0.5em;
+  font-size: 0.5em;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 3px 10px;
+  border-radius: 999px;
+  color: #000;
+  background: var(--tr-routine, var(--tr-green));
+  border: 1px solid var(--tr-routine, var(--tr-green));
+  font-weight: 700;
+}
+.card.slotted .card-title,
+.card.slotted.selected .card-title { color: var(--tr-muted); }
+.card.slotted .card-title .c-slot { color: #000; }
