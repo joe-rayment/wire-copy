@@ -80,8 +80,11 @@ public partial class BrowserOrchestrator
             // Best-effort: stay in normal mode.
         }
 
+        var routinePick = BuildRoutinePickView();
+
         return new RenderOptions
         {
+            RoutinePick = routinePick,
             TerminalWidth = renderWidth,
             TerminalHeight = height,
             MaxContentWidth = ComputeContentWidth(renderWidth),
@@ -113,6 +116,41 @@ public partial class BrowserOrchestrator
             UiMode = uiMode,
             UiModeVariant = uiModeVariant,
         };
+    }
+
+    /// <summary>
+    /// workspace-wyvga.6: the link tree's pick-mode overlay, or null unless a routine
+    /// pick session is active.
+    /// </summary>
+    private RoutinePickView? BuildRoutinePickView()
+    {
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var session = scope.ServiceProvider.GetService<Scheduling.RoutinePickSession>();
+            if (session is not { Active: true })
+            {
+                return null;
+            }
+
+            var picks = session.Picks;
+            var sections = picks.Values.Count(p => p.TakeMode != Domain.Enums.Scheduling.TakeMode.Slots);
+            var slots = picks.Values.Where(p => p.TakeMode == Domain.Enums.Scheduling.TakeMode.Slots).Sum(p => p.Positions.Count);
+            return new RoutinePickView
+            {
+                Eyebrow = Scheduling.RoutineText.Eyebrow(session.RoutineName),
+                FooterHint = Scheduling.RoutineText.PickFooter(sections, slots),
+                ChipFor = (title, count) =>
+                {
+                    var found = picks.TryGetValue(title, out var pick);
+                    return (Scheduling.RoutineText.Chip(found ? pick : null, count), found);
+                },
+            };
+        }
+        catch (InvalidOperationException)
+        {
+            return null;
+        }
     }
 
     /// <summary>

@@ -1131,6 +1131,7 @@ internal class LinkTreeRenderer
                         selectState = "partial";
                     }
 
+                    var routineChip = options.RoutinePick?.ChipFor(node.Link.DisplayText, node.Children.Count);
                     items.Add(new LinkTreeItem
                     {
                         Kind = "section",
@@ -1138,6 +1139,8 @@ internal class LinkTreeRenderer
                         Count = node.Children.Count,
                         Collapsed = node.CollapseState != NodeCollapseState.Expanded,
                         SelectState = selectState,
+                        RoutineChip = routineChip?.Chip,
+                        RoutineIncluded = routineChip?.Included ?? false,
                     });
                 }
                 else
@@ -1195,6 +1198,8 @@ internal class LinkTreeRenderer
                 ? new LinkTreeCacheMeter { Done = progress.CachedCount, Total = progress.TotalCacheableLinks }
                 : null,
             Docked = options.BrowserDocked,
+            Eyebrow = options.RoutinePick?.Eyebrow,
+            FooterHint = options.RoutinePick?.FooterHint,
         };
     }
 #pragma warning restore SA1202
@@ -1205,6 +1210,37 @@ internal class LinkTreeRenderer
     /// Compact mode (cardHeight == 1): single thin-rule title line.
     /// Format: ' ─ Title (count) ────────'
     /// </summary>
+    /// <summary>
+    /// workspace-wyvga.6: the pick-mode chip text for a header, or empty outside a pick
+    /// session. Appended to the label so the TUI shows what the pane's pill shows.
+    /// </summary>
+    private static string RoutineChipSuffix(LinkNode node, RenderOptions options, out bool included)
+    {
+        included = false;
+        if (options.RoutinePick is null)
+        {
+            return string.Empty;
+        }
+
+        var (chip, inc) = options.RoutinePick.ChipFor(node.Link.DisplayText, node.Children.Count);
+        included = inc;
+        return "  " + chip;
+    }
+
+    /// <summary>Colours the trailing chip of an unselected header line (accent when included, muted otherwise).</summary>
+    private static string ColourChip(string line, string chip, bool included, ThemePalette p, string restore)
+    {
+        var trimmed = chip.Trim();
+        var at = trimmed.Length == 0 ? -1 : line.LastIndexOf(trimmed, StringComparison.Ordinal);
+        if (at < 0)
+        {
+            return line;
+        }
+
+        var colour = included ? p.GetRoutineAccentFg().AnsiFg : p.SecondaryText.AnsiFg;
+        return line[..at] + colour + (included ? Bold : string.Empty) + trimmed + Reset + restore + line[(at + trimmed.Length)..];
+    }
+
     private void RenderSubSectionHeader(LinkNode node, bool isSelected, RenderOptions options, string sectionIndicator = "")
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
@@ -1216,7 +1252,8 @@ internal class LinkTreeRenderer
         var childCount = node.Children.Count;
         var showCount = !isExpanded || childCount >= 5;
         var countSuffix = showCount ? $" ({childCount})" : string.Empty;
-        var titleText = $"{sectionIndicator}{collapseIndicator} {node.Link.DisplayText}{countSuffix}";
+        var chipSuffix = RoutineChipSuffix(node, options, out var chipIncluded);
+        var titleText = $"{sectionIndicator}{collapseIndicator} {node.Link.DisplayText}{countSuffix}{chipSuffix}";
         var headerLabel = $" \u2500 {titleText} ";
 
         // Fill remaining width with thin rule (no box corners — avoids broken box appearance)
@@ -1250,7 +1287,10 @@ internal class LinkTreeRenderer
         }
         else
         {
-            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncLine}{Reset}");
+            var plainLine = chipSuffix.Length == 0
+                ? truncLine
+                : ColourChip(truncLine, chipSuffix, chipIncluded, p, p.SecondaryText.AnsiFg);
+            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{plainLine}{Reset}");
         }
     }
 
@@ -1269,7 +1309,8 @@ internal class LinkTreeRenderer
         var isExpanded = node.CollapseState == NodeCollapseState.Expanded;
         var collapseIndicator = isExpanded ? "\u25bc" : "\u25b6";
         var childCount = node.Children.Count;
-        var headerText = $"{sectionIndicator}{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount})";
+        var chipSuffix = RoutineChipSuffix(node, options, out var chipIncluded);
+        var headerText = $"{sectionIndicator}{collapseIndicator} {node.Link.DisplayText.ToUpperInvariant()} ({childCount}){chipSuffix}";
 
         if (cardHeight == 1)
         {
@@ -1286,7 +1327,8 @@ internal class LinkTreeRenderer
             else
             {
                 var color = isExpanded ? $"{p.PrimaryText.AnsiFg}{Bold}" : p.SecondaryText.AnsiFg;
-                _helpers.WriteLine($" {color}{truncText}{Reset}");
+                var shownText = chipSuffix.Length == 0 ? truncText : ColourChip(truncText, chipSuffix, chipIncluded, p, color);
+                _helpers.WriteLine($" {color}{shownText}{Reset}");
             }
 
             return;
@@ -1318,11 +1360,13 @@ internal class LinkTreeRenderer
         }
         else if (isExpanded)
         {
-            _helpers.WriteLine($" {p.PrimaryText.AnsiFg}{Bold}{truncHeader}{Reset}");
+            var shown = chipSuffix.Length == 0 ? truncHeader : ColourChip(truncHeader, chipSuffix, chipIncluded, p, $"{p.PrimaryText.AnsiFg}{Bold}");
+            _helpers.WriteLine($" {p.PrimaryText.AnsiFg}{Bold}{shown}{Reset}");
         }
         else
         {
-            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{truncHeader}{Reset}");
+            var shown = chipSuffix.Length == 0 ? truncHeader : ColourChip(truncHeader, chipSuffix, chipIncluded, p, p.SecondaryText.AnsiFg);
+            _helpers.WriteLine($" {p.SecondaryText.AnsiFg}{shown}{Reset}");
         }
 
         // Line 2: blank line below header (gives breathing room before card grid)

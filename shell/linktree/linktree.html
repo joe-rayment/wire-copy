@@ -102,10 +102,11 @@ function bylineHtml (meta) {
 function itemHtml (item, selected) {
   if (item.kind === 'section') {
     return (
-      `<div class="section${selected ? ' selected' : ''}${item.collapsed ? ' collapsed' : ''}">` +
+      `<div class="section${selected ? ' selected' : ''}${item.collapsed ? ' collapsed' : ''}${item.routineIncluded ? ' included' : ''}">` +
         `<span class="s-tick">─</span>` +
         `<span class="s-name">${item.collapsed ? '▶' : '▼'} ${esc(sectionMark(item))}${esc((item.title || '').toUpperCase())}</span>` +
         `<span class="s-count">(${esc(item.count ?? 0)})</span>` +
+        (item.routineChip ? `<span class="s-chip">${esc(item.routineChip)}</span>` : '') +
         `<span class="s-fill">${RULE}</span>` +
       `</div>`
     )

@@ -14,6 +14,12 @@ public record RenderOptions
     public string UiModeVariant { get; init; } = "amber";
 
     /// <summary>
+    /// Routine pick-mode overlay for the link tree (workspace-wyvga.6); null unless a
+    /// pick session is active.
+    /// </summary>
+    public RoutinePickView? RoutinePick { get; init; }
+
+    /// <summary>
     /// Width of the terminal window.
     /// </summary>
     public int TerminalWidth { get; init; } = 80;
@@ -203,4 +209,20 @@ public record RenderOptions
     /// instead of the fixed 2-column terminal grid.
     /// </summary>
     public bool ShellPane { get; init; }
+}
+
+/// <summary>
+/// Precomputed pick-mode strings for the link tree while a routine pick session is
+/// active: eyebrow, footer hint and a section-name to chip lookup.
+/// </summary>
+public sealed record RoutinePickView
+{
+    /// <summary>Gets the pane eyebrow ("ROUTINE · name").</summary>
+    public required string Eyebrow { get; init; }
+
+    /// <summary>Gets the footer hint line.</summary>
+    public required string FooterHint { get; init; }
+
+    /// <summary>Gets the chip text and included flag for a section header title and its story count.</summary>
+    public required Func<string, int, (string Chip, bool Included)> ChipFor { get; init; }
 }
