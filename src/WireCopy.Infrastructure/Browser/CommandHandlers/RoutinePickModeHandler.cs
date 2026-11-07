@@ -230,7 +230,15 @@ internal static class RoutinePickModeHandler
 
     private static async Task ToggleAsync(CommandContext ctx, RenderOptions options, RoutinePickSession session, CancellationToken ct)
     {
-        if (SelectedSection(ctx, session) is not { OnHeader: true } sel)
+        var sel0 = SelectedSection(ctx, session);
+        if (sel0 is { OnHeader: false } story)
+        {
+            ToggleStory(ctx, session, story);
+            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (sel0 is not { OnHeader: true } sel)
         {
             Status(ctx, RoutineText.HeaderOnlyYet);
         }
@@ -240,6 +248,70 @@ internal static class RoutinePickModeHandler
         }
 
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>S2 Space on a story: toggles the story's POSITION in its section (never the article itself).</summary>
+    private static void ToggleStory(CommandContext ctx, RoutinePickSession session, (string Name, StepScope Scope, bool OnHeader) sel)
+    {
+        var node = ctx.NavigationService.CurrentPage?.LinkTree?.CurrentSelection;
+        var config = session.Config;
+        if (node is null || config is null)
+        {
+            return;
+        }
+
+        var owner = NavigationTree.GetOwningSectionHeader(node);
+        if (owner is null && config.Sections.Count > 0)
+        {
+            Status(ctx, RoutineText.NoSection);
+            return;
+        }
+
+        if (session.Picks.TryGetValue(sel.Name, out var existing)
+            && existing.TakeMode is TakeMode.WholeSection or TakeMode.TopN or TakeMode.SingleTopStory)
+        {
+            Status(ctx, RoutineText.WholeSectionAlready);
+            return;
+        }
+
+        var wholePage = sel.Scope == StepScope.WholePage;
+        var sortOrder = config.Sections
+            .FirstOrDefault(s => string.Equals(s.Name, sel.Name, StringComparison.OrdinalIgnoreCase))?.SortOrder ?? 0;
+        var step = RecipeStep.Create(
+            session.SiteUrl,
+            new Uri(session.SiteUrl).Host,
+            config.UrlPattern,
+            wholePage ? RecipeStep.WholePageSectionName : sel.Name,
+            TakeMode.WholeSection,
+            null,
+            required: false,
+            sortOrderFallback: sortOrder,
+            scope: sel.Scope);
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var resolver = scope.ServiceProvider.GetRequiredService<ISectionResolver>();
+        var pos = resolver.PositionOf(config, session.TodaysLinks, step, node.Link.Url);
+        if (pos is null)
+        {
+            Status(ctx, RoutineText.CannotPlace);
+            return;
+        }
+
+        if (existing is null)
+        {
+            existing = new SectionPick { Scope = sel.Scope, TakeMode = TakeMode.Slots };
+            session.Picks[sel.Name] = existing;
+        }
+
+        if (!existing.Positions.Remove(pos.Value))
+        {
+            existing.Positions.Add(pos.Value);
+        }
+
+        existing.TakeMode = TakeMode.Slots;
+        if (existing.Positions.Count == 0)
+        {
+            session.Picks.Remove(sel.Name);
+        }
     }
 
     private static async Task TakePickerAsync(
