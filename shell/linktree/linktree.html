@@ -188,6 +188,7 @@ function paintFooter (state) {
   for (const [k, label] of HINTS) {
     parts.push(`<span class="kbd"><span class="brk">[</span><span class="key">${esc(k)}</span><span class="brk">]</span>:${esc(label)}</span>`)
   }
+  if (state.footerHint) parts.splice(1, parts.length, `<span class="kbd">${esc(state.footerHint)}</span>`)
   $('footer-left').innerHTML = parts.join('')
   $('footer-right').innerHTML = state.docked ? `<span class="docked">⇉ docked</span>` : ''
 }
@@ -226,6 +227,10 @@ function paintPromptLine (state) {
 window.__renderLinkTree = function (msg) {
   lastMsg = msg
   const state = (msg && msg.state) || {}
+  // workspace-wyvga.9: mode/variant before painting; eyebrow falls back to "Link Tree".
+  document.documentElement.dataset.mode = state.mode || 'normal'
+  document.documentElement.dataset.variant = state.modeVariant || 'amber'
+  $('eyebrow').innerHTML = `<span class="tick">▌</span> ${esc(state.eyebrow || 'Link Tree')}`
   paintHeader(state)
   paintGrid(state)
   paintScrollMarks(state)

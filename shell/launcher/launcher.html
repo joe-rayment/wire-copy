@@ -254,9 +254,24 @@ function paintSetupHint (state) {
 
 // Idempotent full re-render from a pushed state message. State pushes are
 // low-frequency, so a straight rebuild is simplest and cannot drift.
+// workspace-wyvga.9: mode/variant attributes (set BEFORE painting), plus the optional
+// eyebrow / title / footer-hint overrides. Null falls back to today's text.
+function paintMode (state) {
+  document.documentElement.dataset.mode = state.mode || 'normal'
+  document.documentElement.dataset.variant = state.modeVariant || 'amber'
+  $('eyebrow').innerHTML = `<span class="tick">▌</span> ${esc(state.eyebrow || 'Launcher')}`
+  $('apptitle').textContent = state.title || 'Wire Copy'
+  if (state.footerHint) {
+    $('footer-hints').innerHTML = `<span class="kbd">${esc(state.footerHint)}</span>`
+  } else {
+    paintChrome()
+  }
+}
+
 window.__renderLauncher = function (msg) {
   lastMsg = msg
   const state = (msg && msg.state) || {}
+  paintMode(state)
   paintTagline(state)
   paintHeaderRight(state)
   paintUrlBar(state)

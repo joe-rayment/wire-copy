@@ -6,6 +6,7 @@
 
 :root {
   /* ── Text hierarchy (ANSI 256 mappings in comments) ──────────────────── */
+  --tr-routine: #ffaf00; /* ANSI 214 · routine-mode accent */
   --tr-bright:  #ff87d7; /* ANSI 212 · Titles, content link headlines        */
   --tr-green:   #00d700; /* ANSI 40  · Body text — the phosphor              */
   --tr-med:     #00af00; /* ANSI 34  · Metadata, domains, secondary text     */
