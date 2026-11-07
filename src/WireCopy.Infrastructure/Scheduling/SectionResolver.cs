@@ -28,6 +28,17 @@ internal sealed class SectionResolver : ISectionResolver
         ArgumentNullException.ThrowIfNull(todaysLinks);
         ArgumentNullException.ThrowIfNull(step);
 
+        // Slots (positions) are resolved by a later slice; until then they contribute nothing.
+        if (step.TakeMode == TakeMode.Slots)
+        {
+            return new SectionResolution
+            {
+                Status = ResolutionStatus.ZeroMatch,
+                MatchCount = 0,
+                Diagnostic = "slots not supported yet",
+            };
+        }
+
         // Content links in document order, ads/promos removed by the durable
         // exclude rules — so SingleTopStory can't pick up a co-located ad.
         var content = todaysLinks

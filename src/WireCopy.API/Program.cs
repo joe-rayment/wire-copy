@@ -264,7 +264,33 @@ public class Program
             localPath = run?.TargetLocalPath,
             itemCount = run?.ItemCount ?? 0,
             error = run?.ErrorMessage,
+            steps = ParseStepOutcomes(run?.StepOutcomesJson),
         });
+    }
+
+    private static object[] ParseStepOutcomes(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+        {
+            return Array.Empty<object>();
+        }
+
+        try
+        {
+            var outcomes = System.Text.Json.JsonSerializer.Deserialize<List<WireCopy.Application.DTOs.Scheduling.RunStepOutcome>>(json)
+                           ?? new();
+            return outcomes.Select(o => (object)new
+            {
+                sectionName = o.SectionName,
+                status = o.Status,
+                itemUrls = o.ItemUrls,
+                diagnostic = o.Diagnostic,
+            }).ToArray();
+        }
+        catch (System.Text.Json.JsonException)
+        {
+            return Array.Empty<object>();
+        }
     }
 
     private static async Task<int> RunResolveSectionAsync(string[] args)

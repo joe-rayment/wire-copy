@@ -137,6 +137,7 @@ internal sealed class ScheduleStore : IScheduleStore
             HeadingAliases = s.HeadingAliases.ToList(),
             TakeMode = s.TakeMode,
             TakeCount = s.TakeCount,
+            Positions = s.Positions.ToList(),
             Required = s.Required,
         }).ToList(),
     };
@@ -162,6 +163,7 @@ internal sealed class ScheduleStore : IScheduleStore
             HeadingAliases = s.HeadingAliases,
             TakeMode = s.TakeMode,
             TakeCount = s.TakeCount,
+            Positions = s.Positions ?? new List<int>(),
             Required = s.Required,
         });
 
@@ -265,6 +267,8 @@ internal sealed class ScheduleStore : IScheduleStore
         public TakeMode TakeMode { get; set; } = TakeMode.WholeSection;
 
         public int? TakeCount { get; set; }
+
+        public List<int> Positions { get; set; } = new();
 
         public bool Required { get; set; }
     }
