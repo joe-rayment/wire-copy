@@ -69,7 +69,7 @@ public sealed class RoutinePickSession
     public List<RecipeStep> ToSteps()
     {
         var config = Config ?? throw new InvalidOperationException("No site config in the pick session");
-        var domain = new Uri(SiteUrl).Host;
+        var domain = WireCopy.Infrastructure.Browser.HierarchyDomainKey.FromUrl(SiteUrl);
         var steps = new List<RecipeStep>();
         foreach (var (name, pick) in Picks)
         {
@@ -108,7 +108,7 @@ public sealed class RoutinePickSession
     {
         ArgumentNullException.ThrowIfNull(recipe);
         var config = Config ?? throw new InvalidOperationException("No site config in the pick session");
-        var domain = new Uri(SiteUrl).Host.ToLowerInvariant();
+        var domain = WireCopy.Infrastructure.Browser.HierarchyDomainKey.FromUrl(SiteUrl);
         var fresh = ToSteps();
         var result = new List<RecipeStep>();
         var inserted = false;

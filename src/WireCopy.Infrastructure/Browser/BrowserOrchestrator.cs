@@ -214,6 +214,15 @@ public partial class BrowserOrchestrator : IBrowserService
             LayoutVariantProvider = layoutVariantProvider,
             DisableAnimations = _browserConfig.DisableAnimations,
             NavigateToAsync = NavigateToAsync,
+            PumpBackgroundLoadAsync = async (opts, ct) =>
+            {
+                if (_backgroundPageLoad is { IsCompleted: true })
+                {
+                    await CompleteBackgroundLoadAsync(opts, ct).ConfigureAwait(false);
+                }
+
+                return HasActiveBackgroundLoad();
+            },
             ForceRefreshAsync = ForceRefreshAsync,
             InteractiveRefreshAsync = InteractiveRefreshAsync,
             OpenInteractiveBrowserAsync = OpenInteractiveBrowserAsync,

@@ -101,7 +101,7 @@ internal static class RoutinePickModeHandler
                 }
             }
 
-            var domain = new Uri(request.SiteUrl).Host;
+            var domain = HierarchyDomainKey.FromUrl(request.SiteUrl);
             session.Start(recipe.Id, recipe.Name, request.SiteUrl, config, configIsNew, todays);
             session.FromSteps(recipe, domain, config.UrlPattern);
             if (request.PreIncludeSection is { } pre)
@@ -463,18 +463,23 @@ internal static class RoutinePickModeHandler
     private static void Status(CommandContext ctx, string text, StatusSeverity severity = StatusSeverity.Info) =>
         ctx.NavigationService.SetStatusMessage(text, TimeSpan.FromSeconds(4), severity);
 
-    /// <summary>Polls until the current page is a loaded (non-skeleton) page of the site's host; renders meanwhile.</summary>
+    /// <summary>
+    /// Waits for the site's real (non-skeleton) page. The main loop is not running while this handler owns the
+    /// input loop, so the finished background load is applied here via ctx.PumpBackgroundLoadAsync. Esc cancels.
+    /// </summary>
     private static async Task<NavigationTree?> WaitForLoadedAsync(CommandContext ctx, string siteUrl, RenderOptions options, CancellationToken ct)
     {
-        var host = new Uri(siteUrl).Host;
         var started = DateTime.UtcNow;
         var lastRender = DateTime.MinValue;
+        Task<NavigationCommand>? pending = null;
         while (!ct.IsCancellationRequested && DateTime.UtcNow - started < LoadTimeout)
         {
+            var stillLoading = await ctx.PumpBackgroundLoadAsync(options, ct).ConfigureAwait(false);
             var page = ctx.NavigationService.CurrentPage;
-            if (page is { IsSkeleton: false } && page.LinkTree is { } tree
+            if (page is { IsSkeleton: false } && page.LinkTree is { } tree && !stillLoading
                 && Uri.TryCreate(page.Url, UriKind.Absolute, out var u)
-                && string.Equals(u.Host, host, StringComparison.OrdinalIgnoreCase))
+                && Uri.TryCreate(siteUrl, UriKind.Absolute, out var want)
+                && string.Equals(u.Host, want.Host, StringComparison.OrdinalIgnoreCase))
             {
                 return tree;
             }
@@ -485,7 +490,17 @@ internal static class RoutinePickModeHandler
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             }
 
-            await Task.Delay(150, ct).ConfigureAwait(false);
+            pending ??= ctx.InputHandler.WaitForInputAsync(ct);
+            var done = await Task.WhenAny(pending, Task.Delay(150, ct)).ConfigureAwait(false);
+            if (done == pending)
+            {
+                var command = await pending.ConfigureAwait(false);
+                pending = null;
+                if (command.Type is CommandType.GoBack or CommandType.Quit)
+                {
+                    return null;
+                }
+            }
         }
 
         return null;
