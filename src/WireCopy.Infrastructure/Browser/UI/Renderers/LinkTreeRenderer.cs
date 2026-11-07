@@ -45,6 +45,9 @@ internal class LinkTreeRenderer
     private const double PaneCellPx = PanePxModel.CellPx;
     private const double PaneLinePx = PanePxModel.LinePx;
 
+    // Pick-mode view of the render in flight (the static card painters read it for story badges).
+    private static RoutinePickView? _pickView;
+
     private readonly RenderHelpers _helpers;
     private readonly IThemeProvider _themeProvider;
 
@@ -699,7 +702,7 @@ internal class LinkTreeRenderer
         int metadataLineIdx;
         if (cardHeight >= 5)
         {
-            titleLines = GetWrappedTitleLines(node.Link.DisplayText, GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
+            titleLines = GetWrappedTitleLines(StoryTitle(node), GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
             titleLineIdx = GetContentTopLine(cardHeight, titleLines.Count + 1);
             authorDateLineIdx = titleLineIdx + Math.Max(1, titleLines.Count);
             metadataLineIdx = -1;
@@ -755,7 +758,7 @@ internal class LinkTreeRenderer
         }
         else if (cardHeight < 5 && lineIndex == titleLineIdx)
         {
-            var titleLine = RenderHelpers.TruncateText(node.Link.DisplayText, contentWidth - 1);
+            var titleLine = RenderHelpers.TruncateText(StoryTitle(node), contentWidth - 1);
             var selResume = $"{selBg}{selFg}{Bold}";
             sb.Append($"{selResume} {HighlightSegment(titleLine, searchQuery, palette, selResume)}");
             sb.Append($"{new string(' ', Math.Max(0, contentWidth - 1 - titleLine.Length))}{Reset}");
@@ -810,7 +813,7 @@ internal class LinkTreeRenderer
         int metadataLineIdx;
         if (cardHeight >= 5)
         {
-            titleLines = GetWrappedTitleLines(node.Link.DisplayText, GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
+            titleLines = GetWrappedTitleLines(StoryTitle(node), GetTitleTextWidth(width), GetTitleLineBudget(cardHeight));
             titleLineIdx = GetContentTopLine(cardHeight, titleLines.Count + 1);
             authorDateLineIdx = titleLineIdx + Math.Max(1, titleLines.Count);
             metadataLineIdx = -1;
@@ -838,13 +841,19 @@ internal class LinkTreeRenderer
             };
             var titleLine = cardHeight >= 5
                 ? titleLines[lineIndex - titleLineIdx]
-                : RenderHelpers.TruncateText(node.Link.DisplayText, width - 1);
+                : RenderHelpers.TruncateText(StoryTitle(node), width - 1);
 
             var prefix = isToggled && lineIndex == titleLineIdx ? $"{palette.GetAccentFg().AnsiFg}\u2713{Reset}" : " ";
             var pad = new string(' ', Math.Max(0, width - 1 - titleLine.Length));
 
             // workspace-6z3a.5: highlight the search match within the title.
-            return $"{prefix}{colorFg}{HighlightSegment(titleLine, searchQuery, palette, colorFg)}{pad}{Reset}";
+            var shownTitle = HighlightSegment(titleLine, searchQuery, palette, colorFg);
+            if (lineIndex == titleLineIdx)
+            {
+                shownTitle = ColourToday(shownTitle, node, palette, colorFg);
+            }
+
+            return $"{prefix}{colorFg}{shownTitle}{pad}{Reset}";
         }
 
         if (lineIndex == authorDateLineIdx)
@@ -968,12 +977,46 @@ internal class LinkTreeRenderer
     }
 
     /// <summary>
+    /// workspace-wyvga.7: a story's TUI headline. In pick mode a story holding a picked position
+    /// reads "#3 · Science today: Headline" (the pane draws the pill itself and sends the plain title).
+    /// </summary>
+    private static string StoryTitle(LinkNode node)
+    {
+        var badge = _pickView?.BadgeFor(node.Link.Url);
+        return badge is null ? node.Link.DisplayText : $"{badge} today: {node.Link.DisplayText}";
+    }
+
+    /// <summary>Colours the badge in the routine accent and the "today: " prefix muted, then restores the row colour.</summary>
+    private static string ColourToday(string line, LinkNode node, ThemePalette palette, string restore)
+    {
+        var badge = _pickView?.BadgeFor(node.Link.Url);
+        if (badge is null)
+        {
+            return line;
+        }
+
+        var head = badge + " today: ";
+        var at = line.IndexOf(head, StringComparison.Ordinal);
+        if (at < 0)
+        {
+            return line;
+        }
+
+        return line[..at]
+               + $"{palette.GetRoutineAccentFg().AnsiFg}{badge}{palette.SecondaryText.AnsiFg} today: {restore}"
+               + line[(at + head.Length)..];
+    }
+
+    /// <summary>
     /// Renders the link tree as a 2-column grid of cards.
     /// This is the single LinkTree rendering entry point — there are no other variants.
     /// </summary>
     private void RenderLinkList(NavigationTree tree, NavigationContext context, int maxLines, RenderOptions options)
     {
         var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+#pragma warning disable S2696
+        _pickView = options.RoutinePick;
+#pragma warning restore S2696
         var layout = ComputeLayout(options.TerminalWidth, options.TerminalHeight, options.ShellPane);
         var visibleNodes = tree.GetVisibleNodes().ToList();
         var gridRows = LinkTreeGridMapper.MapToGrid(visibleNodes, layout.Columns);
@@ -1153,6 +1196,7 @@ internal class LinkTreeRenderer
                         Url = node.Link.Url,
                         Meta = string.IsNullOrEmpty(meta) ? null : meta,
                         LinkType = node.Link.Type.ToString().ToLowerInvariant(),
+                        SlotBadge = options.RoutinePick?.BadgeFor(node.Link.Url),
                         Toggled = tree.IsNodeSelected(node),
                     });
                     shownStories++;

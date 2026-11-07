@@ -136,8 +136,10 @@ public partial class BrowserOrchestrator
             var picks = session.Picks;
             var sections = picks.Values.Count(p => p.TakeMode != Domain.Enums.Scheduling.TakeMode.Slots);
             var slots = picks.Values.Where(p => p.TakeMode == Domain.Enums.Scheduling.TakeMode.Slots).Sum(p => p.Positions.Count);
+            var badges = BuildSlotBadges(scope.ServiceProvider, session);
             return new RoutinePickView
             {
+                BadgeFor = url => badges.TryGetValue(url, out var b) ? b : null,
                 Eyebrow = Scheduling.RoutineText.Eyebrow(session.RoutineName),
                 FooterHint = Scheduling.RoutineText.PickFooter(sections, slots),
                 ChipFor = (title, count) =>
@@ -151,6 +153,37 @@ public partial class BrowserOrchestrator
         {
             return null;
         }
+    }
+
+    /// <summary>
+    /// workspace-wyvga.7: for every section with a Slots pick, resolves its WholeSection list ONCE against
+    /// today's links and maps picked position to the URL now holding it (badges follow POSITIONS).
+    /// </summary>
+    private Dictionary<string, string> BuildSlotBadges(IServiceProvider sp, Scheduling.RoutinePickSession session)
+    {
+        var badges = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        var resolver = sp.GetService<Application.Interfaces.Scheduling.ISectionResolver>();
+        if (resolver is null || session.Config is null || !session.Picks.Values.Any(p => p.TakeMode == Domain.Enums.Scheduling.TakeMode.Slots))
+        {
+            return badges;
+        }
+
+        foreach (var step in session.ToSteps().Where(s => s.TakeMode == Domain.Enums.Scheduling.TakeMode.Slots))
+        {
+            var list = resolver.Resolve(
+                session.Config,
+                session.TodaysLinks,
+                step with { TakeMode = Domain.Enums.Scheduling.TakeMode.WholeSection, TakeCount = null, Positions = [] });
+            foreach (var pos in step.Positions)
+            {
+                if (pos >= 1 && pos <= list.Items.Count)
+                {
+                    badges[list.Items[pos - 1].Url] = Scheduling.RoutineText.SlotBadge(pos, step.SectionName);
+                }
+            }
+        }
+
+        return badges;
     }
 
     /// <summary>

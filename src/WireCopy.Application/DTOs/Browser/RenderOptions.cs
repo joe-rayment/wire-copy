@@ -225,4 +225,7 @@ public sealed record RoutinePickView
 
     /// <summary>Gets the chip text and included flag for a section header title and its story count.</summary>
     public required Func<string, int, (string Chip, bool Included)> ChipFor { get; init; }
+
+    /// <summary>Gets the slot badge ("#3 · Science") for a story URL that holds a picked position today, else null.</summary>
+    public Func<string, string?> BadgeFor { get; init; } = static _ => null;
 }
