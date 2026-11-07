@@ -114,8 +114,8 @@ internal static class RoutinesHomeHandler
                 {
                     case CommandType.GoBack or CommandType.Quit:
                         return;
-                    case CommandType.MoveLeft: sel = Math.Max(0, sel - 1); break;
-                    case CommandType.MoveRight: sel = Math.Min(total - 1, sel + 1); break;
+                    case CommandType.MoveLeft or CommandType.CollapseNode: sel = Math.Max(0, sel - 1); break;
+                    case CommandType.MoveRight or CommandType.ExpandNode: sel = Math.Min(total - 1, sel + 1); break;
                     case CommandType.MoveUp: sel = sel - Columns >= 0 ? sel - Columns : sel; break;
                     case CommandType.MoveDown: sel = sel + Columns < total ? sel + Columns : sel; break;
                     case CommandType.ToggleSelection when current != null:
