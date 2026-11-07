@@ -87,6 +87,12 @@ internal class CommandContext
     // Delegates for operations that remain in BrowserOrchestrator
     public required Func<string, RenderOptions, CancellationToken, Task> NavigateToAsync { get; init; }
 
+    /// <summary>
+    /// Applies a finished background page load (skeleton -> real page) when a handler owns the input
+    /// loop and the main loop is therefore not running. Returns true while a load is still in flight.
+    /// </summary>
+    public Func<RenderOptions, CancellationToken, Task<bool>> PumpBackgroundLoadAsync { get; init; } = static (_, _) => Task.FromResult(false);
+
     public required Func<string, RenderOptions, CancellationToken, Task> ForceRefreshAsync { get; init; }
 
     public required Func<string, RenderOptions, CancellationToken, Task> InteractiveRefreshAsync { get; init; }

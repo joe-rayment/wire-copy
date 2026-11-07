@@ -233,8 +233,15 @@ internal static class RoutineEditorHandler
         await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
     }
 
-    private static string HostOf(string url) =>
-        Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : url;
+    private static string HostOf(string url)
+    {
+        if (!Uri.TryCreate(url, UriKind.Absolute, out var u))
+        {
+            return url;
+        }
+
+        return u.IsDefaultPort ? u.Host : $"{u.Host}:{u.Port}";
+    }
 
     private static async Task RemoveAsync(
         CommandContext ctx, ScheduleRecipe recipe, RoutineRow row, ThemePalette palette, CancellationToken ct)
