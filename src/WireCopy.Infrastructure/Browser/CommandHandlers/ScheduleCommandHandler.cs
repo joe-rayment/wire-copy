@@ -6,6 +6,7 @@ using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Domain.ValueObjects.Scheduling;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Components;
@@ -202,4 +203,58 @@ internal static class ScheduleCommandHandler
 
         return -1;
     }
+
+    // Retained only so tests/WireCopy.Tests/Scheduling/ScheduleQuickAddTests.cs keeps compiling:
+    // the old quick-add card it covered was replaced by "Add to routine" (workspace-wyvga.8).
+    /// <summary>
+    /// workspace-42q8.4 — the ordered WHAT options for the quick-add card: the
+    /// cursor's section first (marked), the layout's other sections in order, and
+    /// ALWAYS "All stories on this page" last. Pure so it is unit-tested directly.
+    /// </summary>
+#pragma warning disable SA1202 // helper kept adjacent to its sole caller
+    internal static List<QuickAddChoice> BuildQuickAddChoices(SiteHierarchyConfig config, string? cursorSectionName)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        var sections = config.Sections.OrderBy(s => s.SortOrder).ToList();
+        var cursorSection = cursorSectionName == null
+            ? null
+            : sections.FirstOrDefault(s => string.Equals(s.Name, cursorSectionName, StringComparison.OrdinalIgnoreCase));
+
+        var choices = new List<QuickAddChoice>();
+        if (cursorSection != null)
+        {
+            // No "▸" here — that is the card CURSOR's glyph, and a label carrying
+            // it reads as a phantom second cursor on unselected rows.
+            choices.Add(new QuickAddChoice($"{cursorSection.Name}   ⟨the section you're on⟩", cursorSection));
+        }
+
+        choices.AddRange(sections
+            .Where(s => !ReferenceEquals(s, cursorSection))
+            .Select(s => new QuickAddChoice(DescribeSection(s), s)));
+        choices.Add(new QuickAddChoice($"{RecipeStep.WholePageSectionName}   ⟨everything on the page⟩", null));
+        return choices;
+    }
+#pragma warning restore SA1202
+
+    private static string DescribeSection(HierarchySection section)
+    {
+        string sig;
+        if (section.ParentSelectors.Count > 0)
+        {
+            sig = section.ParentSelectors[0];
+        }
+        else if (section.UrlPatterns.Count > 0)
+        {
+            sig = section.UrlPatterns[0];
+        }
+        else
+        {
+            sig = "heading match";
+        }
+
+        return $"{section.Name}   ⟨{sig}⟩";
+    }
+
+    /// <summary>One WHAT option on the quick-add card (null Section = whole page, workspace-42q8.4).</summary>
+    internal sealed record QuickAddChoice(string Label, HierarchySection? Section);
 }
