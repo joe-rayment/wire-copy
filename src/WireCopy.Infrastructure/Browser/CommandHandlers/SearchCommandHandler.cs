@@ -389,6 +389,10 @@ internal static class SearchCommandHandler
 
                 return true;
 
+            case "routines":
+                await RoutinesHomeHandler.OpenAsync(ctx, options, ct).ConfigureAwait(false);
+                return true;
+
             case "schedules" or "schedule":
                 // workspace-frpl.14 (B12a): the recurring-recipe → auto-podcast screen.
                 await ScheduleCommandHandler.HandleSchedulesAsync(ctx, options, ct).ConfigureAwait(false);
