@@ -2,6 +2,7 @@
 
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Domain.Entities.Bookmarks;
+using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Enums.Browser;
@@ -130,6 +131,20 @@ public interface IPageRenderer
     /// <param name="scrollOffset">Scroll offset for the grid.</param>
     /// <param name="options">Render options.</param>
     void RenderLauncher(List<Bookmark> bookmarks, int selectedIndex, int scrollOffset, RenderOptions options);
+
+    /// <summary>
+    /// Draws the Routines home (workspace-wyvga.4): a card grid (index 0 = "new routine",
+    /// then recipes sorted by name) in the terminal, and pushes the matching view state
+    /// to the shell's launcher pane. Default no-op for renderers without it.
+    /// </summary>
+    void RenderRoutinesHome(IReadOnlyList<ScheduleRecipe> recipes, IReadOnlySet<Guid> runningIds, int selectedIndex, DateTimeOffset now, RenderOptions options)
+    {
+    }
+
+    /// <summary>Hides the shell's HTML launcher pane (before a terminal prompt/confirm card). No-op in terminal mode.</summary>
+    void HideLauncherPane()
+    {
+    }
 
     /// <summary>
     /// Hides the desktop shell's HTML launcher and link-tree panes so a screen

@@ -3,8 +3,10 @@
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Bookmarks;
+using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Components;
+using WireCopy.Infrastructure.Scheduling;
 
 namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 
@@ -706,6 +708,201 @@ internal class LauncherRenderer
             Tagline = tagline,
             Version = version,
         };
+    }
+
+    /// <summary>Recipes in the order the Routines home lists them (name, case-insensitive). Selection index i (i >= 1) maps to element i-1; index 0 is the "new routine" card.</summary>
+    internal static List<ScheduleRecipe> SortedRoutines(IEnumerable<ScheduleRecipe> recipes) =>
+        recipes.OrderBy(r => r.Name, StringComparer.OrdinalIgnoreCase).ToList();
+
+    /// <summary>
+    /// Routines home cards (workspace-wyvga.4): slot 0 is the "newRoutine" card,
+    /// then one "routine" card per recipe in <see cref="SortedRoutines"/> order.
+    /// </summary>
+    internal static List<LauncherSlot> BuildRoutineCards(
+        IEnumerable<ScheduleRecipe> recipes,
+        IReadOnlySet<Guid> runningIds,
+        DateTimeOffset now)
+    {
+        var slots = new List<LauncherSlot>
+        {
+            new()
+            {
+                Index = 0,
+                Kind = "newRoutine",
+                Title = RoutineText.NewRoutineTitle,
+                Hint = RoutineText.NewRoutineHint,
+                Badge = "1",
+            },
+        };
+        var sorted = SortedRoutines(recipes);
+        for (var i = 0; i < sorted.Count; i++)
+        {
+            var r = sorted[i];
+            var freq = RoutineText.Frequency(r.Cadence);
+            string hint;
+            if (runningIds.Contains(r.Id))
+            {
+                hint = RoutineText.CardRunning;
+            }
+            else if (!r.Enabled)
+            {
+                hint = "off · " + freq;
+            }
+            else
+            {
+                hint = freq + " · " + RoutineText.NextRun(r.Cadence, now);
+            }
+
+            var index = i + 1;
+            slots.Add(new LauncherSlot
+            {
+                Index = index,
+                Kind = "routine",
+                Title = r.Name,
+                Hint = hint,
+                Detail = RoutineText.Contents(r) + " · " + RoutineText.LastResult(r, now),
+                Disabled = !r.Enabled,
+                Badge = index < 9 ? (index + 1).ToString() : null,
+            });
+        }
+
+        return slots;
+    }
+
+    /// <summary>
+    /// Shell view-model for the Routines home: same paging as
+    /// <see cref="BuildViewState"/> (2 columns, selected card picks the page,
+    /// <c>SelectedIndex</c> is window-relative).
+    /// </summary>
+    internal static LauncherViewState BuildRoutinesViewState(
+        IReadOnlyList<LauncherSlot> cards,
+        int selectedIndex,
+        RenderOptions options)
+    {
+        var columns = ShellPaneColumns(options.TerminalWidth);
+        var pageSize = columns * PaneRowsPerPage(options);
+        var total = cards.Count;
+        var page = selectedIndex >= 0 ? selectedIndex / pageSize : 0;
+        var offset = page * pageSize;
+        var end = Math.Min(total, offset + pageSize);
+        var visible = end - offset;
+        var padded = Math.Min(pageSize, ((visible + columns - 1) / columns) * columns);
+
+        var slots = new List<LauncherSlot>(padded);
+        for (var i = offset; i < end; i++)
+        {
+            slots.Add(cards[i]);
+        }
+
+        for (var k = 0; k < padded - visible; k++)
+        {
+            slots.Add(new LauncherSlot { Index = end + k, Kind = "empty" });
+        }
+
+        return new LauncherViewState
+        {
+            Screen = "routines",
+            Mode = options.UiMode,
+            ModeVariant = options.UiModeVariant,
+            Eyebrow = RoutineText.HomeEyebrow,
+            Title = RoutineText.HomeTitle,
+            FooterHint = RoutineText.HomeFooter,
+            Slots = slots,
+            SelectedIndex = selectedIndex >= 0 ? selectedIndex - offset : -1,
+            Columns = columns,
+            Paging = new LauncherPaging { Offset = offset, Visible = visible, Total = total },
+            BookmarkCount = 0,
+            Footer = new LauncherFooter { Badge = options.ScheduledRunBadge, Status = options.StatusMessage },
+            Tagline = string.Empty,
+            Version = string.Empty,
+        };
+    }
+
+    /// <summary>
+    /// Plain-terminal Routines home: a two-column card grid (title, hint, detail),
+    /// the selected card marked with the routine accent rail, disabled cards muted.
+    /// </summary>
+    internal void RenderRoutinesHome(IReadOnlyList<LauncherSlot> cards, int selectedIndex, RenderOptions options)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var width = options.TerminalWidth;
+        var contentWidth = ContentWidthFor(width);
+        var margin = new string(' ', ColumnLeftMargin(width));
+        var accent = p.GetRoutineAccentFg().AnsiFg;
+        var muted = p.GetMutedFg().AnsiFg;
+        var dim = p.GetDimFg().AnsiFg;
+        var primary = p.PrimaryText.AnsiFg;
+        const int gap = 2;
+        var cellWidth = (contentWidth - gap) / 2;
+        var textWidth = Math.Max(4, cellWidth - 2);
+
+        _helpers.WriteLine(string.Empty);
+        _helpers.WriteLine($"{margin} {accent}{Bold}{RoutineText.HomeEyebrow}{Reset}");
+        _helpers.WriteLine($"{margin} {primary}{Bold}{RoutineText.HomeTitle}{Reset}");
+        _helpers.WriteLine(string.Empty);
+
+        // Rows that fit: each card row is 3 lines + a blank spacer.
+        var rowsFit = Math.Max(1, (options.TerminalHeight - 10) / 4);
+        var pageSize = 2 * rowsFit;
+        var page = selectedIndex >= 0 ? selectedIndex / pageSize : 0;
+        var start = page * pageSize;
+        var end = Math.Min(cards.Count, start + pageSize);
+
+        string Cell(string? text, string fg, bool selected, bool bold)
+        {
+            var t = RenderHelpers.TruncateText(text ?? string.Empty, textWidth);
+            var pad = new string(' ', Math.Max(0, textWidth - t.Length));
+            var rail = selected ? $"{accent}▌{Reset}" : " ";
+            return $"{rail} {fg}{(bold ? Bold : string.Empty)}{t}{Reset}{pad}";
+        }
+
+        string Fg(LauncherSlot c, bool title)
+        {
+            if (c.Disabled)
+            {
+                return dim;
+            }
+
+            if (c.Kind == "newRoutine")
+            {
+                return accent;
+            }
+
+            return title ? primary : muted;
+        }
+
+        for (var i = start; i < end; i += 2)
+        {
+            var left = cards[i];
+            var right = i + 1 < end ? cards[i + 1] : null;
+            var rowStart = i;
+
+            string Line(Func<LauncherSlot, string?> pick, bool title, bool bold)
+            {
+                var sb = new System.Text.StringBuilder(margin);
+                sb.Append(Cell(pick(left), Fg(left, title), rowStart == selectedIndex, bold));
+                sb.Append(new string(' ', gap));
+                if (right is not null)
+                {
+                    sb.Append(Cell(pick(right), Fg(right, title), rowStart + 1 == selectedIndex, bold));
+                }
+
+                return sb.ToString();
+            }
+
+            _helpers.WriteLine(Line(c => c.Title, true, true));
+            _helpers.WriteLine(Line(c => c.Hint, false, false));
+            _helpers.WriteLine(Line(c => c.Detail, false, false));
+            _helpers.WriteLine(string.Empty);
+        }
+    }
+
+    internal void RenderRoutinesFooter(int width)
+    {
+        var p = BuiltInThemes.Get(_themeProvider.CurrentTheme);
+        var margin = new string(' ', ColumnLeftMargin(width));
+        _helpers.WriteLine($"{margin}{p.GetDimFg().AnsiFg}{new string('─', ContentWidthFor(width))}{Reset}");
+        _helpers.WriteLine($"{margin} {p.GetMutedFg().AnsiFg}{RenderHelpers.TruncateText(RoutineText.HomeFooter, ContentWidthFor(width) - 1)}{Reset}");
     }
 
     /// <summary>

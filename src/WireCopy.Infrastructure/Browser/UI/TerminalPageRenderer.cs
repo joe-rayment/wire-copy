@@ -6,6 +6,7 @@ using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Entities.Bookmarks;
 using WireCopy.Domain.Entities.Browser;
 using WireCopy.Domain.Entities.Collections;
+using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using WireCopy.Infrastructure.Browser.Shell;
@@ -620,6 +621,33 @@ public class TerminalPageRenderer : IPageRenderer
             }
         }
     }
+
+    /// <inheritdoc />
+    public void RenderRoutinesHome(IReadOnlyList<ScheduleRecipe> recipes, IReadOnlySet<Guid> runningIds, int selectedIndex, DateTimeOffset now, RenderOptions options)
+    {
+        LeaveLinkTreeIfShown();
+        var cards = LauncherRenderer.BuildRoutineCards(recipes, runningIds, now);
+        _helpers.TerminalHeight = options.TerminalHeight;
+        _helpers.Clear();
+        _helpers.ColumnOffset = options.ContentLeftOffset;
+        _launcherRenderer.RenderRoutinesHome(cards, selectedIndex, options);
+        _helpers.PositionAtBottom();
+        _launcherRenderer.RenderRoutinesFooter(options.TerminalWidth);
+
+        if (_shellChannel.IsConnected)
+        {
+            var state = LauncherRenderer.BuildRoutinesViewState(cards, selectedIndex, options);
+            lock (_promptLock)
+            {
+                _lastLauncherState = state;
+                _ = _shellChannel.SendLauncherStateAsync(true, state with { PromptLine = _promptLine });
+                _launcherStateVisible = true;
+            }
+        }
+    }
+
+    /// <inheritdoc />
+    public void HideLauncherPane() => LeaveLauncherIfShown();
 
     /// <summary>
     /// workspace-up3zx: mirrors the terminal's ':' / '/' prompt line into whichever
