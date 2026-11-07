@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
@@ -45,12 +46,19 @@ internal static class RoutineEditorHandler
             offset = RoutineEditorScreen.Draw(helpers, palette, width, options.TerminalHeight, recipe.Name, rows, selectedRow, offset);
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-            if (command.Type is CommandType.GoBack or CommandType.Quit)
+            if (command.RawKeyChar == 'x')
+            {
+                await RemoveAsync(ctx, recipe, rows[selectedRow], palette, ct).ConfigureAwait(false);
+            }
+            else if (command.RawKeyChar == 'r')
+            {
+                await RunNowAsync(ctx, recipe).ConfigureAwait(false);
+            }
+            else if (command.Type is CommandType.GoBack or CommandType.Quit)
             {
                 return;
             }
-
-            if (command.Type == CommandType.TerminalResized)
+            else if (command.Type == CommandType.TerminalResized)
             {
                 options = ctx.GetCurrentRenderOptions();
             }
@@ -109,10 +117,185 @@ internal static class RoutineEditorHandler
                 await RoutinePickModeHandler.OpenAsync(
                     ctx, options, new RoutinePickRequest(recipe.Id, row.SiteUrl!, null), ct).ConfigureAwait(false);
                 break;
-            default:
-                // Frequency and "+ Add a site" are wired by the next slice of this editor.
+            case RoutineRowKind.Frequency:
+                await EditFrequencyAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
+                break;
+            case RoutineRowKind.AddSite:
+                await AddSiteAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
                 break;
         }
+    }
+
+    private static async Task EditFrequencyAsync(
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ThemePalette palette, CancellationToken ct)
+    {
+        var labels = new List<string> { "Every day", "Weekdays (Mon–Fri)", "Weekends (Sat/Sun)", "Pick days…" };
+        var pick = await RoutineEditorCards.PickAsync(ctx, options, palette, "How often?", "↑/↓ move · Enter select · Esc back", labels, ct).ConfigureAwait(false);
+        if (pick is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<DayOfWeek> days;
+        switch (pick.Value)
+        {
+            case 0:
+                days = Enum.GetValues<DayOfWeek>();
+                break;
+            case 1:
+                days = new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday };
+                break;
+            case 2:
+                days = new[] { DayOfWeek.Saturday, DayOfWeek.Sunday };
+                break;
+            default:
+                var picked = await RoutineEditorCards.PickDaysAsync(ctx, options, palette, recipe.Cadence.Days, ct).ConfigureAwait(false);
+                if (picked is null || picked.Count == 0)
+                {
+                    return;
+                }
+
+                days = picked;
+                break;
+        }
+
+        var field = new FormFieldConfig
+        {
+            Label = "Time (24h, HH:mm, local time)",
+            HelpText = "Enter to save · Esc to cancel",
+            InitialValue = recipe.Cadence.LocalTime.ToString("HH:mm"),
+            Validate = v => TimeOnly.TryParse(v, out _) ? null : "Enter a time like 07:00",
+        };
+        var text = await PromptAsync(ctx, options, field, palette, ct).ConfigureAwait(false);
+        if (text is null)
+        {
+            return;
+        }
+
+        if (!TimeOnly.TryParse(text, out var time))
+        {
+            ctx.NavigationService.SetStatusMessage("Enter a time like 07:00", TimeSpan.FromSeconds(6), StatusSeverity.Error);
+            return;
+        }
+
+        try
+        {
+            recipe.SetCadence(ScheduleEditing.BuildCadence(days, time));
+        }
+        catch (ArgumentException ex)
+        {
+            ctx.NavigationService.SetStatusMessage($"Invalid cadence: {ex.Message}", TimeSpan.FromSeconds(6), StatusSeverity.Error);
+            return;
+        }
+
+        await SaveAsync(ctx, recipe).ConfigureAwait(false);
+    }
+
+    private static async Task AddSiteAsync(
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ThemePalette palette, CancellationToken ct)
+    {
+        IReadOnlyList<Domain.Entities.Bookmarks.Bookmark> bookmarks;
+        using (var scope = ctx.ScopeFactory.CreateScope())
+        {
+            bookmarks = (await scope.ServiceProvider.GetRequiredService<IBookmarkService>().GetAllBookmarksAsync(ct).ConfigureAwait(false)).ToList();
+        }
+
+        var labels = bookmarks.Select(b => $"{b.Name} · {HostOf(b.Url)}").ToList();
+        labels.Add("Type a URL…");
+        var pick = await RoutineEditorCards.PickAsync(ctx, options, palette, "Add a site", "↑/↓ move · Enter select · Esc back", labels, ct).ConfigureAwait(false);
+        if (pick is null)
+        {
+            return;
+        }
+
+        string url;
+        if (pick.Value < bookmarks.Count)
+        {
+            url = bookmarks[pick.Value].Url;
+        }
+        else
+        {
+            var field = new FormFieldConfig
+            {
+                Label = "URL",
+                HelpText = "Enter to continue · Esc to cancel",
+                Validate = v => Uri.TryCreate(v.Trim(), UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? null : "Enter a full web address (https://…)",
+            };
+            var text = await PromptAsync(ctx, options, field, palette, ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(text))
+            {
+                return;
+            }
+
+            url = text.Trim();
+        }
+
+        await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
+    }
+
+    private static string HostOf(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out var u) ? u.Host : url;
+
+    private static async Task RemoveAsync(
+        CommandContext ctx, ScheduleRecipe recipe, RoutineRow row, ThemePalette palette, CancellationToken ct)
+    {
+        List<int> victims;
+        string label;
+        if (row.Kind == RoutineRowKind.Section)
+        {
+            victims = new List<int> { row.StepIndex };
+            label = $"{row.Label} · {row.Value}";
+        }
+        else if (row.Kind == RoutineRowKind.Site)
+        {
+            var first = recipe.Steps.FirstOrDefault(s => s.SourceUrl == row.SiteUrl);
+            if (first is null)
+            {
+                return;
+            }
+
+            victims = Enumerable.Range(0, recipe.Steps.Count)
+                .Where(i => recipe.Steps[i].Domain == first.Domain && recipe.Steps[i].ConfigUrlPattern == first.ConfigUrlPattern)
+                .ToList();
+            label = row.Label;
+        }
+        else
+        {
+            return;
+        }
+
+        var confirmed = await ConfirmationDialog.ConfirmAsync(
+            ctx.InputHandler, "Remove", RoutineText.RemoveConfirm(label), palette, ct, isDestructive: true).ConfigureAwait(false);
+        if (!confirmed)
+        {
+            return;
+        }
+
+        foreach (var index in victims.OrderByDescending(i => i))
+        {
+            recipe.RemoveStep(index);
+        }
+
+        await SaveAsync(ctx, recipe).ConfigureAwait(false);
+    }
+
+    private static async Task RunNowAsync(CommandContext ctx, ScheduleRecipe recipe)
+    {
+        ctx.NavigationService.SetStatusMessage(RoutineText.Running(recipe.Name), TimeSpan.FromMinutes(10));
+        RunNowResult result;
+        using (var scope = ctx.ScopeFactory.CreateScope())
+        {
+            result = await scope.ServiceProvider.GetRequiredService<IScheduleRunNow>().RunAsync(recipe, CancellationToken.None).ConfigureAwait(false);
+        }
+
+        if (result.Outcome == RunNowOutcome.Busy)
+        {
+            ctx.NavigationService.SetStatusMessage(RoutineText.Busy, TimeSpan.FromSeconds(6));
+            return;
+        }
+
+        var reloaded = await LoadAsync(ctx, recipe.Id).ConfigureAwait(false) ?? recipe;
+        ctx.NavigationService.SetStatusMessage(RoutineText.LastResult(reloaded, DateTimeOffset.Now), TimeSpan.FromSeconds(10));
     }
 
     private static async Task EditNameAsync(
