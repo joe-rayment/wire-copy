@@ -195,9 +195,13 @@ function paintGrid (state) {
     const a = slots[i]
     const b = slots[i + 1]
     if (a && b && a.half === 'top' && b.half === 'bottom') {
-      out.push(`<div class="card pair">` +
+      // The split cell holds the app's own panels (Reading List, Routines), not sites:
+      // a framed, tinted box with a "yours" legend so it reads as a different kind of
+      // tile while keeping the same grid footprint.
+      out.push(`<div class="card pair"><div class="pair-box">` +
+        `<div class="pair-legend">Yours</div>` +
         halfHtml(a, i === state.selectedIndex) +
-        halfHtml(b, i + 1 === state.selectedIndex) + `</div>`)
+        halfHtml(b, i + 1 === state.selectedIndex) + `</div></div>`)
       i++
     } else {
       out.push(cardHtml(a, i === state.selectedIndex))

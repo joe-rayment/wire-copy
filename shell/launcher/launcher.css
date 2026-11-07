@@ -300,8 +300,34 @@ html, body {
 }
 
 /* Split cell: two half-height halves inside ONE normal-sized cell (same grid
-   footprint and height as any card). Each half is its own selectable target. */
-.card.pair { padding: 0; }
+   footprint and height as any card). Each half is its own selectable target.
+   The halves are the app's own panels (Reading List, Routines), so the cell draws
+   as a framed, faintly tinted box with a "Yours" legend on its top edge, where a
+   site tile is open with a rule underneath. The box fills the whole cell (the
+   halves need every pixel for title + hint); the legend rides above the top edge. */
+.card.pair { padding: 0; overflow: visible; }
+.pair-box {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  border: 1px solid var(--tr-muted);
+  background: rgba(var(--tr-glow-rgb), 0.07);
+}
+.pair-legend {
+  position: absolute;
+  top: -7px;
+  left: 10px;
+  z-index: 1;
+  padding: 0 6px;
+  background: var(--tr-bg-pure);
+  color: var(--tr-med);
+  font-size: 12px;
+  line-height: 14px;
+  letter-spacing: .25em;
+  text-transform: uppercase;
+}
 .half {
   flex: 1 1 0;
   min-height: 0;
@@ -312,7 +338,20 @@ html, body {
   flex-direction: column;
   justify-content: center;
 }
-.half + .half { border-top: 1px solid var(--tr-dim); }
+.half + .half { border-top: 1px dashed var(--tr-dim); }
+/* Always-on thin accent edge per panel (Reading List green, Routines amber); the
+   selected card-rail draws over it. */
+.half::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: var(--tr-med);
+  opacity: .7;
+}
+.half.routine::before { background: var(--tr-routine); }
 .half.selected { background: var(--tr-sel-bg); }
 .half .card-title { font-size: clamp(18px, 1.8vw, 24px); }
 .half .card-url { margin: 3px 0 0; font-size: 14px; }
