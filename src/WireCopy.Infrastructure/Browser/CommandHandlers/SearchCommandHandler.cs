@@ -700,7 +700,9 @@ internal static class SearchCommandHandler
     private static async Task HandleRenameLauncherBookmark(
         CommandContext ctx, string newName, CancellationToken ct)
     {
-        var idx = ctx.NavigationService.LauncherSelectedIndex;
+        var idx = ctx.Bookmarks == null
+            ? -1
+            : LauncherCommandHandler.BookmarkIndexFromVirtual(ctx.NavigationService.LauncherSelectedIndex, ctx.Bookmarks.Count);
         if (ctx.Bookmarks != null && idx >= 0 && idx < ctx.Bookmarks.Count)
         {
             var bookmark = ctx.Bookmarks[idx];

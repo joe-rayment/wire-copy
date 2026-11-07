@@ -184,8 +184,9 @@ internal static class UndoCommandHandler
         // Restore selection
         if (ctx.Bookmarks != null)
         {
-            var idx = undo.OriginalIndex;
-            var totalItems = ctx.Bookmarks.Count + 1; // +1 for Collections tile
+            // OriginalIndex is a bookmark index; selection is a virtual launcher index.
+            var idx = LauncherCommandHandler.VirtualIndexFromBookmark(undo.OriginalIndex);
+            var totalItems = ctx.Bookmarks.Count + 2; // bookmarks + Reading List + Routines halves
             if (ctx.NavigationService.LauncherSelectedIndex >= totalItems)
             {
                 ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, idx);
