@@ -157,6 +157,10 @@ internal static class RoutinePickModeHandler
             if (startedInLauncher && !ctx.NavigationService.InLauncherMode)
             {
                 ctx.NavigationService.EnterLauncher();
+
+                // A launcher render is what parks the docked live page (DockSpotlight clears outside the
+                // link list); without it the site's web pane stays over the routine editor drawn next.
+                await ctx.RenderCurrentPageAsync(ctx.GetCurrentRenderOptions(), CancellationToken.None).ConfigureAwait(false);
             }
 
             if (turnedOn)

@@ -1243,7 +1243,10 @@ internal class LinkTreeRenderer
                 : null,
             Docked = options.BrowserDocked,
             Eyebrow = options.RoutinePick?.Eyebrow,
-            FooterHint = options.RoutinePick?.FooterHint,
+
+            // The pane covers the terminal's status bar, so a transient status ("Added to Morning brief — …")
+            // shows in the pane footer instead of being drawn where nobody can see it.
+            FooterHint = options.RoutinePick?.FooterHint ?? context.ActiveAnnouncement?.Text,
         };
     }
 #pragma warning restore SA1202
