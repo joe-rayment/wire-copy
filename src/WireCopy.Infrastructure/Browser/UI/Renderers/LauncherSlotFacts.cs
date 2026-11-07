@@ -12,4 +12,4 @@ namespace WireCopy.Infrastructure.Browser.UI.Renderers;
 /// Reading List slot).
 /// </summary>
 internal readonly record struct LauncherSlotFacts(
-    bool IsReadingList, string Title, string Hint, string? Url);
+    bool IsReadingList, string Title, string Hint, string? Url, bool IsRoutines = false);

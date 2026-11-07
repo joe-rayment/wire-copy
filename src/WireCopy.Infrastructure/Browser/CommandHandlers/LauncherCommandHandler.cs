@@ -18,7 +18,8 @@ internal static class LauncherCommandHandler
 {
     public static async Task<bool> Handle(CommandContext ctx, NavigationCommand command, RenderOptions options, CancellationToken ct)
     {
-        var totalItems = (ctx.Bookmarks?.Count ?? 0) + 1; // +1 for Collections tile
+        var slotBc = ctx.Bookmarks?.Count ?? 0;
+        var totalItems = LauncherSlotMap.VirtualTotal(slotBc); // bookmarks + Reading List + Routines halves
 
         // Setup hotkey: lowercase 'c' opens the unified Setup screen from the
         // launcher (workspace-ayt8 + workspace-9qzh; rebound from 'S' to 'c'
@@ -121,8 +122,7 @@ internal static class LauncherCommandHandler
                 }
                 else
                 {
-                    var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 1, cols);
-                    ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                    ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, ctx.NavigationService.LauncherSelectedIndex, 1, cols);
                 }
 
                 AdjustLauncherScroll(ctx, options);
@@ -134,15 +134,10 @@ internal static class LauncherCommandHandler
             {
                 var cols = GetLayoutColumns(options);
                 var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
-                if (currentIdx <= 0 && currentIdx != -1)
+                if (currentIdx != -1)
                 {
-                    // From top row → URL bar
-                    ctx.NavigationService.LauncherSelectedIndex = -1;
-                }
-                else if (currentIdx != -1)
-                {
-                    var newIndex = LauncherNavigationState.MoveInGrid(currentIdx, totalItems, 0, cols);
-                    ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                    // MoveInSlots returns -1 from the top row → URL bar.
+                    ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, currentIdx, 0, cols);
                 }
 
                 AdjustLauncherScroll(ctx, options);
@@ -153,8 +148,7 @@ internal static class LauncherCommandHandler
             case CommandType.CollapseNode: // h = left
             {
                 var cols = GetLayoutColumns(options);
-                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 2, cols);
-                ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, ctx.NavigationService.LauncherSelectedIndex, 2, cols);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
@@ -162,8 +156,7 @@ internal static class LauncherCommandHandler
             case CommandType.ExpandNode: // l = right
             {
                 var cols = GetLayoutColumns(options);
-                var newIndex = LauncherNavigationState.MoveInGrid(ctx.NavigationService.LauncherSelectedIndex, totalItems, 3, cols);
-                ctx.NavigationService.LauncherSelectedIndex = newIndex;
+                ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, ctx.NavigationService.LauncherSelectedIndex, 3, cols);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
@@ -182,9 +175,16 @@ internal static class LauncherCommandHandler
                     // Reading List sits at virtual index 1 (workspace-ul5z).
                     await CollectionCommandHandler.HandleOpenCollections(ctx, options, ct).ConfigureAwait(false);
                 }
+                else if (LauncherSlotMap.IsRoutines(bookmarkCount, idx))
+                {
+                    // Routines half (workspace-wyvga.3): open the Routines home,
+                    // then repaint so its status line is visible.
+                    await RoutinesHomeHandler.OpenAsync(ctx, options, ct).ConfigureAwait(false);
+                    await ctx.RenderCurrentPageAsync(ctx.GetCurrentRenderOptions(), ct).ConfigureAwait(false);
+                }
                 else if (ctx.Bookmarks != null)
                 {
-                    var bookmarkIdx = BookmarkIndexFromVirtual(idx);
+                    var bookmarkIdx = BookmarkIndexFromVirtual(idx, bookmarkCount);
                     if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
                     {
                         var bookmark = ctx.Bookmarks[bookmarkIdx];
@@ -215,9 +215,13 @@ internal static class LauncherCommandHandler
                     ctx.NavigationService.SetStatusMessage(
                         "Reading List can't be deleted \u2014 clear it from the collection view");
                 }
+                else if (ctx.Bookmarks != null && idx >= 0 && LauncherSlotMap.IsRoutines(bookmarkCount, idx))
+                {
+                    ctx.NavigationService.SetStatusMessage("Routines can't be deleted \u2014 manage them from the Routines home");
+                }
                 else if (ctx.Bookmarks != null && idx >= 0)
                 {
-                    var bookmarkIdx = BookmarkIndexFromVirtual(idx);
+                    var bookmarkIdx = BookmarkIndexFromVirtual(idx, bookmarkCount);
                     if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
                     {
                         var bookmark = ctx.Bookmarks[bookmarkIdx];
@@ -242,7 +246,7 @@ internal static class LauncherCommandHandler
                         mutableList.RemoveAt(bookmarkIdx);
                         ctx.Bookmarks = mutableList;
 
-                        var newTotal = mutableList.Count + 1; // +1 for Reading List slot
+                        var newTotal = LauncherSlotMap.VirtualTotal(mutableList.Count);
                         if (ctx.NavigationService.LauncherSelectedIndex >= newTotal)
                         {
                             ctx.NavigationService.LauncherSelectedIndex = Math.Max(0, newTotal - 1);
@@ -323,7 +327,7 @@ internal static class LauncherCommandHandler
                         .FirstOrDefault(-1);
                     if (matchIdx >= 0)
                     {
-                        ctx.NavigationService.LauncherSelectedIndex = matchIdx;
+                        ctx.NavigationService.LauncherSelectedIndex = VirtualIndexFromBookmark(matchIdx);
                     }
                     else
                     {
@@ -344,8 +348,7 @@ internal static class LauncherCommandHandler
                 var layout = ComputeVariantLayout(options);
                 var halfRows = Math.Max(1, layout.VisibleRows / 2);
                 var step = halfRows * layout.Columns;
-                ctx.NavigationService.LauncherSelectedIndex =
-                    Math.Min(ctx.NavigationService.LauncherSelectedIndex + step, totalItems - 1);
+                ctx.NavigationService.LauncherSelectedIndex = PageInCells(slotBc, ctx.NavigationService.LauncherSelectedIndex, step);
                 AdjustLauncherScroll(ctx, options);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
@@ -356,8 +359,7 @@ internal static class LauncherCommandHandler
                 var layout = ComputeVariantLayout(options);
                 var halfRows = Math.Max(1, layout.VisibleRows / 2);
                 var step = halfRows * layout.Columns;
-                ctx.NavigationService.LauncherSelectedIndex =
-                    Math.Max(ctx.NavigationService.LauncherSelectedIndex - step, 0);
+                ctx.NavigationService.LauncherSelectedIndex = PageInCells(slotBc, ctx.NavigationService.LauncherSelectedIndex, -step);
                 AdjustLauncherScroll(ctx, options);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
@@ -400,8 +402,7 @@ internal static class LauncherCommandHandler
                 //   digit N → virtual N-1
                 // Out-of-range digits are no-ops so the badge advertisement
                 // stays honest.
-                var bookmarkCount = ctx.Bookmarks?.Count ?? 0;
-                var totalSlots = bookmarkCount + 1; // +1 for Reading List slot
+                var totalSlots = totalItems; // bookmarks + Reading List + Routines
                 var target = command.Count - 1;
                 if (target >= 0 && target < totalSlots)
                 {
@@ -417,50 +418,72 @@ internal static class LauncherCommandHandler
         return true;
     }
 
-    /// <summary>
-    /// Returns true when the given virtual launcher index points at the
-    /// Reading List slot. The slot lives at virtual index 1 whenever the user
-    /// has at least one bookmark; with zero bookmarks the empty-state screen
-    /// renders instead, so the slot has no virtual index in that case.
-    /// (workspace-ul5z)
-    /// </summary>
-    internal static bool IsReadingListSlot(int virtualIdx, int bookmarkCount)
-    {
-        return bookmarkCount >= 1 && virtualIdx == 1;
-    }
+    /// <summary>Virtual index points at the Reading List half (delegates to <see cref="LauncherSlotMap"/>).</summary>
+    internal static bool IsReadingListSlot(int virtualIdx, int bookmarkCount) =>
+        LauncherSlotMap.IsReadingList(bookmarkCount, virtualIdx);
+
+    /// <summary>Virtual index points at the Routines half.</summary>
+    internal static bool IsRoutinesSlot(int virtualIdx, int bookmarkCount) =>
+        LauncherSlotMap.IsRoutines(bookmarkCount, virtualIdx);
+
+    /// <summary>Virtual launcher index to bookmark index (-1 for the two halves / URL bar).</summary>
+    internal static int BookmarkIndexFromVirtual(int virtualIdx, int bookmarkCount) =>
+        LauncherSlotMap.BookmarkIndexFromVirtual(bookmarkCount, virtualIdx);
+
+    /// <summary>One-argument form assuming at least one bookmark (Reading List at 1, Routines at 2).</summary>
+    internal static int BookmarkIndexFromVirtual(int virtualIdx) =>
+        LauncherSlotMap.BookmarkIndexFromVirtual(1, virtualIdx);
+
+    /// <summary>Bookmark index to its virtual launcher index.</summary>
+    internal static int VirtualIndexFromBookmark(int bookmarkIdx) =>
+        LauncherSlotMap.VirtualIndexFromBookmark(bookmarkIdx);
 
     /// <summary>
-    /// Translates a virtual launcher index into a bookmark-list index. With
-    /// the Reading List slot at virtual index 1, the mapping is:
-    ///   virtual 0 → bookmark 0
-    ///   virtual 1 → Reading List (no bookmark)
-    ///   virtual N (≥ 2) → bookmark N - 1
-    /// Returns -1 for the Reading List slot. Caller must guard. (workspace-ul5z)
+    /// Arrow movement in cell space (the Reading List and Routines share one
+    /// cell). Direction: 0=up 1=down 2=left 3=right. Returns the new virtual
+    /// index, or -1 (URL bar) for Up out of the top row.
     /// </summary>
-    internal static int BookmarkIndexFromVirtual(int virtualIdx)
+    internal static int MoveInSlots(int bc, int v, int direction, int cols)
     {
-        if (virtualIdx <= 0)
+        if (v < 0)
         {
-            return virtualIdx; // 0 stays 0; negatives propagate (URL-bar sentinel etc.)
+            return v;
         }
 
-        if (virtualIdx == 1)
+        var rl = LauncherSlotMap.ReadingListIndex(bc);
+        var routines = rl + 1;
+        if (direction == 1 && v == rl)
         {
-            return -1; // Reading List slot — no bookmark mapping
+            return routines;
         }
 
-        return virtualIdx - 1;
+        if (direction == 0 && v == routines)
+        {
+            return rl;
+        }
+
+        var cell = LauncherSlotMap.CellOf(bc, v);
+        if (direction == 0 && cell < cols)
+        {
+            return -1;
+        }
+
+        var target = LauncherNavigationState.MoveInGrid(cell, LauncherSlotMap.CellTotal(bc), direction, cols);
+        if (target == cell)
+        {
+            return v;
+        }
+
+        // Entering the split cell from below lands on the adjacent (bottom) half.
+        return target == rl && direction == 0
+            ? routines
+            : LauncherSlotMap.FirstVirtual(bc, target);
     }
 
-    /// <summary>
-    /// Inverse of <see cref="BookmarkIndexFromVirtual"/>: maps a bookmark-list
-    /// index back to its virtual launcher slot (Reading List at virtual 1).
-    ///   bookmark 0 → virtual 0
-    ///   bookmark N (≥ 1) → virtual N + 1
-    /// </summary>
-    internal static int VirtualIndexFromBookmark(int bookmarkIdx)
+    private static int PageInCells(int bc, int v, int cellStep)
     {
-        return bookmarkIdx <= 0 ? bookmarkIdx : bookmarkIdx + 1;
+        var cell = Math.Clamp(LauncherSlotMap.CellOf(bc, v) + cellStep, 0, LauncherSlotMap.CellTotal(bc) - 1);
+        return LauncherSlotMap.FirstVirtual(bc, cell);
     }
 
     private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)
@@ -619,9 +642,13 @@ internal static class LauncherCommandHandler
             {
                 ctx.NavigationService.SetStatusMessage("Reading List stays at slot 2 — it can't be reordered");
             }
+            else if (IsRoutinesSlot(idx, bookmarkCount))
+            {
+                ctx.NavigationService.SetStatusMessage("Routines stays at slot 3 \u2014 it can't be reordered");
+            }
             else
             {
-                var bookmarkIdx = BookmarkIndexFromVirtual(idx);
+                var bookmarkIdx = BookmarkIndexFromVirtual(idx, bookmarkCount);
                 if (bookmarkIdx >= 0 && bookmarkIdx < ctx.Bookmarks.Count)
                 {
                     if (moveUp && bookmarkIdx == 0)
@@ -734,7 +761,7 @@ internal static class LauncherCommandHandler
         var viewportHeight = LauncherRenderer.ComputeViewportHeight(options.TerminalHeight);
 
         // Page-line index of the top and bottom of the cell containing the selection.
-        var selectedRow = selectedIndex / layout.Columns;
+        var selectedRow = LauncherSlotMap.CellOf(ctx.Bookmarks?.Count ?? 0, selectedIndex) / layout.Columns;
         var cellTopLine = headerPlusUrlBarLines + (selectedRow * layout.CellHeight);
         var cellBottomLine = cellTopLine + layout.CellHeight - 1;
 

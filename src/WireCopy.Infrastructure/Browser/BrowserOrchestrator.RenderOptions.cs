@@ -104,6 +104,7 @@ public partial class BrowserOrchestrator
             ShowExtensionHint = isLauncher && !CommandHandlers.BrowserExtensionCard.AnyConnected(),
             ScheduledRunBadge = isLauncher ? GetScheduledRunBadge() : null,
             ReadingListItemCount = isLauncher ? GetReadingListItemCount() : null,
+            RoutinesHint = isLauncher ? GetRoutinesHint() : null,
             RequiredAction = requiredAction,
             ShowPreloadDetail = _commandContext.IsPreloadDetailVisible,
             BrowserDocked = browserDocked,
@@ -163,6 +164,25 @@ public partial class BrowserOrchestrator
         {
             _logger.LogDebug(ex, "Failed to read Reading List item count for launcher subtitle");
             return 0;
+        }
+    }
+
+    /// <summary>The launcher Routines tile hint (workspace-wyvga.3); falls back to the empty-state copy on failure.</summary>
+    private string GetRoutinesHint()
+    {
+        var now = DateTimeOffset.Now;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            var store = scope.ServiceProvider
+                .GetRequiredService<Application.Interfaces.Scheduling.IScheduleStore>();
+            var recipes = store.GetAllAsync().GetAwaiter().GetResult();
+            return Scheduling.RoutineText.LauncherHint(recipes, now);
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to read routines for launcher hint");
+            return Scheduling.RoutineText.LauncherHint([], now);
         }
     }
 

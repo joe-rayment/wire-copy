@@ -184,6 +184,9 @@ public record RenderOptions
     /// </summary>
     public int? ReadingListItemCount { get; init; }
 
+    /// <summary>Precomputed launcher Routines tile hint (RoutineText.LauncherHint); launcher view only.</summary>
+    public string? RoutinesHint { get; init; }
+
     /// <summary>
     /// When true the prefetch detail panel (workspace-v75w) is drawn as an
     /// overlay on top of the active link-list / collection-items view. The
