@@ -14,4 +14,11 @@ namespace WireCopy.Application.Interfaces.Scheduling;
 public interface ISectionResolver
 {
     SectionResolution Resolve(SiteHierarchyConfig config, IReadOnlyList<LinkInfo> todaysLinks, RecipeStep step);
+
+    /// <summary>
+    /// S4 POSITION — the 1-based index of <paramref name="url"/> in the step's WholeSection list
+    /// (document order, excludes applied, capped), or null when absent. URLs compare
+    /// OrdinalIgnoreCase, the same as the resolver's de-duplication.
+    /// </summary>
+    int? PositionOf(SiteHierarchyConfig config, IReadOnlyList<LinkInfo> todaysLinks, RecipeStep sectionStep, string url);
 }

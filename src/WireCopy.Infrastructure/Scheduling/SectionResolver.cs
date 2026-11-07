@@ -225,6 +225,28 @@ internal sealed class SectionResolver : ISectionResolver
     /// (or the whole page) resolved with TakeMode = WholeSection — content links in
     /// document order, excludes applied, capped at MaxContentLinks.
     /// </summary>
+    public int? PositionOf(SiteHierarchyConfig config, IReadOnlyList<LinkInfo> todaysLinks, RecipeStep sectionStep, string url)
+    {
+        ArgumentNullException.ThrowIfNull(config);
+        ArgumentNullException.ThrowIfNull(todaysLinks);
+        ArgumentNullException.ThrowIfNull(sectionStep);
+        var list = ResolveSectionList(config, todaysLinks, sectionStep);
+        if (list.Status is not (ResolutionStatus.Resolved or ResolutionStatus.Recovered))
+        {
+            return null;
+        }
+
+        for (var i = 0; i < list.Items.Count; i++)
+        {
+            if (string.Equals(list.Items[i].Url, url, StringComparison.OrdinalIgnoreCase))
+            {
+                return i + 1;
+            }
+        }
+
+        return null;
+    }
+
     private SectionResolution ResolveSectionList(SiteHierarchyConfig config, IReadOnlyList<LinkInfo> todaysLinks, RecipeStep step) =>
         Resolve(config, todaysLinks, step with { TakeMode = TakeMode.WholeSection, TakeCount = null, Positions = [] });
 
