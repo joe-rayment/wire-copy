@@ -407,6 +407,54 @@ public partial class BrowserOrchestrator : IBrowserService
     /// Main browser loop. Handles user input and navigation.
     /// Uses alternate screen buffer for clean TUI experience.
     /// </summary>
+    /// <summary>
+    /// workspace-wyvga.2: on every colour-mode change, drop the line cache (baked colours),
+    /// tell the shell, and repaint. The event fires on the caller's thread (the command loop),
+    /// so the repaint is run inline rather than racing it from another thread. Also announces
+    /// the current mode once at startup.
+    /// </summary>
+    public void SubscribeUiMode(CancellationToken cancellationToken)
+    {
+        IUiModeService? modeService;
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            modeService = scope.ServiceProvider.GetService<IUiModeService>();
+        }
+        catch (InvalidOperationException)
+        {
+            return;
+        }
+
+        if (modeService is null)
+        {
+            return;
+        }
+
+        void Announce()
+        {
+            var routine = modeService.Current == UiMode.Routine;
+            var variant = _themeProvider.BaseTheme == Domain.Enums.Browser.ThemeName.Amber ? "cyan" : "amber";
+            _ = _shellChannel?.SendUiModeAsync(routine ? "routine" : "normal", variant);
+        }
+
+        modeService.Changed += () =>
+        {
+            try
+            {
+                _lineCacheManager.InvalidateLineCache();
+                Announce();
+                RenderCurrentPageAsync(GetCurrentRenderOptions(), cancellationToken).GetAwaiter().GetResult();
+            }
+            catch (Exception ex) when (ex is not OperationCanceledException)
+            {
+                _logger.LogDebug(ex, "uiMode repaint failed");
+            }
+        };
+
+        Announce();
+    }
+
     public async Task RunAsync(string? initialUrl = null, CancellationToken cancellationToken = default)
     {
         // Handle SIGINT gracefully: dispose browser session and restore console before exit
@@ -434,6 +482,8 @@ public partial class BrowserOrchestrator : IBrowserService
             // can recognize and stream as a single chunk.
             Console.Write("\x1b[?1049h\x1b[?1000h\x1b[?1006h\x1b[?2004h");
             Console.CursorVisible = false;
+
+            SubscribeUiMode(cancellationToken);
 
             // Start resize detection and pre-loading in the background
             _ = _resizeDetector.StartAsync(cancellationToken)
