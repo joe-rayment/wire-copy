@@ -299,6 +299,29 @@ html, body {
   white-space: nowrap;
 }
 
+/* Split cell: two half-height halves inside ONE normal-sized cell (same grid
+   footprint and height as any card). Each half is its own selectable target. */
+.card.pair { padding: 0; }
+.half {
+  flex: 1 1 0;
+  min-height: 0;
+  position: relative;
+  padding: 7px 12px 6px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+.half + .half { border-top: 1px solid var(--tr-dim); }
+.half.selected { background: var(--tr-sel-bg); }
+.half .card-title { font-size: clamp(18px, 1.8vw, 24px); }
+.half .card-url { margin: 3px 0 0; font-size: 14px; }
+.half.selected .card-title, .half.selected .card-url, .half.selected .card-index { color: var(--tr-white); }
+.half.routine .card-title { color: var(--tr-routine); }
+.half.routine.selected .card-title { color: var(--tr-routine); }
+.half.routine .card-rail { background: var(--tr-routine); box-shadow: 0 0 10px var(--tr-routine); }
+.half.disabled { opacity: .45; }
+
 /* Trailing wire pads: keep the grid track, draw nothing. */
 .card.empty { padding: 0; }
 
