@@ -132,14 +132,27 @@ public static class RoutineText
         }
 
         var now = (nowLocal ?? DateTimeOffset.Now).DateTime;
-        var suffix = DateTime.TryParseExact(
-            state.LastRunOccurrenceKey ?? string.Empty,
-            "yyyy-MM-dd@HH:mm",
-            CultureInfo.InvariantCulture,
-            DateTimeStyles.None,
-            out var slot)
-            ? " " + DayWord(slot, now)
-            : string.Empty;
+        var key = state.LastRunOccurrenceKey ?? string.Empty;
+        var hasSlot = DateTime.TryParseExact(
+            key, "yyyy-MM-dd@HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var slot);
+        if (!hasSlot && key.StartsWith("run-now@", StringComparison.Ordinal))
+        {
+            // Manual runs carry a UTC "run-now@yyyy-MM-ddTHH:mm:ss#seq" key; show it in local time.
+            var stamp = key["run-now@".Length..];
+            var hash = stamp.IndexOf('#');
+            if (hash >= 0)
+            {
+                stamp = stamp[..hash];
+            }
+
+            if (DateTime.TryParseExact(stamp, "yyyy-MM-ddTHH:mm:ss", CultureInfo.InvariantCulture, DateTimeStyles.AssumeUniversal | DateTimeStyles.AdjustToUniversal, out var utc))
+            {
+                slot = DateTime.SpecifyKind(utc, DateTimeKind.Utc).ToLocalTime();
+                hasSlot = true;
+            }
+        }
+
+        var suffix = hasSlot ? " " + DayWord(slot, now) : string.Empty;
         return state.LastStatus switch
         {
             RunStatus.Success => $"last: ✓{suffix}",
