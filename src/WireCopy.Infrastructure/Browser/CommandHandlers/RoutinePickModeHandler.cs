@@ -59,6 +59,14 @@ internal static class RoutinePickModeHandler
                 return false;
             }
 
+            // R7: positions are counted on today's page, so the visible story order must be today's too -
+            // a cached copy can be stale after the site reorders ("#3" would sit on the wrong card).
+            if (ctx.NavigationService.CurrentContext.IsFromCache)
+            {
+                await ctx.ForceRefreshAsync(request.SiteUrl, options, ct).ConfigureAwait(false);
+                tree = ctx.NavigationService.CurrentPage?.LinkTree ?? tree;
+            }
+
             var page = ctx.NavigationService.CurrentPage!;
             var lookup = await ScheduleConfigResolution.ForUrlAsync(configStore, page.Url).ConfigureAwait(false);
             var config = lookup.Config;
