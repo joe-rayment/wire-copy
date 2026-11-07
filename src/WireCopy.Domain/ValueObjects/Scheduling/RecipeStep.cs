@@ -46,6 +46,12 @@ public sealed record RecipeStep
 
     public TakeMode TakeMode { get; init; } = TakeMode.WholeSection;
 
+    /// <summary>
+    /// 1-based, distinct, ascending positions in the section's link list. Non-empty
+    /// iff <see cref="TakeMode"/> is Slots; empty otherwise (and in old files).
+    /// </summary>
+    public IReadOnlyList<int> Positions { get; init; } = Array.Empty<int>();
+
     /// <summary>Article count: null for WholeSection, 1 for SingleTopStory, ≥1 for TopN.</summary>
     public int? TakeCount { get; init; }
 
@@ -98,6 +104,7 @@ public sealed record RecipeStep
             TakeMode.TopN => takeCount is >= 1
                 ? takeCount
                 : throw new ArgumentException("TopN requires a count >= 1", nameof(takeCount)),
+            TakeMode.Slots => null,
             _ => throw new ArgumentOutOfRangeException(nameof(takeMode)),
         };
 

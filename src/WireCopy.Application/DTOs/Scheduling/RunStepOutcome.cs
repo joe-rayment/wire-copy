@@ -27,4 +27,7 @@ public sealed record RunStepOutcome
     public int ItemsContributed { get; init; }
 
     public string? Diagnostic { get; init; }
+
+    /// <summary>URLs this step contributed to the collection, in order.</summary>
+    public IReadOnlyList<string> ItemUrls { get; init; } = Array.Empty<string>();
 }

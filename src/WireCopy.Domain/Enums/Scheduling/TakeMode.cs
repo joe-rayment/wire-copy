@@ -16,4 +16,7 @@ public enum TakeMode
 
     /// <summary>Exactly the single top story (the lead of the section).</summary>
     SingleTopStory,
+
+    /// <summary>Specific 1-based positions in the section list (RecipeStep.Positions).</summary>
+    Slots,
 }

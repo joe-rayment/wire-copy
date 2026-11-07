@@ -106,6 +106,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                     MatchCount = matchCount,
                     ItemsContributed = assembled.Count - before,
                     Diagnostic = diagnostic,
+                    ItemUrls = assembled.Skip(before).Select(a => a.Url).ToList(),
                 });
             }
 
