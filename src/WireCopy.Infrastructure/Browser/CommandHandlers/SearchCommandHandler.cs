@@ -381,6 +381,10 @@ internal static class SearchCommandHandler
                     modeService.Set(parts[1].Trim().Equals("on", StringComparison.OrdinalIgnoreCase)
                         ? UiMode.Routine
                         : UiMode.Normal);
+
+                    // Repaint so the pane payloads carry the new mode even where the caller
+                    // (e.g. the launcher's ':' prompt) doesn't re-render after a command.
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
                 else
                 {
