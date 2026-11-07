@@ -45,6 +45,7 @@ public static class BuiltInThemes
                 CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 206),    // #ff5fd7 vivid hot pink (accent)
                 WarningFg = new ThemeColor(ConsoleColor.Yellow, 214),         // #ffaf00 amber warnings
                 ReaderCursorFg = new ThemeColor(ConsoleColor.Yellow, 228),   // #ffff87 warm yellow cursor line
+                RoutineAccentFg = new ThemeColor(ConsoleColor.Yellow, 214),
             },
             [ThemeName.Amber] = new ThemePalette
             {
@@ -75,6 +76,7 @@ public static class BuiltInThemes
                 CelebrationFg = new ThemeColor(ConsoleColor.Yellow, 208),      // #ff8700 warm orange celebration
                 WarningFg = new ThemeColor(ConsoleColor.Red, 196),             // #ff0000 red for warnings
                 ReaderCursorFg = new ThemeColor(ConsoleColor.Yellow, 214),     // #ffaf00 warm amber highlight cursor
+                RoutineAccentFg = new ThemeColor(ConsoleColor.Cyan, 45),
             },
             [ThemeName.Dracula] = new ThemePalette
             {
@@ -105,6 +107,7 @@ public static class BuiltInThemes
                 CelebrationFg = new ThemeColor(ConsoleColor.Magenta, 212),     // #ff87d7 Dracula pink
                 WarningFg = new ThemeColor(ConsoleColor.Yellow, 220),          // #ffd700 Dracula yellow
                 ReaderCursorFg = new ThemeColor(ConsoleColor.DarkMagenta, 141), // #af87ff Dracula purple highlight
+                RoutineAccentFg = new ThemeColor(ConsoleColor.Yellow, 214),
             },
             [ThemeName.Light] = new ThemePalette
             {
@@ -135,14 +138,60 @@ public static class BuiltInThemes
                 CelebrationFg = new ThemeColor(ConsoleColor.DarkMagenta, 162), // #d70087 dark magenta celebration
                 WarningFg = new ThemeColor(ConsoleColor.DarkYellow, 172),      // #d78700 dark amber warning
                 ReaderCursorFg = new ThemeColor(ConsoleColor.DarkBlue, 24),    // #005f87 subtle dark blue cursor
+                RoutineAccentFg = new ThemeColor(ConsoleColor.Yellow, 214),
             },
         };
+
+    // Routine palettes (S3): Phosphor with only the green-family roles swapped.
+    private static readonly ThemePalette RoutineAmber = BuildRoutine(214, 172, 137, 94, ConsoleColor.Yellow, ConsoleColor.DarkYellow);
+
+    private static readonly ThemePalette RoutineCyan = BuildRoutine(45, 38, 66, 24, ConsoleColor.Cyan, ConsoleColor.DarkCyan);
 
     /// <summary>
     /// Returns the theme palette for the given theme name.
     /// </summary>
     public static ThemePalette Get(ThemeName theme)
     {
-        return Palettes[theme];
+        return theme switch
+        {
+            ThemeName.RoutineAmber => RoutineAmber,
+            ThemeName.RoutineCyan => RoutineCyan,
+            _ => Palettes[theme],
+        };
+    }
+
+    private static ThemePalette BuildRoutine(byte primary, byte medium, byte muted, byte dim, ConsoleColor bright, ConsoleColor dark)
+    {
+        ThemeColor Map(ThemeColor c) => c.AnsiCode switch
+        {
+            40 => new ThemeColor(bright, primary),
+            34 => new ThemeColor(dark, medium),
+            65 => new ThemeColor(dark, muted),
+            22 => new ThemeColor(dark, dim),
+            _ => c,
+        };
+
+        var p = Palettes[ThemeName.Phosphor];
+        return p with
+        {
+            PrimaryText = Map(p.PrimaryText),
+            SecondaryText = Map(p.SecondaryText),
+            LinkContent = Map(p.LinkContent),
+            LinkNavigation = Map(p.LinkNavigation),
+            LinkExternal = Map(p.LinkExternal),
+            LinkFooter = Map(p.LinkFooter),
+            HeaderBorderFg = Map(p.HeaderBorderFg),
+            HeaderUrlFg = Map(p.HeaderUrlFg),
+            SelectedItemBg = Map(p.SelectedItemBg),
+            StatusBarSeparatorFg = Map(p.StatusBarSeparatorFg),
+            StatusBarTextFg = Map(p.StatusBarTextFg),
+            PromptFg = Map(p.PromptFg),
+            PromptLabelFg = Map(p.PromptLabelFg),
+            ReadItemFg = Map(p.ReadItemFg),
+            FocusIndicatorFg = Map(p.FocusIndicatorFg),
+            DimFg = p.DimFg is { } d ? Map(d) : null,
+            MutedFg = p.MutedFg is { } m ? Map(m) : null,
+            RoutineAccentFg = new ThemeColor(bright, primary),
+        };
     }
 }

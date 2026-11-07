@@ -110,6 +110,10 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
         => await RequestAsync("resized", new { cols, rows }).ConfigureAwait(false) is not null;
 
     /// <inheritdoc />
+    public async Task SendUiModeAsync(string mode, string modeVariant, CancellationToken cancellationToken = default)
+        => await RequestAsync("uiMode", new { mode, modeVariant }).ConfigureAwait(false);
+
+    /// <inheritdoc />
     public async Task SendLauncherStateAsync(bool visible, LauncherViewState? state, CancellationToken cancellationToken = default)
         => await RequestAsync("launcherState", new { visible, state }).ConfigureAwait(false);
 

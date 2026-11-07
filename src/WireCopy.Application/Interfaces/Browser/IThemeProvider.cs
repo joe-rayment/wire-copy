@@ -15,6 +15,11 @@ public interface IThemeProvider
     ThemeName CurrentTheme { get; }
 
     /// <summary>
+    /// Gets the saved base theme (what theme.txt holds), even while routine colours are showing.
+    /// </summary>
+    ThemeName BaseTheme { get; }
+
+    /// <summary>
     /// Cycles to the next theme in the rotation and returns its name.
     /// </summary>
     ThemeName CycleTheme();

@@ -65,7 +65,7 @@ public partial class BrowserOrchestrator
         var requiredAction = preloadProgress?.BlockedAction;
 
         var uiMode = "normal";
-        var uiModeVariant = _themeProvider.CurrentTheme == Domain.Enums.Browser.ThemeName.Amber ? "cyan" : "amber";
+        var uiModeVariant = _themeProvider.BaseTheme == Domain.Enums.Browser.ThemeName.Amber ? "cyan" : "amber";
         try
         {
             using var modeScope = _scopeFactory.CreateScope();

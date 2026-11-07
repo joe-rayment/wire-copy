@@ -106,9 +106,13 @@ internal static class ViewCommandHandler
     public static async Task HandleCycleTheme(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         ctx.ThemeProvider.CycleTheme();
+        var routineShowing = ctx.ThemeProvider.CurrentTheme is Domain.Enums.Browser.ThemeName.RoutineAmber
+            or Domain.Enums.Browser.ThemeName.RoutineCyan;
         ctx.NavigationService.Announce(
             glyph: null,
-            $"Theme: {ctx.ThemeProvider.CurrentTheme}",
+            routineShowing
+                ? WireCopy.Infrastructure.Scheduling.RoutineText.ThemeDeferred(ctx.ThemeProvider.BaseTheme.ToString())
+                : $"Theme: {ctx.ThemeProvider.CurrentTheme}",
             new[] { new StatusKeyHint(KeyFor(CommandType.CycleTheme), "next") });
         ctx.LineCacheManager.InvalidateLineCache();
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);

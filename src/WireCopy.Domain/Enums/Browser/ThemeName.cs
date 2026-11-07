@@ -25,5 +25,11 @@ public enum ThemeName
     /// <summary>
     /// Light theme for bright terminal backgrounds.
     /// </summary>
-    Light
+    Light,
+
+    /// <summary>Routine colour mode, amber variant. Never saved or cycled.</summary>
+    RoutineAmber,
+
+    /// <summary>Routine colour mode, cyan variant (base theme is Amber). Never saved or cycled.</summary>
+    RoutineCyan
 }

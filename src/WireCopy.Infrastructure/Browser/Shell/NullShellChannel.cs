@@ -49,6 +49,10 @@ public sealed class NullShellChannel : IShellChannel
         => Task.FromResult(false);
 
     /// <inheritdoc />
+    public Task SendUiModeAsync(string mode, string modeVariant, CancellationToken cancellationToken = default)
+        => Task.CompletedTask;
+
+    /// <inheritdoc />
     public Task SendLauncherStateAsync(bool visible, LauncherViewState? state, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
 

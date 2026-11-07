@@ -43,6 +43,12 @@ public interface IShellChannel
     Task<bool> NotifyResizeRenderedAsync(int cols, int rows, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Tells the shell the app colour mode changed (workspace-wyvga.2): <paramref name="mode"/>
+    /// "normal"|"routine", <paramref name="modeVariant"/> "amber"|"cyan". Fire-and-forget; never throws.
+    /// </summary>
+    Task SendUiModeAsync(string mode, string modeVariant, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Pushes the launcher's view-model to the shell so it can render the launcher as an HTML
     /// pane (workspace-0jxo). <paramref name="visible"/> is true on every launcher render/state
     /// change (carrying <paramref name="state"/>), and false — with a null <paramref name="state"/> —

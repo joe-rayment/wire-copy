@@ -23,15 +23,31 @@ public sealed class ThemeProvider : IThemeProvider
         "WireCopy",
         "theme.txt");
 
+    private readonly IUiModeService? _uiMode;
     private ThemeName _currentTheme;
 
-    public ThemeProvider()
+    public ThemeProvider(IUiModeService? uiMode = null)
     {
+        _uiMode = uiMode;
         _currentTheme = LoadPersistedTheme();
     }
 
     /// <inheritdoc />
-    public ThemeName CurrentTheme => _currentTheme;
+    public ThemeName CurrentTheme
+    {
+        get
+        {
+            if (_uiMode?.Current != UiMode.Routine)
+            {
+                return _currentTheme;
+            }
+
+            return _currentTheme == ThemeName.Amber ? ThemeName.RoutineCyan : ThemeName.RoutineAmber;
+        }
+    }
+
+    /// <inheritdoc />
+    public ThemeName BaseTheme => _currentTheme;
 
     /// <inheritdoc />
     public ThemeName CycleTheme()
@@ -46,6 +62,11 @@ public sealed class ThemeProvider : IThemeProvider
     /// <inheritdoc />
     public void SetTheme(ThemeName theme)
     {
+        if (theme is ThemeName.RoutineAmber or ThemeName.RoutineCyan)
+        {
+            return;
+        }
+
         _currentTheme = theme;
         PersistTheme(theme);
     }
@@ -57,7 +78,8 @@ public sealed class ThemeProvider : IThemeProvider
             if (File.Exists(PersistencePath))
             {
                 var text = File.ReadAllText(PersistencePath).Trim();
-                if (Enum.TryParse<ThemeName>(text, ignoreCase: true, out var parsed))
+                if (Enum.TryParse<ThemeName>(text, ignoreCase: true, out var parsed)
+                    && Array.IndexOf(ThemeOrder, parsed) >= 0)
                 {
                     return parsed;
                 }
