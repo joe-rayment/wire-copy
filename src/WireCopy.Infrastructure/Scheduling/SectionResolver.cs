@@ -28,22 +28,16 @@ internal sealed class SectionResolver : ISectionResolver
         ArgumentNullException.ThrowIfNull(todaysLinks);
         ArgumentNullException.ThrowIfNull(step);
 
-        // Slots (positions) are resolved by a later slice; until then they contribute nothing.
-        if (step.TakeMode == TakeMode.Slots)
-        {
-            return new SectionResolution
-            {
-                Status = ResolutionStatus.ZeroMatch,
-                MatchCount = 0,
-                Diagnostic = "slots not supported yet",
-            };
-        }
-
         // Content links in document order, ads/promos removed by the durable
         // exclude rules — so SingleTopStory can't pick up a co-located ad.
         var content = todaysLinks
             .Where(l => l.Type == LinkType.Content && !l.IsGroupHeader && !NavigationTreeBuilder.IsExcluded(l, config))
             .ToList();
+
+        if (step.TakeMode == TakeMode.Slots)
+        {
+            return ResolveSlots(config, todaysLinks, step);
+        }
 
         // workspace-42q8.2: a whole-page step needs no section at all — the content
         // list above (excludes applied, document order) IS its match. This is what
@@ -224,5 +218,62 @@ internal sealed class SectionResolver : ISectionResolver
         }
 
         return SectionMatchTier.HeadingName;
+    }
+
+    /// <summary>
+    /// S4 — the single definition of "the list a position indexes": the step's section
+    /// (or the whole page) resolved with TakeMode = WholeSection — content links in
+    /// document order, excludes applied, capped at MaxContentLinks.
+    /// </summary>
+    private SectionResolution ResolveSectionList(SiteHierarchyConfig config, IReadOnlyList<LinkInfo> todaysLinks, RecipeStep step) =>
+        Resolve(config, todaysLinks, step with { TakeMode = TakeMode.WholeSection, TakeCount = null, Positions = [] });
+
+    private SectionResolution ResolveSlots(SiteHierarchyConfig config, IReadOnlyList<LinkInfo> todaysLinks, RecipeStep step)
+    {
+        var list = ResolveSectionList(config, todaysLinks, step);
+        if (list.Status is not (ResolutionStatus.Resolved or ResolutionStatus.Recovered))
+        {
+            return list;
+        }
+
+        var picked = new List<(string Url, string Title)>();
+        var missing = new List<string>();
+        foreach (var pos in step.Positions.Distinct().OrderBy(p => p))
+        {
+            if (pos >= 1 && pos <= list.Items.Count)
+            {
+                picked.Add(list.Items[pos - 1]);
+            }
+            else
+            {
+                missing.Add($"slot #{pos} empty");
+            }
+        }
+
+        var note = missing.Count > 0 ? $"{string.Join(", ", missing)} — section had {list.Items.Count}" : null;
+        if (picked.Count == 0)
+        {
+            return new SectionResolution
+            {
+                Status = ResolutionStatus.ZeroMatch,
+                MatchCount = list.MatchCount,
+                Diagnostic = note ?? list.Diagnostic,
+            };
+        }
+
+        var diagnostic = list.Diagnostic;
+        if (note is not null)
+        {
+            diagnostic = diagnostic is null ? note : $"{diagnostic} {note}";
+        }
+
+        return new SectionResolution
+        {
+            Status = list.Status,
+            Items = picked,
+            MatchCount = list.MatchCount,
+            Tier = list.Tier,
+            Diagnostic = diagnostic,
+        };
     }
 }

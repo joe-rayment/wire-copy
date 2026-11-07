@@ -1170,12 +1170,7 @@ internal static class ScheduleCommandHandler
         return $"{section.Name}   ⟨{sig}⟩";
     }
 
-    private static string TakeModeLabel(RecipeStep step) => step.TakeMode switch
-    {
-        TakeMode.SingleTopStory => "top story",
-        TakeMode.TopN => $"top {step.TakeCount}",
-        _ => step.Scope == StepScope.WholePage ? "whole page" : "whole section",
-    };
+    private static string TakeModeLabel(RecipeStep step) => RoutineText.Take(step);
 
     // ---- shared overlay-card picker (mirrors StrategyChooserHandler.RunEntryCardAsync) ----
     private static async Task<PickResult> PickAsync(
