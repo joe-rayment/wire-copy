@@ -157,15 +157,48 @@ function cardHtml (slot, selected) {
   )
 }
 
+// One half of a split cell (half "top"/"bottom"): its own badge, title, hint and
+// selection treatment, stacked with its partner inside ONE grid cell.
+function halfHtml (slot, selected) {
+  const cls = ['half', selected ? 'selected' : '', slot.kind === 'routines' ? 'routine' : '',
+    slot.disabled ? 'disabled' : ''].filter(Boolean).join(' ')
+  const star = slot.kind === 'readingList' ? `<span class="rl-star"> ★</span>` : ''
+  const idx = (slot.badge != null && slot.badge !== '')
+    ? `<span class="card-index">[${esc(slot.badge)}]</span>` : ''
+  const quiet = slot.kind === 'readingList' && /^nothing saved yet/.test(slot.hint || '')
+  const detail = slot.detail ? `<div class="card-url detail">${esc(slot.detail)}</div>` : ''
+  return (
+    `<div class="${cls}">` +
+      (selected ? `<div class="card-rail"></div>` : '') +
+      `<div class="card-title-row">` +
+        `<span class="card-title">${esc(slot.title || '')}${star}</span>${idx}` +
+      `</div>` +
+      `<div class="card-url${quiet ? ' hint' : ''}">${esc(slot.hint || '')}</div>` +
+      detail +
+    `</div>`
+  )
+}
+
 function paintGrid (state) {
   // The pane lays the slots out in EXACTLY state.columns tracks — the same
   // count the TUI uses for arrow-key movement (LauncherViewState.Columns), so
   // keys always match the screen.
   $('grid').style.setProperty('--cols', String(state.columns || 2))
   const slots = state.slots || []
-  $('grid').innerHTML = slots
-    .map((slot, i) => cardHtml(slot, i === state.selectedIndex))
-    .join('')
+  const out = []
+  for (let i = 0; i < slots.length; i++) {
+    const a = slots[i]
+    const b = slots[i + 1]
+    if (a && b && a.half === 'top' && b.half === 'bottom') {
+      out.push(`<div class="card pair">` +
+        halfHtml(a, i === state.selectedIndex) +
+        halfHtml(b, i + 1 === state.selectedIndex) + `</div>`)
+      i++
+    } else {
+      out.push(cardHtml(a, i === state.selectedIndex))
+    }
+  }
+  $('grid').innerHTML = out.join('')
 }
 
 function paintPaging (state) {
