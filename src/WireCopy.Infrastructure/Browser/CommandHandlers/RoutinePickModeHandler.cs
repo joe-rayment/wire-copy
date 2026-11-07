@@ -159,7 +159,7 @@ internal static class RoutinePickModeHandler
                     await ToggleAsync(ctx, options, session, ct).ConfigureAwait(false);
                     break;
                 case CommandType.ActivateLink:
-                    if (SelectedSection(ctx) is { OnHeader: true })
+                    if (SelectedSection(ctx, session) is { OnHeader: true })
                     {
                         await NavigationCommandHandler.HandleActivateLink(ctx, options, ct).ConfigureAwait(false);
                     }
@@ -208,7 +208,7 @@ internal static class RoutinePickModeHandler
     }
 
     /// <summary>The section the cursor is in (name + scope) and whether the cursor is on its header.</summary>
-    private static (string Name, StepScope Scope, bool OnHeader)? SelectedSection(CommandContext ctx)
+    private static (string Name, StepScope Scope, bool OnHeader)? SelectedSection(CommandContext ctx, RoutinePickSession session)
     {
         var node = ctx.NavigationService.CurrentPage?.LinkTree?.CurrentSelection;
         if (node is null)
@@ -222,12 +222,15 @@ internal static class RoutinePickModeHandler
             return (RecipeStep.WholePageSectionName, StepScope.WholePage, false);
         }
 
-        return (header.Link.DisplayText.Trim(), StepScope.PinnedSection, ReferenceEquals(header, node));
+        // On a flat (zero-section) config the only header is the synthetic "All stories" one,
+        // which stands for the whole page (S4: SectionName "All stories", Scope WholePage).
+        var flat = session.Config is null || session.Config.Sections.Count == 0;
+        return (header.Link.DisplayText.Trim(), flat ? StepScope.WholePage : StepScope.PinnedSection, ReferenceEquals(header, node));
     }
 
     private static async Task ToggleAsync(CommandContext ctx, RenderOptions options, RoutinePickSession session, CancellationToken ct)
     {
-        if (SelectedSection(ctx) is not { OnHeader: true } sel)
+        if (SelectedSection(ctx, session) is not { OnHeader: true } sel)
         {
             Status(ctx, RoutineText.HeaderOnlyYet);
         }
@@ -242,7 +245,7 @@ internal static class RoutinePickModeHandler
     private static async Task TakePickerAsync(
         CommandContext ctx, RenderOptions options, RoutinePickSession session, SetupWizardOverlay.State overlay, ThemePalette palette, CancellationToken ct)
     {
-        if (SelectedSection(ctx) is not { OnHeader: true } sel)
+        if (SelectedSection(ctx, session) is not { OnHeader: true } sel)
         {
             Status(ctx, RoutineText.HeaderOnlyYet);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
