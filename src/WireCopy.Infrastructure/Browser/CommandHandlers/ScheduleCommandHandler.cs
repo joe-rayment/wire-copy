@@ -95,6 +95,14 @@ internal static class ScheduleCommandHandler
         var changed = await RoutinePickModeHandler.OpenAsync(
             ctx, options, new RoutinePickRequest(routineId.Value, pageUrl, sectionName), ct).ConfigureAwait(false);
 
+        // Pick mode opened its own copy of this page; step back to the page the user was on so the
+        // list returns to the same position (its tree still holds the selection).
+        if (!ReferenceEquals(ctx.NavigationService.CurrentPage, page) && ctx.NavigationService.CanGoBack
+            && string.Equals(ctx.NavigationService.CurrentPage?.Url, pageUrl, StringComparison.Ordinal))
+        {
+            ctx.NavigationService.GoBack();
+        }
+
         RestoreSelection(ctx, savedId, savedText, savedUrl, savedIndex);
         if (changed)
         {
