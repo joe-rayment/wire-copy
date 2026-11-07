@@ -303,9 +303,11 @@ html, body {
    footprint and height as any card). Each half is its own selectable target.
    The halves are the app's own panels (Reading List, Routines), so the cell draws
    as a framed, faintly tinted box with a "Yours" legend on its top edge, where a
-   site tile is open with a rule underneath. The box fills the whole cell (the
-   halves need every pixel for title + hint); the legend rides above the top edge. */
-.card.pair { padding: 0; overflow: visible; }
+   site tile is open with a rule underneath. The box runs from the cell's top to
+   the neighbouring tile's rule line (that tile's 18px bottom padding + half its
+   14px rule), so the row below gets the same breathing room as under a site tile;
+   the legend rides above the top edge. */
+.card.pair { padding: 0 0 25px; overflow: visible; }
 .pair-box {
   flex: 1 1 auto;
   min-height: 0;
@@ -317,22 +319,22 @@ html, body {
 }
 .pair-legend {
   position: absolute;
-  top: -7px;
+  top: -6px;
   left: 10px;
   z-index: 1;
   padding: 0 6px;
   background: var(--tr-bg-pure);
   color: var(--tr-med);
-  font-size: 12px;
-  line-height: 14px;
-  letter-spacing: .25em;
+  font-size: 11px;
+  line-height: 11px;
+  letter-spacing: .3em;
   text-transform: uppercase;
 }
 .half {
   flex: 1 1 0;
   min-height: 0;
   position: relative;
-  padding: 7px 12px 6px;
+  padding: 3px 12px;
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -353,8 +355,8 @@ html, body {
 }
 .half.routine::before { background: var(--tr-routine); }
 .half.selected { background: var(--tr-sel-bg); }
-.half .card-title { font-size: clamp(18px, 1.8vw, 24px); }
-.half .card-url { margin: 3px 0 0; font-size: 14px; }
+.half .card-title { font-size: clamp(16px, 1.5vw, 21px); }
+.half .card-url { margin: 2px 0 0; font-size: 13px; line-height: 1.2; }
 .half.selected .card-title, .half.selected .card-url, .half.selected .card-index { color: var(--tr-white); }
 .half.routine .card-title { color: var(--tr-routine); }
 .half.routine.selected .card-title { color: var(--tr-routine); }
