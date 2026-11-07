@@ -754,14 +754,88 @@ internal class LauncherRenderer
         int cellHeight,
         ThemePalette p,
         int? readingListCount = null,
-        bool drawSeparator = true)
+        bool drawSeparator = true,
+        string? routinesHint = null)
     {
-        var totalItems = bookmarks.Count + 1;
-        if (itemIdx >= totalItems)
+        // itemIdx is a CELL (Routines R3): the Reading List and Routines share
+        // one split cell, every other cell is one slot.
+        var bc = bookmarks.Count;
+        if (itemIdx >= LauncherSlotMap.CellTotal(bc))
         {
             return new string(' ', cellWidth);
         }
 
+        var firstVirtual = LauncherSlotMap.FirstVirtual(bc, itemIdx);
+        if (!LauncherSlotMap.IsReadingList(bc, firstVirtual))
+        {
+            return BuildCardSlotLine(
+                bookmarks,
+                firstVirtual,
+                selectedIndex,
+                cellWidth,
+                lineIdx,
+                cellHeight,
+                p,
+                readingListCount,
+                drawSeparator,
+                routinesHint);
+        }
+
+        // Split cell: READING LIST (top) over ROUTINES (bottom) inside the SAME
+        // cell height. The trailing separator slot stays the cell's last line.
+        var contentH = drawSeparator ? cellHeight - 1 : cellHeight;
+        var topH = contentH / 2;
+        var botH = contentH - topH;
+        if (lineIdx < topH)
+        {
+            return BuildCardSlotLine(
+                bookmarks,
+                firstVirtual,
+                selectedIndex,
+                cellWidth,
+                lineIdx,
+                topH,
+                p,
+                readingListCount,
+                false,
+                routinesHint);
+        }
+
+        if (lineIdx < contentH)
+        {
+            return BuildCardSlotLine(
+                bookmarks,
+                firstVirtual + 1,
+                selectedIndex,
+                cellWidth,
+                lineIdx - topH,
+                botH,
+                p,
+                readingListCount,
+                false,
+                routinesHint);
+        }
+
+        // Separator rule; the selected half's rail continues through it only
+        // for the bottom half (it ends the cell).
+        var rule = $"{p.HeaderBorderFg.AnsiFg}{new string('─', Math.Max(0, cellWidth - (selectedIndex == firstVirtual + 1 ? 1 : 0)))}{Reset}";
+        return selectedIndex == firstVirtual + 1
+            ? $"{p.GetRoutineAccentFg().AnsiFg}▌{Reset}{rule}"
+            : rule;
+    }
+
+    private static string BuildCardSlotLine(
+        List<Bookmark> bookmarks,
+        int itemIdx,
+        int selectedIndex,
+        int cellWidth,
+        int lineIdx,
+        int cellHeight,
+        ThemePalette p,
+        int? readingListCount,
+        bool drawSeparator,
+        string? routinesHint)
+    {
         // Slot layout (workspace-ul5z): with bookmarks present, virtual
         // index 1 is the Reading List; bookmarks shift one slot later.
         //   virtual 0 → bookmark[0]
@@ -769,8 +843,9 @@ internal class LauncherRenderer
         //   virtual N (≥ 2) → bookmark[N - 1]
         // Slot facts come from the shared composer (workspace-0jxo) so the grid
         // card and the exported view-model can never disagree about a tile.
-        var facts = ComposeSlot(bookmarks, itemIdx, readingListCount);
+        var facts = ComposeSlot(bookmarks, itemIdx, readingListCount, routinesHint);
         var isReadingList = facts.IsReadingList;
+        var isRoutines = facts.IsRoutines;
         var isSelected = itemIdx == selectedIndex;
 
         var name = facts.Title;
@@ -786,7 +861,7 @@ internal class LauncherRenderer
         var selBg = p.SelectedItemBg.AnsiBg;
         var selFg = p.SelectedItemFg.AnsiFg;
         var borderFg = p.HeaderBorderFg.AnsiFg;
-        var titleFg = p.PrimaryText.AnsiFg;
+        var titleFg = isRoutines ? p.GetRoutineAccentFg().AnsiFg : p.PrimaryText.AnsiFg;
 
         // Design cards-states (workspace-7t0a.2): the [N] badge is a pressable key,
         // so it wears the interactive cyan — 'cyan = interactive keys only' holds.
@@ -798,7 +873,7 @@ internal class LauncherRenderer
         // workspace-7t0a.2). The Reading List no longer carries a permanent
         // cyan rail: per Launcher.dc.html it reads as a bookmark card whose
         // trailing ★ marks the slot.
-        var accentBarColor = p.GetMutedFg().AnsiFg;
+        var accentBarColor = isRoutines ? p.GetRoutineAccentFg().AnsiFg : p.GetMutedFg().AnsiFg;
         var contentWidth = Math.Max(1, cellWidth - 1);
 
         // Selected subtitle turns the selection foreground (the design's
@@ -876,7 +951,7 @@ internal class LauncherRenderer
                     : string.Empty;
                 var sb = new System.Text.StringBuilder();
                 sb.Append($"{selBg}{accentBarColor}▌");
-                sb.Append($"{selBg}{selFg}{Bold}{new string(' ', leading - 1)}{truncName}{glyphPainted}{Reset}");
+                sb.Append($"{selBg}{(isRoutines ? titleFg : selFg)}{Bold}{new string(' ', leading - 1)}{truncName}{glyphPainted}{Reset}");
                 sb.Append($"{selBg}{new string(' ', gap)}");
                 if (badge.Length > 0)
                 {
@@ -939,33 +1014,20 @@ internal class LauncherRenderer
         int selectedIndex,
         int width,
         ThemePalette p,
-        int? readingListCount = null)
+        int? readingListCount = null,
+        string? routinesHint = null)
     {
-        var totalItems = bookmarks.Count + 1;
-        if (itemIdx >= totalItems)
+        if (itemIdx >= LauncherSlotMap.VirtualTotal(bookmarks.Count))
         {
             return new string(' ', width);
         }
 
-        // Slot layout (workspace-ul5z): Reading List sits at virtual index 1.
-        var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
+        var facts = ComposeSlot(bookmarks, itemIdx, readingListCount, routinesHint);
+        var isRoutines = facts.IsRoutines;
         var isSelected = itemIdx == selectedIndex;
-
-        string name;
-        string domain;
-
-        if (isReadingList)
-        {
-            name = "READING LIST ★";
-            domain = ReadingListSubtitle(readingListCount);
-        }
-        else
-        {
-            var bookmarkIdx = itemIdx == 0 ? 0 : itemIdx - 1;
-            var bookmark = bookmarks[bookmarkIdx];
-            name = bookmark.Name.ToUpperInvariant();
-            domain = ExtractDomain(bookmark.Url);
-        }
+        var name = facts.IsReadingList ? "READING LIST ★" : facts.Title;
+        var domain = facts.Hint;
+        var nameFg = isRoutines ? p.GetRoutineAccentFg().AnsiFg : p.PrimaryText.AnsiFg;
 
         string badge;
         if (itemIdx < 9)
@@ -993,8 +1055,8 @@ internal class LauncherRenderer
             var selFg = p.SelectedItemFg.AnsiFg;
             var selBg = p.SelectedItemBg.AnsiBg;
             var sb = new System.Text.StringBuilder();
-            sb.Append(Selection.AccentBar(p));
-            sb.Append($"{selBg}{Bold}{selFg}{truncName}{Reset}");
+            sb.Append(isRoutines ? $"{p.GetRoutineAccentFg().AnsiFg}▌{Reset}" : Selection.AccentBar(p));
+            sb.Append($"{selBg}{Bold}{(isRoutines ? nameFg : selFg)}{truncName}{Reset}");
             sb.Append($"{selBg}{new string(' ', gap)}");
             sb.Append($"{p.SecondaryText.AnsiFg}{selBg}{truncDomain}{Reset}");
             sb.Append($"{selBg}  ");
@@ -1005,7 +1067,7 @@ internal class LauncherRenderer
 
         var sb2 = new System.Text.StringBuilder();
         sb2.Append(' ');
-        sb2.Append($"{Bold}{p.PrimaryText.AnsiFg}{truncName}{Reset}");
+        sb2.Append($"{Bold}{nameFg}{truncName}{Reset}");
         sb2.Append(new string(' ', gap));
         sb2.Append($"{p.SecondaryText.AnsiFg}{truncDomain}{Reset}  ");
         sb2.Append($"{badgeColor}{badge}{Reset} ");
@@ -1022,33 +1084,30 @@ internal class LauncherRenderer
         int cellWidth,
         int lineIdx,
         ThemePalette p,
-        int? readingListCount = null)
+        int? readingListCount = null,
+        string? routinesHint = null)
     {
-        var totalItems = bookmarks.Count + 1;
-        if (itemIdx >= totalItems)
+        // itemIdx is a CELL. The split cell (Reading List + Routines) is two
+        // one-line list rows inside the 3-line cell; the third line is blank.
+        var bc = bookmarks.Count;
+        if (itemIdx >= LauncherSlotMap.CellTotal(bc))
         {
             return new string(' ', cellWidth);
         }
 
-        // Slot layout (workspace-ul5z): Reading List sits at virtual index 1.
-        var isReadingList = itemIdx == 1 && bookmarks.Count > 0;
+        var firstVirtual = LauncherSlotMap.FirstVirtual(bc, itemIdx);
+        if (LauncherSlotMap.IsReadingList(bc, firstVirtual))
+        {
+            return lineIdx <= 1
+                ? BuildListLine(bookmarks, firstVirtual + lineIdx, selectedIndex, cellWidth, p, readingListCount, routinesHint)
+                : new string(' ', cellWidth);
+        }
+
+        itemIdx = firstVirtual;
         var isSelected = itemIdx == selectedIndex;
-
-        string name;
-        string domain;
-
-        if (isReadingList)
-        {
-            name = "LIST★";
-            domain = ReadingListSubtitle(readingListCount);
-        }
-        else
-        {
-            var bookmarkIdx = itemIdx == 0 ? 0 : itemIdx - 1;
-            var bookmark = bookmarks[bookmarkIdx];
-            name = bookmark.Name.ToUpperInvariant();
-            domain = ExtractDomain(bookmark.Url);
-        }
+        var facts = ComposeSlot(bookmarks, itemIdx, readingListCount, routinesHint);
+        var name = facts.Title;
+        var domain = facts.Hint;
 
         string badge;
         if (itemIdx < 9)
@@ -1353,16 +1412,17 @@ internal class LauncherRenderer
         LauncherLayout layout,
         string variant,
         ThemePalette p,
-        int? readingListCount = null)
+        int? readingListCount = null,
+        string? routinesHint = null)
     {
-        var totalItems = bookmarks.Count + 1;
+        var totalItems = LauncherSlotMap.CellTotal(bookmarks.Count);
         var lines = new List<string>();
 
         if (variant == "List")
         {
-            for (var row = 0; row < totalItems; row++)
+            for (var row = 0; row < LauncherSlotMap.VirtualTotal(bookmarks.Count); row++)
             {
-                lines.Add(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p, readingListCount));
+                lines.Add(BuildListLine(bookmarks, row, selectedIndex, layout.Width, p, readingListCount, routinesHint));
             }
 
             return lines;
@@ -1376,11 +1436,11 @@ internal class LauncherRenderer
             {
                 if (variant == "Compact")
                 {
-                    lines.Add(BuildCompactRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p, readingListCount));
+                    lines.Add(BuildCompactRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p, readingListCount, routinesHint));
                 }
                 else
                 {
-                    lines.Add(BuildGridRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p, readingListCount));
+                    lines.Add(BuildGridRowLine(bookmarks, selectedIndex, layout, row, line, totalItems, p, readingListCount, routinesHint));
                 }
             }
         }
@@ -1412,7 +1472,8 @@ internal class LauncherRenderer
         int line,
         int totalItems,
         ThemePalette p,
-        int? readingListCount = null)
+        int? readingListCount = null,
+        string? routinesHint = null)
     {
         // Card stride (workspace-bs93/stby): centring pad + title + subtitle
         // + centring pad + separator. Mirrors LinkTreeRenderer's row layout —
@@ -1461,7 +1522,8 @@ internal class LauncherRenderer
                     layout.CellHeight,
                     p,
                     readingListCount,
-                    drawSeparator));
+                    drawSeparator,
+                    routinesHint));
             }
             else if (isSeparatorLine)
             {
@@ -1486,7 +1548,8 @@ internal class LauncherRenderer
         int line,
         int totalItems,
         ThemePalette p,
-        int? readingListCount = null)
+        int? readingListCount = null,
+        string? routinesHint = null)
     {
         var sb = new System.Text.StringBuilder();
 
@@ -1506,7 +1569,7 @@ internal class LauncherRenderer
             if (itemIdx < totalItems)
             {
                 sb.Append(BuildCompactCellLine(
-                    bookmarks, itemIdx, selectedIndex, cellW, line, p, readingListCount));
+                    bookmarks, itemIdx, selectedIndex, cellW, line, p, readingListCount, routinesHint));
             }
             else
             {
@@ -1546,31 +1609,13 @@ internal class LauncherRenderer
         void WriteColumnLine(string line) =>
             _helpers.WriteLine(line.Length == 0 ? line : margin + line);
 
-        // Empty bookmarks: use the empty-state screen with the header pinned
-        // at the top — there are no bookmarks to scroll past.
-        if (bookmarks.Count == 0)
-        {
-            foreach (var headerLine in BuildHeaderLines(layout.Width, p, showSetupHint))
-            {
-                WriteColumnLine(headerLine);
-            }
-
-            foreach (var urlBarLine in BuildUrlBarLines(layout.Width, selectedIndex == -1, p))
-            {
-                WriteColumnLine(urlBarLine);
-            }
-
-            RenderEmptyState(layout.Width, options.TerminalHeight, p, margin);
-            return;
-        }
-
         // Build the launcher in three bands:
         //   header  — wordmark / title (setup hint inside header card when ShowSetupHint)
         //   urlBar  — URL bar (5 rows incl. the gap under it)
         //   grid    — bookmark rows
         var header = BuildHeaderLines(layout.Width, p, showSetupHint);
         var urlBar = BuildUrlBarLines(layout.Width, selectedIndex == -1, p);
-        var grid = BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p, options.ReadingListItemCount);
+        var grid = BuildBookmarkLines(bookmarks, selectedIndex, layout, variant, p, options.ReadingListItemCount, options.RoutinesHint);
 
         var topBands = header.Count + urlBar.Count;
         var totalContent = topBands + grid.Count;
@@ -1603,6 +1648,13 @@ internal class LauncherRenderer
             foreach (var line in grid)
             {
                 WriteColumnLine(line);
+            }
+
+            // Zero bookmarks: the split cell still draws; keep the first-run
+            // prompt below it when it fits.
+            if (bookmarks.Count == 0 && topBands + gridPad + grid.Count + 2 <= viewportHeight)
+            {
+                RenderEmptyState(layout.Width, p, margin);
             }
 
             return;
@@ -1659,38 +1711,13 @@ internal class LauncherRenderer
         }
     }
 
-    private void RenderEmptyState(int width, int terminalHeight, ThemePalette p, string margin = "")
+    private void RenderEmptyState(int width, ThemePalette p, string margin = "")
     {
-        var availableLines = Math.Max(6, terminalHeight - 4);
-        var topPad = Math.Max(1, availableLines / 3);
-
-        for (var i = 0; i < topPad; i++)
-        {
-            _helpers.WriteLine();
-        }
-
-        var heading = "Your bookmarks await";
-        var headingPad = Math.Max(0, (width - heading.Length) / 2);
-        _helpers.WriteLine($"{margin}{new string(' ', headingPad)}{p.PrimaryText.AnsiFg}{Bold}{heading}{Reset}");
         _helpers.WriteLine();
-
         var instruction = "Press [a] to add your first site";
         var instrPad = Math.Max(0, (width - instruction.Length) / 2);
         var instrFormatted = $"Press {p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}a{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
                              $"{p.SecondaryText.AnsiFg}{Dim} to add your first site{Reset}";
         _helpers.WriteLine($"{margin}{new string(' ', instrPad)}{instrFormatted}");
-        _helpers.WriteLine();
-
-        // workspace-xx61: 'c' opens Setup (LauncherCommandHandler), NOT the
-        // reading list — the old "[c] READING LIST" label was simply wrong (and a
-        // first-run reading list is empty anyway). Point at what 'c' really does.
-        var collLabel = "[c]  SETUP";
-        var collPad = Math.Max(0, (width - collLabel.Length) / 2);
-        _helpers.WriteLine(
-            $"{margin}{new string(' ', collPad)}{p.SecondaryText.AnsiFg}[{Reset}{p.GetAccentFg().AnsiFg}c{Reset}{p.SecondaryText.AnsiFg}]{Reset}" +
-            $"  {p.PrimaryText.AnsiFg}{Bold}SETUP{Reset}");
-
-        var domainPad = Math.Max(0, (width - "API keys & settings".Length) / 2);
-        _helpers.WriteLine($"{margin}{new string(' ', domainPad + 5)}{p.SecondaryText.AnsiFg}{Dim}API keys & settings{Reset}");
     }
 }
