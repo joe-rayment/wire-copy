@@ -499,9 +499,13 @@ internal class LauncherRenderer
     /// (workspace-ul5z); bookmarks shift one slot later.
     /// </summary>
     internal static LauncherSlotFacts ComposeSlot(
-        IReadOnlyList<Bookmark> bookmarks, int virtualIndex, int? readingListCount)
+        IReadOnlyList<Bookmark> bookmarks,
+        int virtualIndex,
+        int? readingListCount,
+        string? routinesHint = null)
     {
-        if (virtualIndex == 1 && bookmarks.Count > 0)
+        var bc = bookmarks.Count;
+        if (LauncherSlotMap.IsReadingList(bc, virtualIndex))
         {
             return new LauncherSlotFacts(
                 IsReadingList: true,
@@ -510,8 +514,17 @@ internal class LauncherRenderer
                 Url: null);
         }
 
-        var bookmarkIdx = virtualIndex == 0 ? 0 : virtualIndex - 1;
-        var bookmark = bookmarks[bookmarkIdx];
+        if (LauncherSlotMap.IsRoutines(bc, virtualIndex))
+        {
+            return new LauncherSlotFacts(
+                IsReadingList: false,
+                Title: Scheduling.RoutineText.RoutinesTitle,
+                Hint: routinesHint ?? string.Empty,
+                Url: null,
+                IsRoutines: true);
+        }
+
+        var bookmark = bookmarks[LauncherSlotMap.BookmarkIndexFromVirtual(bc, virtualIndex)];
         return new LauncherSlotFacts(
             IsReadingList: false,
             Title: bookmark.Name.ToUpperInvariant(),
@@ -618,63 +631,63 @@ internal class LauncherRenderer
 
         var columns = ShellPaneColumns(options.TerminalWidth);
 
-        // Empty bookmarks → the empty-state screen (no tiles). Report an empty
-        // window; the URL bar / setup hint is still reachable.
-        if (bookmarks.Count == 0)
-        {
-            return new LauncherViewState
-            {
-                Mode = options.UiMode,
-                ModeVariant = options.UiModeVariant,
-                Slots = [],
-                SelectedIndex = -1,
-                Columns = columns,
-                UrlTyping = urlTyping,
-                SetupHint = setupHint,
-                ExtensionHint = extensionHint,
-                Paging = new LauncherPaging { Offset = 0, Visible = 0, Total = 0 },
-                BookmarkCount = 0,
-                Footer = footer,
-                Tagline = tagline,
-                Version = version,
-            };
-        }
-
+        // Paging counts grid CELLS (the Reading List + Routines halves share one
+        // cell); the window is then mapped back to the virtual slot range.
+        var bc = bookmarks.Count;
         var pageSize = columns * PaneRowsPerPage(options);
-        var total = bookmarks.Count + 1; // bookmarks + the Reading List virtual slot
-        var offset = selectedIndex >= 0
-            ? (selectedIndex / pageSize) * pageSize
+        var cellTotal = LauncherSlotMap.CellTotal(bc);
+        var page = selectedIndex >= 0
+            ? LauncherSlotMap.CellOf(bc, selectedIndex) / pageSize
             : 0;
-        var visible = Math.Min(pageSize, total - offset);
+        var cellStart = page * pageSize;
+        var cellEnd = Math.Min(cellTotal, cellStart + pageSize);
+        var offset = LauncherSlotMap.FirstVirtual(bc, cellStart);
+        var virtualEnd = LauncherSlotMap.FirstVirtual(bc, cellEnd);
+        var visible = virtualEnd - offset;
+        var total = LauncherSlotMap.VirtualTotal(bc);
 
-        // Pad the window up to a whole number of grid ROWS so the HTML grid's
-        // last row is never half-empty, capped at the page size — matching how
-        // the TUI grid continues its trailing cells.
-        var windowLength = Math.Min(
-            pageSize,
-            ((visible + columns - 1) / columns) * columns);
+        // Pad the window up to a whole number of grid ROWS (in cells) so the HTML
+        // grid's last row is never half-empty, capped at the page size.
+        var cellsVisible = cellEnd - cellStart;
+        var paddedCells = Math.Min(pageSize, ((cellsVisible + columns - 1) / columns) * columns);
 
-        var slots = new List<LauncherSlot>(windowLength);
-        for (var i = 0; i < windowLength; i++)
+        var slots = new List<LauncherSlot>(visible + paddedCells - cellsVisible);
+        for (var virtualIndex = offset; virtualIndex < virtualEnd; virtualIndex++)
         {
-            var virtualIndex = offset + i;
-            if (virtualIndex >= total)
+            var facts = ComposeSlot(bookmarks, virtualIndex, options.ReadingListItemCount, options.RoutinesHint);
+            var isRl = facts.IsReadingList;
+            var kind = isRl ? "readingList" : "bookmark";
+            if (facts.IsRoutines)
             {
-                slots.Add(new LauncherSlot { Index = virtualIndex, Kind = "empty" });
-                continue;
+                kind = "routines";
             }
 
-            var facts = ComposeSlot(bookmarks, virtualIndex, options.ReadingListItemCount);
+            string? half = null;
+            if (isRl)
+            {
+                half = "top";
+            }
+            else if (facts.IsRoutines)
+            {
+                half = "bottom";
+            }
+
             slots.Add(new LauncherSlot
             {
                 Index = virtualIndex,
-                Kind = facts.IsReadingList ? "readingList" : "bookmark",
+                Kind = kind,
                 Title = facts.Title,
                 Url = facts.Url,
                 Hint = facts.Hint,
-                Star = facts.IsReadingList,
+                Star = isRl,
                 Badge = virtualIndex < 9 ? (virtualIndex + 1).ToString() : null,
+                Half = half,
             });
+        }
+
+        for (var k = 0; k < paddedCells - cellsVisible; k++)
+        {
+            slots.Add(new LauncherSlot { Index = virtualEnd + k, Kind = "empty" });
         }
 
         return new LauncherViewState
@@ -688,7 +701,7 @@ internal class LauncherRenderer
             SetupHint = setupHint,
             ExtensionHint = extensionHint,
             Paging = new LauncherPaging { Offset = offset, Visible = visible, Total = total },
-            BookmarkCount = bookmarks.Count,
+            BookmarkCount = bc,
             Footer = footer,
             Tagline = tagline,
             Version = version,
