@@ -1,0 +1,98 @@
+#!/usr/bin/env python3
+"""Fake audio-engine for the Routines harness (workspace-wyvga.9). stdlib only.
+
+  fake_audio_engine.py --port 8090 [--log FILE]
+
+Any bearer key is accepted. Jobs succeed instantly; audio is ~1 s of silent MP3.
+--log: "METHOD path" per request, and per POST /v1/jobs one line per chapter:
+"CHAPTER <title> | <source url or ->". The client's ChapterInput carries only
+Title+Text, so the source url is the first http(s) URL found in the chapter
+text/title, else in request metadata, else "-".
+"""
+import argparse, json, re, uuid, datetime, threading
+from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+
+# MPEG-1 Layer III, 128 kbps, 44.1 kHz, no padding: 417-byte frame, 26.1 ms. Zeroed
+# side info + main data = a valid frame that decodes to silence.
+FRAME = bytes([0xFF, 0xFB, 0x90, 0x64]) + bytes(417 - 4)
+MP3 = FRAME * 40
+DURATION = 40 * 1152 / 44100
+JOBS = {}
+LOCK = threading.Lock()
+LOGF = None
+URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
+
+def log(line):
+    if LOGF:
+        with LOCK, open(LOGF, "a", encoding="utf-8") as f: f.write(line + "\n")
+
+def now(): return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
+def job_json(j):
+    return dict(id=j["id"], status="succeeded", phase="done", progress=1, chunksDone=j["chunks"],
+                chunksTotal=j["chunks"], title=j["title"], engine="fake", voice="fake", format="mp3",
+                priority=0, attempts=1, estCostUsd=0, durationSeconds=DURATION, bytes=len(MP3),
+                createdAt=j["createdAt"], startedAt=j["createdAt"], finishedAt=j["createdAt"],
+                updatedAt=j["createdAt"], metadata=j["metadata"], audioUrl=f"/v1/jobs/{j['id']}/audio")
+
+class H(BaseHTTPRequestHandler):
+    protocol_version = "HTTP/1.1"
+    def log_message(self, *a): pass
+    def send(self, code, body, ctype="application/json"):
+        if not isinstance(body, bytes): body = json.dumps(body).encode()
+        self.send_response(code); self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(body))); self.end_headers()
+        if self.command != "HEAD": self.wfile.write(body)
+    def body(self):
+        n = int(self.headers.get("Content-Length") or 0)
+        try: return json.loads(self.rfile.read(n) or b"{}")
+        except Exception: return {}
+    def do_GET(self):
+        p = self.path.split("?")[0]; log(f"GET {p}")
+        if p in ("/healthz", "/readyz"): return self.send(200, {"status": "ok"})
+        if p == "/v1/engines":
+            return self.send(200, [dict(name="fake", isConfigured=True, voices=["fake"], defaultVoice="fake")])
+        if p == "/v1/jobs":
+            return self.send(200, dict(items=[job_json(j) for j in JOBS.values()], nextCursor=None))
+        m = re.fullmatch(r"/v1/jobs/([^/]+)(?:/(events|audio))?", p)
+        if m:
+            j = JOBS.get(m.group(1))
+            if m.group(2) == "events":   # never 404: the client rethrows it
+                ev = dict(jobId=m.group(1), type="job.completed", status="succeeded", progress=1)
+                return self.send(200, f"data: {json.dumps(ev)}\n\n".encode(), "text/event-stream")
+            if not j: return self.send(404, {"error": "not found"})
+            if m.group(2) == "audio": return self.send(200, MP3, "audio/mpeg")
+            return self.send(200, job_json(j))
+        self.send(404, {"error": "not found"})
+    def do_DELETE(self):
+        log(f"DELETE {self.path}"); self.send(204, b"", "text/plain")
+    def do_POST(self):
+        p = self.path.split("?")[0]; log(f"POST {p}"); b = self.body()
+        if p == "/v1/jobs":
+            jid = uuid.uuid4().hex[:12]; chs = b.get("chapters") or []
+            md = b.get("metadata") or {}
+            mdurl = next((v for v in md.values() if isinstance(v, str) and URL_RE.match(v)), None)
+            for c in chs:
+                src = c.get("sourceUrl") or c.get("source") or c.get("url")
+                if not src:
+                    m = URL_RE.search((c.get("text") or "") + " " + (c.get("title") or ""))
+                    src = m.group(0) if m else mdurl
+                log(f"CHAPTER {c.get('title', '')} | {src or '-'}")
+            JOBS[jid] = dict(id=jid, title=b.get("title"), chunks=max(1, len(chs)), createdAt=now(), metadata=md or None)
+            return self.send(202, dict(id=jid, status="succeeded", createdAt=JOBS[jid]["createdAt"]))
+        if p == "/v1/jobs/estimate":
+            chs = b.get("chapters") or []
+            chars = sum(len(c.get("text") or "") for c in chs) + len(b.get("text") or "")
+            return self.send(200, dict(engine="fake", format=b.get("format") or "mp3", engineConfigured=True,
+                                       estimateUsd=0, fullEstimateUsd=0, chunksTotal=max(1, len(chs)), chunksCached=0,
+                                       characters=chars, estimatedDurationSeconds=DURATION, chapters=[],
+                                       budget=dict(allowed=True)))
+        if p == "/v1/audio/speech": return self.send(200, MP3, "audio/mpeg")
+        m = re.fullmatch(r"/v1/jobs/([^/]+)/(cancel|retry)", p)
+        if m and m.group(1) in JOBS: return self.send(200, job_json(JOBS[m.group(1)]))
+        self.send(404, {"error": "not found"})
+
+if __name__ == "__main__":
+    ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8090)
+    ap.add_argument("--log"); a = ap.parse_args(); LOGF = a.log
+    ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
