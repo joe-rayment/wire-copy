@@ -107,8 +107,8 @@ html, body {
   letter-spacing: -0.015em;
   line-height: 1;
   white-space: nowrap;
-  text-shadow: 0 0 10px rgba(0, 215, 0, 0.55), 0 0 28px rgba(0, 215, 0, 0.3),
-               0 0 56px rgba(0, 215, 0, 0.14);
+  text-shadow: 0 0 10px rgba(var(--tr-glow-rgb), 0.55), 0 0 28px rgba(var(--tr-glow-rgb), 0.3),
+               0 0 56px rgba(var(--tr-glow-rgb), 0.14);
   animation: wc-shimmer 3.6s ease-in-out infinite;
 }
 #cursor-block {
@@ -118,7 +118,7 @@ html, body {
   height: clamp(36px, 7.2vw, 56px);
   margin-left: 14px;
   background: var(--tr-green);
-  box-shadow: 0 0 16px rgba(0, 215, 0, 0.65);
+  box-shadow: 0 0 16px rgba(var(--tr-glow-rgb), 0.65);
   border-radius: 2px;
   animation: wc-blink 1.05s infinite;
 }
@@ -234,7 +234,7 @@ html, body {
   bottom: 0;
   width: 4px;
   background: var(--tr-green);
-  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
+  box-shadow: 0 0 10px rgba(var(--tr-glow-rgb), 0.5);
 }
 
 .card-title-row {

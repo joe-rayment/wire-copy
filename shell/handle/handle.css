@@ -35,7 +35,7 @@ html, body {
 .wc-rail-stroke {
   position: absolute;
   background: var(--tr-green);
-  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
+  box-shadow: 0 0 10px rgba(var(--tr-glow-rgb), 0.5);
 }
 
 /* The label. Centred along the rail in BOTH orientations, so the swing carries it on
@@ -75,6 +75,6 @@ body[data-orient="vertical"] #label { transform: translate(-50%, -50%) rotate(90
 
 /* Pointer feedback: the bloom lifts on hover and settles on press. No motion, and
    no colour change that could be mistaken for the drawer already moving. */
-body:hover #stroke { box-shadow: 0 0 14px rgba(0, 215, 0, 0.85); }
+body:hover #stroke { box-shadow: 0 0 14px rgba(var(--tr-glow-rgb), 0.85); }
 body:hover #label { color: var(--tr-pink); }
-body:active #stroke { box-shadow: 0 0 6px rgba(0, 215, 0, 0.55); }
+body:active #stroke { box-shadow: 0 0 6px rgba(var(--tr-glow-rgb), 0.55); }

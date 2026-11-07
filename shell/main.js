@@ -100,6 +100,7 @@ const state = {
   termView: null,
   pageView: null,     // the visible "lens" pane
   launcherView: null, // display-only launcher pane (workspace-wak1s) — never focused, mirrors the TUI launcher screen
+  uiMode: { mode: 'normal', modeVariant: 'amber' }, // last uiMode from the TUI (routine colour mode); replayed to late-loading views
   launcherMsg: null,  // last launcherState params from the TUI (visibility + opaque state), forwarded verbatim
   linkView: null,     // display-only link-tree pane (workspace-vingi) — same doctrine, tracks the terminal region
   linkTreeMsg: null,  // last linkTreeState params from the TUI, forwarded verbatim
@@ -314,6 +315,24 @@ function lensHasPage () {
 // control that silently does nothing.
 function handleActionable () {
   return state.handleReady && lensHasPage() && !(state.launcherMsg && state.launcherMsg.visible)
+}
+
+// Routine colour mode (workspace-wyvga.2): push the cached uiMode into the terminal
+// (xterm foreground) and the overlay / handle panes (data-mode / data-variant on <html>,
+// which tokens.css reacts to). The launcher / link-tree panes recolour from their own
+// payload's mode/modeVariant. Safe to call at any time; views still loading are skipped
+// and get it from their did-finish-load.
+function applyUiMode (only) {
+  const m = state.uiMode.mode === 'routine' ? 'routine' : 'normal'
+  const v = state.uiMode.modeVariant === 'cyan' ? 'cyan' : 'amber'
+  const run = (view, js) => {
+    if (!view || view.webContents.isDestroyed() || view.webContents.isLoading()) return
+    view.webContents.executeJavaScript(js).catch(() => {})
+  }
+  const set = `document.documentElement.dataset.mode=${JSON.stringify(m)};document.documentElement.dataset.variant=${JSON.stringify(v)}`
+  if (!only || only === 'term') run(state.termView, `window.__uiMode&&window.__uiMode(${JSON.stringify(m)},${JSON.stringify(v)})`)
+  if (!only || only === 'overlay') run(state.overlayView, set)
+  if (!only || only === 'handle') run(state.handleView, set)
 }
 
 function applyHandleVisibility () {
@@ -852,6 +871,7 @@ function attachFocusDoctrine (pageView) {
   wc.on('focus', () => setTimeout(() => { if (state.mode === 'reader') focusTerm() }, 30))
   const refocus = () => { if (state.mode === 'reader') focusTerm() }
   wc.on('did-finish-load', refocus)
+  wc.on('did-finish-load', () => applyUiMode('term'))
   wc.on('did-navigate', refocus)
   wc.on('did-frame-navigate', refocus)
   wc.on('before-input-event', (e, input) => {
@@ -1098,6 +1118,7 @@ app.whenReady().then(() => {
     e.preventDefault()
     forwardToTerm(input)
   })
+  state.overlayView.webContents.on('did-finish-load', () => applyUiMode('overlay'))
   state.overlayView.webContents.on('focus', () => setTimeout(() => focusTerm(), 30))
   // Launcher pane display-only doctrine (workspace-wak1s): identical treatment to the
   // overlay — it is NEVER .focus()'d; any stray key that lands on it is forwarded to the
@@ -1140,6 +1161,7 @@ app.whenReady().then(() => {
     if (state.handleView.webContents.isDestroyed()) return
     state.handleView.webContents.send('wch:state',
       { orient: state.handleOrient, action: railAction(state.revealed), key: RAIL_KEY })
+    applyUiMode('handle')
     state.handleReady = true
     applyHandleVisibility()
   })
@@ -1197,6 +1219,13 @@ app.whenReady().then(() => {
         if (state.launcherView && !state.launcherView.webContents.isDestroyed()) {
           state.launcherView.webContents.send('wc:launcher', p)
         }
+        return {}
+      },
+      // Routine colour mode (workspace-wyvga.2): {mode:'normal'|'routine', modeVariant:'amber'|'cyan'}.
+      // Cached so a view that (re)loads later is coloured on load.
+      uiMode: p => {
+        state.uiMode = { mode: p.mode === 'routine' ? 'routine' : 'normal', modeVariant: p.modeVariant === 'cyan' ? 'cyan' : 'amber' }
+        applyUiMode()
         return {}
       },
       // Link-tree pane state (workspace-vingi): same contract as launcherState —

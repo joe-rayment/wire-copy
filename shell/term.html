@@ -195,6 +195,15 @@
   }, true)
 
   // Gate/debug hooks (read-only introspection of the pane).
+  // Routine colour mode (workspace-wyvga.2): foreground only. Background, cursor and the
+  // ANSI 0-15 table stay as built; the TUI emits explicit 256-colour codes for everything else.
+  window.__uiMode = (mode, variant) => {
+    const fg = mode !== 'routine' ? '#00d700' : (variant === 'cyan' ? '#00d7ff' : '#ffaf00')
+    term.options.theme = { ...term.options.theme, foreground: fg }
+    document.documentElement.dataset.mode = mode === 'routine' ? 'routine' : 'normal'
+    document.documentElement.dataset.variant = variant === 'cyan' ? 'cyan' : 'amber'
+  }
+  window.__termFg = () => term.options.theme.foreground
   window.__dims = () => ({ cols: term.cols, rows: term.rows })
   window.__font = () => term.options.fontSize
   window.__termText = () => {

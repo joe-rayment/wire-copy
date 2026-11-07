@@ -314,12 +314,16 @@
     let glow = 0
     let lit = 0
     let bandGlow = 0
+    const routine = document.documentElement.dataset.mode === 'routine'
     for (let i = 0; i < d.length; i += 4) {
       const r = d[i]
       const g = d[i + 1]
       const b = d[i + 2]
       if (g > 24) lit++
-      if (r < 40 && b < 40 && g >= 30 && g <= 170) {
+      // Colour-agnostic in routine mode (amber/cyan glow): one channel near zero, the rest
+      // partway up. Normal mode keeps the exact green test.
+      if (routine ? (Math.min(r, g, b) < 40 && Math.max(r, g, b) >= 30 && Math.max(r, g, b) <= 170)
+                  : (r < 40 && b < 40 && g >= 30 && g <= 170)) {
         glow++
         if ((i / 4 / c.width) < bandRows) bandGlow++
       }

@@ -20,6 +20,8 @@
   --tr-success: #87ff5f; /* ANSI 119 · Completion / success                  */
   --tr-amber:   #ffaf00; /* ANSI 214 · Warnings, active progress             */
   --tr-red:     #ff5f5f; /* ANSI 203 · Errors                                */
+  --tr-routine: #ffaf00; /* Always-on routine marker (amber; cyan under data-variant=cyan) */
+  --tr-glow-rgb: 0, 215, 0; /* CRT glow = primary colour as r,g,b (follows routine mode) */
 
   /* ── Backgrounds ────────────────────────────────────────────────────── */
   --tr-bg:      #0a0a0a; /*          · Page / terminal background            */
@@ -40,6 +42,27 @@
   /* ── Typography ─────────────────────────────────────────────────────── */
   /* Bundled JetBrains Mono leads the stack — no runtime network fetches.  */
   --tr-font-mono: 'JetBrains Mono', 'DejaVu Sans Mono', ui-monospace, monospace;
+}
+
+/* Routine colour mode (S3): set on <html> by the panes / shell (data-mode, data-variant).
+   Only the green family is overridden; pink, cyan accents, status colours, bg are untouched.
+   The --tr-fg-* / --tr-border aliases are var() references, so they follow automatically. */
+[data-variant="cyan"] { --tr-routine: #00d7ff; }
+[data-mode="routine"] {
+  --tr-green:  #ffaf00;
+  --tr-med:    #d78700;
+  --tr-muted:  #af875f;
+  --tr-dim:    #875f00;
+  --tr-sel-bg: #875f00;
+  --tr-glow-rgb: 255, 175, 0;
+}
+[data-mode="routine"][data-variant="cyan"] {
+  --tr-green:  #00d7ff;
+  --tr-med:    #00afd7;
+  --tr-muted:  #5f8787;
+  --tr-dim:    #005f87;
+  --tr-sel-bg: #005f87;
+  --tr-glow-rgb: 0, 215, 255;
 }
 
 @font-face {

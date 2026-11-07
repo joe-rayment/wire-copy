@@ -90,8 +90,8 @@ html, body {
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-  text-shadow: 0 0 9px rgba(0, 215, 0, 0.5), 0 0 24px rgba(0, 215, 0, 0.26),
-               0 0 48px rgba(0, 215, 0, 0.12);
+  text-shadow: 0 0 9px rgba(var(--tr-glow-rgb), 0.5), 0 0 24px rgba(var(--tr-glow-rgb), 0.26),
+               0 0 48px rgba(var(--tr-glow-rgb), 0.12);
 }
 #metaline {
   margin-top: 12px;
@@ -237,7 +237,7 @@ html, body {
   bottom: 0;
   width: 4px;
   background: var(--tr-green);
-  box-shadow: 0 0 10px rgba(0, 215, 0, 0.5);
+  box-shadow: 0 0 10px rgba(var(--tr-glow-rgb), 0.5);
 }
 
 .card-title {
