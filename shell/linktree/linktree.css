@@ -342,3 +342,27 @@ html, body {
   background: var(--tr-green);
   color: var(--tr-bg-pure);
 }
+
+/* Routine pick mode (workspace-wyvga.6): included headers emphasised, chip as a
+   pill inline on the header line so the header height is unchanged. */
+.section .s-chip {
+  font-size: 0.86em;
+  letter-spacing: 0.04em;
+  line-height: 1;
+  padding: 2px 8px;
+  border-radius: 999px;
+  color: var(--tr-muted);
+  border: 1px solid var(--tr-dim);
+}
+.section.included .s-name {
+  color: var(--tr-routine, var(--tr-green));
+  font-size: 1.08em;
+  font-weight: 800;
+}
+.section.included .s-chip {
+  color: #000;
+  background: var(--tr-routine, var(--tr-green));
+  border-color: var(--tr-routine, var(--tr-green));
+  font-weight: 700;
+}
+.section.included.selected .s-name { color: var(--tr-white); }
