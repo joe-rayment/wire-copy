@@ -68,16 +68,7 @@ public sealed class ScheduleRecipe
 
         ArgumentNullException.ThrowIfNull(cadence);
         var stepList = (steps ?? throw new ArgumentNullException(nameof(steps))).ToList();
-        if (stepList.Count == 0)
-        {
-            throw new ArgumentException("A recipe must have at least one step", nameof(steps));
-        }
-
-        if (!stepList.Any(s => s.Required))
-        {
-            throw new ArgumentException(
-                "A recipe must have at least one Required step so the run has a content guarantee", nameof(steps));
-        }
+        // Routines: zero steps and no Required minimum are allowed; a zero-step run is Skipped.
 
         return new ScheduleRecipe(
             Guid.NewGuid(),

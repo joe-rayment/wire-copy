@@ -87,6 +87,18 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
         try
         {
+            if (recipe.Steps.Count == 0)
+            {
+                // A zero-step routine never generates audio (S4): recorded Skipped.
+                run.Finish(
+                    ScheduledRunStatus.Skipped,
+                    itemCount: 0,
+                    errorClass: "NothingToCollect",
+                    errorMessage: RoutineText.NothingToCollect);
+                await PersistAsync(recipe, run, RunStatus.Skipped).ConfigureAwait(false);
+                return;
+            }
+
             var assembled = new List<(string Url, string Title)>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var outcomes = new List<RunStepOutcome>();
