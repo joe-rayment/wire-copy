@@ -624,6 +624,8 @@ internal class LauncherRenderer
         {
             return new LauncherViewState
             {
+                Mode = options.UiMode,
+                ModeVariant = options.UiModeVariant,
                 Slots = [],
                 SelectedIndex = -1,
                 Columns = columns,
@@ -677,6 +679,8 @@ internal class LauncherRenderer
 
         return new LauncherViewState
         {
+            Mode = options.UiMode,
+            ModeVariant = options.UiModeVariant,
             Slots = slots,
             SelectedIndex = selectedIndex >= 0 ? selectedIndex - offset : -1,
             Columns = columns,

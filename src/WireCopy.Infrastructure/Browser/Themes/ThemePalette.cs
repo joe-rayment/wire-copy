@@ -93,6 +93,11 @@ public record ThemePalette
     public ThemeColor? ReaderCursorFg { get; init; }
 
     /// <summary>
+    /// Accent for routine mode (S3). Falls back to 256-colour 214 when not set.
+    /// </summary>
+    public ThemeColor? RoutineAccentFg { get; init; }
+
+    /// <summary>
     /// Gets the accent color, falling back to PromptFg.
     /// </summary>
     public ThemeColor GetAccentFg() => AccentFg ?? PromptFg;
@@ -121,6 +126,11 @@ public record ThemePalette
     /// Gets the warning color, falling back to ErrorFg.
     /// </summary>
     public ThemeColor GetWarningFg() => WarningFg ?? ErrorFg;
+
+    /// <summary>
+    /// Gets the reader cursor color, falling back to SelectedItemFg.
+    /// </summary>
+    public ThemeColor GetRoutineAccentFg() => RoutineAccentFg ?? new ThemeColor(ConsoleColor.Yellow, 214);
 
     /// <summary>
     /// Gets the reader cursor color, falling back to SelectedItemFg.

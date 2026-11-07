@@ -1173,6 +1173,8 @@ internal class LinkTreeRenderer
         var progress = options.CacheProgress;
         return new LinkTreeViewState
         {
+            Mode = options.UiMode,
+            ModeVariant = options.UiModeVariant,
             Title = page.Metadata.Title,
             Domain = domain,
             LinkCount = linkCount,

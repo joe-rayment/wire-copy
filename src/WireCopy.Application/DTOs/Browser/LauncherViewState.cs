@@ -15,6 +15,24 @@ namespace WireCopy.Application.DTOs.Browser;
 /// </summary>
 public sealed record LauncherViewState
 {
+    /// <summary>"normal" | "routine" (S6).</summary>
+    public string Mode { get; init; } = "normal";
+
+    /// <summary>"amber" | "cyan" (S6): cyan when the saved base theme is Amber.</summary>
+    public string ModeVariant { get; init; } = "amber";
+
+    /// <summary>"launcher" | "routines".</summary>
+    public string Screen { get; init; } = "launcher";
+
+    /// <summary>Header eyebrow; null = pane shows "LAUNCHER".</summary>
+    public string? Eyebrow { get; init; }
+
+    /// <summary>Header title; null = pane shows "Wire Copy".</summary>
+    public string? Title { get; init; }
+
+    /// <summary>Replaces the key-hint footer when set.</summary>
+    public string? FooterHint { get; init; }
+
     /// <summary>The VISIBLE window only (≤6), in grid order.</summary>
     public required IReadOnlyList<LauncherSlot> Slots { get; init; }
 
@@ -85,6 +103,15 @@ public sealed record LauncherSlot
 
     /// <summary>Digit-jump badge ("1".."9") for the first nine slots; null past slot 9 and for empty tiles.</summary>
     public string? Badge { get; init; }
+
+    /// <summary>"top" | "bottom" | null; a consecutive top+bottom pair shares one grid cell.</summary>
+    public string? Half { get; init; }
+
+    /// <summary>Third line on routine cards; null otherwise.</summary>
+    public string? Detail { get; init; }
+
+    /// <summary>True when a routine card is dimmed.</summary>
+    public bool Disabled { get; init; }
 }
 
 /// <summary>The URL bar's in-progress typed buffer and cursor position.</summary>

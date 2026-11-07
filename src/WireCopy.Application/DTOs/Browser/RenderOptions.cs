@@ -7,6 +7,12 @@ namespace WireCopy.Application.DTOs.Browser;
 /// </summary>
 public record RenderOptions
 {
+    /// <summary>UI mode for the shell panes: "normal" | "routine" (S6).</summary>
+    public string UiMode { get; init; } = "normal";
+
+    /// <summary>Pane colour variant: "amber" | "cyan" (S6).</summary>
+    public string UiModeVariant { get; init; } = "amber";
+
     /// <summary>
     /// Width of the terminal window.
     /// </summary>

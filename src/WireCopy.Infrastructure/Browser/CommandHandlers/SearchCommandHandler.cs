@@ -372,6 +372,23 @@ internal static class SearchCommandHandler
                 await ArticleLayoutResetHandler.HandleResetAsync(ctx, options, ct).ConfigureAwait(false);
                 return true;
 
+            case "routine-mode":
+                // workspace-wyvga.9: hidden check command, kept permanently. Only flips state.
+                if (parts.Length > 1 && parts[1].Trim().ToLowerInvariant() is "on" or "off")
+                {
+                    using var modeScope = ctx.ScopeFactory.CreateScope();
+                    var modeService = modeScope.ServiceProvider.GetRequiredService<IUiModeService>();
+                    modeService.Set(parts[1].Trim().Equals("on", StringComparison.OrdinalIgnoreCase)
+                        ? UiMode.Routine
+                        : UiMode.Normal);
+                }
+                else
+                {
+                    ctx.NavigationService.SetStatusMessage("Usage: :routine-mode on|off");
+                }
+
+                return true;
+
             case "schedules" or "schedule":
                 // workspace-frpl.14 (B12a): the recurring-recipe → auto-podcast screen.
                 await ScheduleCommandHandler.HandleSchedulesAsync(ctx, options, ct).ConfigureAwait(false);

@@ -64,6 +64,22 @@ public partial class BrowserOrchestrator
         var preloadProgress = needPreloadProgress ? _preloadService.GetProgress() : null;
         var requiredAction = preloadProgress?.BlockedAction;
 
+        var uiMode = "normal";
+        var uiModeVariant = _themeProvider.CurrentTheme == Domain.Enums.Browser.ThemeName.Amber ? "cyan" : "amber";
+        try
+        {
+            using var modeScope = _scopeFactory.CreateScope();
+            var modeService = modeScope.ServiceProvider.GetService<IUiModeService>();
+            if (modeService?.Current == UiMode.Routine)
+            {
+                uiMode = "routine";
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // Best-effort: stay in normal mode.
+        }
+
         return new RenderOptions
         {
             TerminalWidth = renderWidth,
@@ -93,6 +109,8 @@ public partial class BrowserOrchestrator
             BrowserDocked = browserDocked,
             ContentLeftOffset = contentLeftOffset,
             ShellPane = _shellChannel is not null && _shellChannel.IsConnected,
+            UiMode = uiMode,
+            UiModeVariant = uiModeVariant,
         };
     }
 

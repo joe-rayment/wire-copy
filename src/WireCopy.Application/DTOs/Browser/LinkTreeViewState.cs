@@ -15,6 +15,18 @@ namespace WireCopy.Application.DTOs.Browser;
 /// </summary>
 public sealed record LinkTreeViewState
 {
+    /// <summary>"normal" | "routine" (S6).</summary>
+    public string Mode { get; init; } = "normal";
+
+    /// <summary>"amber" | "cyan" (S6): cyan when the saved base theme is Amber.</summary>
+    public string ModeVariant { get; init; } = "amber";
+
+    /// <summary>Header eyebrow; null = pane shows "LINK TREE".</summary>
+    public string? Eyebrow { get; init; }
+
+    /// <summary>Replaces the key-hint footer when set.</summary>
+    public string? FooterHint { get; init; }
+
     /// <summary>Page title for the CRT-glow header.</summary>
     public required string Title { get; init; }
 
@@ -96,6 +108,15 @@ public sealed record LinkTreeItem
 
     /// <summary>True when a story is in the multi-select set (✓ on the card).</summary>
     public bool Toggled { get; init; }
+
+    /// <summary>Routine inclusion chip on a section header; null otherwise.</summary>
+    public string? RoutineChip { get; init; }
+
+    /// <summary>True when the section/story is included in the routine being picked.</summary>
+    public bool RoutineIncluded { get; init; }
+
+    /// <summary>Slot badge on a story in pick mode; null otherwise.</summary>
+    public string? SlotBadge { get; init; }
 }
 
 /// <summary>Footer cache meter: how many eligible links are pre-loaded.</summary>

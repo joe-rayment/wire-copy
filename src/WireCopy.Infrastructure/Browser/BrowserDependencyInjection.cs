@@ -230,6 +230,7 @@ public static class BrowserDependencyInjection
 
         // Register theme provider
         services.AddSingleton<IThemeProvider, ThemeProvider>();
+        services.AddSingleton<IUiModeService, UiModeService>();
 
         // Register UI components
         services.AddSingleton<IPageRenderer, TerminalPageRenderer>();
