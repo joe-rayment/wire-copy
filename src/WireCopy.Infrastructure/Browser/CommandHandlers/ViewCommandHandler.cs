@@ -356,6 +356,7 @@ internal static class ViewCommandHandler
 
         // Render the popup overlay (paints over current content)
         renderPopup(palette, options);
+        ctx.Renderer.LeaveHtmlPanes(); // workspace-wyvga.8: the HTML launcher / link-tree pane would cover the popup
 
         // Wait for any keypress to dismiss (re-render on resize)
         while (!ct.IsCancellationRequested)
@@ -367,6 +368,7 @@ internal static class ViewCommandHandler
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 options = ctx.GetCurrentRenderOptions();
                 renderPopup(palette, options);
+                ctx.Renderer.LeaveHtmlPanes();
                 continue;
             }
 

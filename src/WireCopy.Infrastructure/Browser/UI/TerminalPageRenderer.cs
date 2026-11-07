@@ -69,6 +69,7 @@ public class TerminalPageRenderer : IPageRenderer
     private PromptLineState? _promptLine;
     private LauncherViewState? _lastLauncherState;
     private LinkTreeViewState? _lastLinkTreeState;
+    private bool _launcherHiddenForOverlay; // workspace-wyvga.8: launcher pane hidden because a terminal card is up over it
     private bool _linkTreeHiddenForOverlay; // workspace-olkxx: the pane was hidden BECAUSE an overlay card is up
 
     public TerminalPageRenderer(IThemeProvider themeProvider, ILogger<TerminalPageRenderer> logger)
@@ -132,6 +133,16 @@ public class TerminalPageRenderer : IPageRenderer
         lock (_promptLock)
         {
             OverlayActive = false;
+            if (_launcherHiddenForOverlay)
+            {
+                _launcherHiddenForOverlay = false;
+                if (_shellChannel.IsConnected && !_launcherStateVisible && _lastLauncherState is { } launcherState)
+                {
+                    _ = _shellChannel.SendLauncherStateAsync(true, launcherState with { PromptLine = _promptLine });
+                    _launcherStateVisible = true;
+                }
+            }
+
             if (!_linkTreeHiddenForOverlay)
             {
                 return;
@@ -610,11 +621,24 @@ public class TerminalPageRenderer : IPageRenderer
         // and forget — the shell round-trip must never block or throw into the
         // render path (it fails soft on a lost channel). No-op in terminal mode
         // (NullShellChannel.IsConnected is false).
-        if (_shellChannel.IsConnected)
+        if (_shellChannel.IsConnected && OverlayActive)
+        {
+            // workspace-wyvga.8: a terminal-drawn card is up over the launcher; the HTML
+            // launcher pane would cover it. Keep the pane hidden (and its last state)
+            // until RestorePaneAfterOverlay brings it back with the same selection.
+            lock (_promptLock)
+            {
+                _launcherHiddenForOverlay = true;
+            }
+
+            LeaveLauncherIfShown();
+        }
+        else if (_shellChannel.IsConnected)
         {
             var state = LauncherRenderer.BuildViewState(bookmarks, selectedIndex, options);
             lock (_promptLock)
             {
+                _launcherHiddenForOverlay = false;
                 _lastLauncherState = state;
                 _ = _shellChannel.SendLauncherStateAsync(true, state with { PromptLine = _promptLine });
                 _launcherStateVisible = true;
