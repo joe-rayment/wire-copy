@@ -1,7 +1,9 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
+using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.ValueObjects.Browser;
 using static WireCopy.Infrastructure.Browser.UI.KeyRegistry;
@@ -115,6 +117,19 @@ internal static class ViewCommandHandler
                 : $"Theme: {ctx.ThemeProvider.CurrentTheme}",
             new[] { new StatusKeyHint(KeyFor(CommandType.CycleTheme), "next") });
         ctx.LineCacheManager.InvalidateLineCache();
+        if (routineShowing)
+        {
+            // The routine variant follows the saved base (cyan when the base is Amber), so a
+            // Ctrl+P in routine mode can flip it: tell the shell (xterm, overlay, handle) too.
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var shell = scope.ServiceProvider.GetService<IShellChannel>();
+            if (shell is not null)
+            {
+                var variant = ctx.ThemeProvider.CurrentTheme == Domain.Enums.Browser.ThemeName.RoutineCyan ? "cyan" : "amber";
+                await shell.SendUiModeAsync("routine", variant, ct).ConfigureAwait(false);
+            }
+        }
+
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
