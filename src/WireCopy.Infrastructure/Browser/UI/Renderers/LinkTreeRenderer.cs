@@ -1243,11 +1243,25 @@ internal class LinkTreeRenderer
                 : null,
             Docked = options.BrowserDocked,
             Eyebrow = options.RoutinePick?.Eyebrow,
+            Loading = page.IsSkeleton,
+            LoadingStage = page.IsSkeleton ? LoadStageOf(context.ActiveActivity) : null,
 
             // The pane covers the terminal's status bar, so a transient status ("Added to Morning brief — …")
             // shows in the pane footer instead of being drawn where nobody can see it.
-            FooterHint = options.RoutinePick?.FooterHint ?? context.ActiveAnnouncement?.Text,
+            FooterHint = options.RoutinePick?.FooterHint ?? (page.IsSkeleton ? null : context.ActiveAnnouncement?.Text),
         };
+    }
+
+    /// <summary>The load activity's stage copy without its trailing "(Ns)" counter (the pane runs its own timer).</summary>
+    private static string? LoadStageOf(ActivityIndicator? activity)
+    {
+        if (activity is not { Source: "load" })
+        {
+            return null;
+        }
+
+        var text = System.Text.RegularExpressions.Regex.Replace(activity.Text, @"\s*\(\d+s\)\s*$", string.Empty);
+        return string.IsNullOrWhiteSpace(text) ? null : text;
     }
 #pragma warning restore SA1202
 

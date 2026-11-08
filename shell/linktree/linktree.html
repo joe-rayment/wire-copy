@@ -67,6 +67,11 @@ function paintChrome () {
 
 function paintHeader (state) {
   $('pagetitle').textContent = state.title || ''
+  if (state.loading) {
+    $('metaline').innerHTML = `<span class="m-domain">${esc(state.domain || '')}</span><span class="m-sep"> · </span><span class="m-muted">loading…</span>`
+    $('header-right').innerHTML = `<div class="hr-shown">loading…</div>`
+    return
+  }
   const meta = []
   if (state.domain) meta.push(`<span class="m-domain">${esc(state.domain)}</span>`)
   meta.push(`<span class="m-med">${esc(state.linkCount ?? 0)} links</span>`)
@@ -133,7 +138,43 @@ function itemHtml (item, selected) {
   )
 }
 
+// Loading block (skeleton page): shown instead of an empty grid. The elapsed counter runs on
+// the pane's OWN timer: started when a load first appears for a given title/domain, reset on
+// a different load, stopped as soon as a non-loading state paints. Display-only.
+let loadKey = null
+let loadStart = 0
+let loadTimer = null
+
+function tickLoading () {
+  const el = $('load-elapsed')
+  if (el) el.textContent = Math.floor((Date.now() - loadStart) / 1000) + 's'
+}
+
+function stopLoading () {
+  loadKey = null
+  if (loadTimer) { clearInterval(loadTimer); loadTimer = null }
+}
+
+function paintLoading (state) {
+  const key = (state.domain || '') + '|' + (state.title || '')
+  if (key !== loadKey) { loadKey = key; loadStart = Date.now() }
+  if (!loadTimer) loadTimer = setInterval(tickLoading, 250)
+  const grid = $('grid')
+  grid.style.setProperty('--cols', '1')
+  grid.style.gridTemplateRows = 'minmax(0, 1fr)'
+  grid.innerHTML =
+    `<div id="loading"><div class="ld-box">` +
+      `<div class="ld-line">Loading <span class="ld-host">${esc(state.domain || state.title || '')}</span><span class="ld-dots"><span>.</span><span>.</span><span>.</span></span></div>` +
+      `<div class="ld-bar"><div class="ld-sweep"></div></div>` +
+      `<div class="ld-stage">${esc(state.loadingStage || 'Fetching page…')}</div>` +
+      `<div class="ld-elapsed"><span id="load-elapsed">0s</span> elapsed</div>` +
+    `</div></div>`
+  tickLoading()
+}
+
 function paintGrid (state) {
+  if (state.loading) { paintLoading(state); return }
+  stopLoading()
   // EXACTLY state.columns tracks — the same count the TUI uses for arrow-key
   // movement, so keys always match the screen (launcher-pane precedent).
   const cols = state.columns || 2
@@ -234,6 +275,8 @@ function paintPromptLine (state) {
 window.__renderLinkTree = function (msg) {
   lastMsg = msg
   const state = (msg && msg.state) || {}
+  // A loading push that already carries items is not a loading screen (nothing to replace).
+  if (state.loading && (state.items || []).length) state.loading = false
   // workspace-wyvga.9: mode/variant before painting; eyebrow falls back to "Link Tree".
   document.documentElement.dataset.mode = state.mode || 'normal'
   document.documentElement.dataset.variant = state.modeVariant || 'amber'
@@ -258,6 +301,9 @@ window.__linkTreeReady = false
 
 // ── Demo fixture (?demo=1) for development — mirrors the design's NYT sample. ──
 function demoMsg () {
+  if (params.get('demo') === 'loading') {
+    return { visible: true, state: { title: 'www.nytimes.com', domain: 'www.nytimes.com', columns: 2, items: [], loading: true, loadingStage: 'Loading via browser…', selectedIndex: -1, docked: false } }
+  }
   const story = (t, m, ty) => ({ kind: 'story', title: t, meta: m, linkType: ty || 'content', toggled: false })
   return {
     visible: true,

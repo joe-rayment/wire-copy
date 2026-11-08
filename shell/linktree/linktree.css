@@ -391,3 +391,55 @@ html, body {
 .card.slotted .card-title,
 .card.slotted.selected .card-title { color: var(--tr-muted); }
 .card.slotted .card-title .c-slot { color: #000; }
+
+/* ── Loading block (skeleton page) ────────────────────────────────────────
+   Replaces the empty grid while a site is fetched. Phosphor style: glowing host line,
+   an indeterminate sweep bar, the stage and an elapsed counter on the pane's own timer. */
+#loading {
+  grid-column: 1 / -1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 0;
+}
+#loading .ld-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1.1em;
+  width: min(30em, 80%);
+  text-align: center;
+}
+#loading .ld-line {
+  font-size: 1.5em;
+  color: var(--tr-green);
+  text-shadow: 0 0 10px rgba(var(--tr-glow-rgb), 0.55);
+}
+#loading .ld-host { color: var(--tr-bright); }
+#loading .ld-dots span { animation: ld-blink 1.2s steps(1, end) infinite; }
+#loading .ld-dots span:nth-child(2) { animation-delay: 0.2s; }
+#loading .ld-dots span:nth-child(3) { animation-delay: 0.4s; }
+#loading .ld-bar {
+  position: relative;
+  width: 100%;
+  height: 0.5em;
+  border: 1px solid var(--tr-dim);
+  overflow: hidden;
+}
+#loading .ld-sweep {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 30%;
+  background: var(--tr-green);
+  box-shadow: 0 0 12px rgba(var(--tr-glow-rgb), 0.8);
+  animation: ld-sweep 1.4s ease-in-out infinite alternate;
+}
+#loading .ld-stage { color: var(--tr-med); }
+#loading .ld-elapsed { color: var(--tr-muted); }
+@keyframes ld-sweep { from { left: 0; } to { left: 70%; } }
+@keyframes ld-blink { 0%, 100% { opacity: 1; } 50% { opacity: 0.1; } }
+@media (prefers-reduced-motion: reduce) {
+  #loading .ld-sweep { animation: none; left: 0; width: 100%; opacity: 0.5; }
+  #loading .ld-dots span { animation: none; }
+}
