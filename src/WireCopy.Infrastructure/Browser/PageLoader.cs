@@ -711,7 +711,17 @@ public class PageLoader : IPageLoader
             using var heldLease = lease;
 
             _logger.LogDebug("Navigating to {Url}", request.Url);
-            await page.GotoAsync(request.Url, new PageGotoOptions { Timeout = request.TimeoutMs }).ConfigureAwait(false);
+
+            // DOMContentLoaded, NOT Playwright's default 'load': 'load' waits for every
+            // subresource, so one slow ad or tracker held the story list blank for up
+            // to the full 30s timeout while the page was already readable. The
+            // content check in WaitForPageLoadAsync is what decides the DOM is ready.
+            // Every other navigation here (lens, follow, preload) already does this.
+            await page.GotoAsync(request.Url, new PageGotoOptions
+            {
+                Timeout = request.TimeoutMs,
+                WaitUntil = WaitUntilState.DOMContentLoaded,
+            }).ConfigureAwait(false);
 
             // Wait for page to load
             await WaitForPageLoadAsync(page, request.TimeoutMs, cancellationToken).ConfigureAwait(false);

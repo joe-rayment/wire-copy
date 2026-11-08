@@ -16,8 +16,8 @@ const tag = argv.includes('--tag') ? argv[argv.indexOf('--tag') + 1] : 'load'
 if (!argv.includes('--no-build')) buildTui('Release')
 
 const env = new Env({
-  display: ':93',
-  cdpPort: 9313,
+  display: process.env.PROBE_DISPLAY || ':93',
+  cdpPort: Number(process.env.PROBE_CDP || 9313),
   screen: '1500x950x24',
   isolateData: !reuse,
   env: reuse ? { XDG_DATA_HOME: reuse, WIRECOPY_SHELL_USERDATA: path.join(reuse, '..', 'electron') } : {}
