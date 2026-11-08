@@ -12,6 +12,12 @@ namespace WireCopy.Infrastructure.Scheduling;
 /// </summary>
 public static class RoutineText
 {
+    /// <summary>Launcher footer hint while choosing a site to add to a routine.</summary>
+    public const string AddSiteFooter = "Enter: pick this site for the routine · Esc: back to the routine";
+
+    /// <summary>Status shown when Enter lands on the Reading List / Routines cell while adding a site.</summary>
+    public const string AddSiteNotASite = "That's not a site — pick a site tile or type a web address.";
+
     public const string HomeStub = "Routines home isn't built yet";
     public const string EditorStub = "Routine editor isn't built yet";
     public const string PickStub = "Pick mode isn't built yet";
@@ -243,12 +249,6 @@ public static class RoutineText
     public static string RemoveConfirm(string label) => $"Remove {label}? y / n";
 
     public static string Eyebrow(string name) => $"ROUTINE · {name}";
-
-    /// <summary>Launcher footer hint while choosing a site to add to a routine.</summary>
-    public const string AddSiteFooter = "Enter: pick this site for the routine · Esc: back to the routine";
-
-    /// <summary>Status shown when Enter lands on the Reading List / Routines cell while adding a site.</summary>
-    public const string AddSiteNotASite = "That's not a site — pick a site tile or type a web address.";
 
     private static string Slots(IEnumerable<int> positions) => string.Join(", ", positions.Select(p => $"#{p}"));
 

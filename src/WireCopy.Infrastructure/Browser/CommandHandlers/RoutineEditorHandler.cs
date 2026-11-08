@@ -135,7 +135,7 @@ internal static class RoutineEditorHandler
                 await EditFrequencyAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
                 break;
             case RoutineRowKind.AddSite:
-                await AddSiteAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
+                await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
                 break;
         }
     }
@@ -208,7 +208,7 @@ internal static class RoutineEditorHandler
     }
 
     private static async Task AddSiteAsync(
-        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ThemePalette palette, CancellationToken ct)
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
         var url = await RoutineSitePicker.PickAsync(ctx, recipe.Name, ct).ConfigureAwait(false);
         if (url is null)
@@ -217,16 +217,6 @@ internal static class RoutineEditorHandler
         }
 
         await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
-    }
-
-    private static string HostOf(string url)
-    {
-        if (!Uri.TryCreate(url, UriKind.Absolute, out var u))
-        {
-            return url;
-        }
-
-        return u.IsDefaultPort ? u.Host : $"{u.Host}:{u.Port}";
     }
 
     private static async Task RemoveAsync(
@@ -411,15 +401,6 @@ internal static class RoutineEditorHandler
         }
 
         await SaveAsync(ctx, Rebuild(recipe, input.Trim())).ConfigureAwait(false);
-    }
-
-    /// <summary>Inline text prompt (same placement as the Settings rows); null on Esc.</summary>
-    private static Task<string?> PromptAsync(
-        CommandContext ctx, RenderOptions options, FormFieldConfig field, ThemePalette palette, CancellationToken ct)
-    {
-        var startRow = Math.Max(1, (options.TerminalHeight / 2) - 3);
-        var fieldWidth = Math.Min(UI.OverlayViewport.Width - 6, 60);
-        return FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct);
     }
 
     /// <summary>The recipe with a new OutputCollectionName (no setter exists, so it is rehydrated; id, steps and run state carry over).</summary>

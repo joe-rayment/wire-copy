@@ -499,25 +499,6 @@ internal static class LauncherCommandHandler
             : LauncherSlotMap.FirstVirtual(bc, target);
     }
 
-    private static int PageInCells(int bc, int v, int cellStep)
-    {
-        var cell = Math.Clamp(LauncherSlotMap.CellOf(bc, v) + cellStep, 0, LauncherSlotMap.CellTotal(bc) - 1);
-        return LauncherSlotMap.FirstVirtual(bc, cell);
-    }
-
-    private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)
-    {
-        // Select the URL bar visually. Force the page scroll back to the top
-        // so the URL bar is in the viewport.
-        ctx.NavigationService.LauncherSelectedIndex = -1;
-        ctx.NavigationService.LauncherScrollOffset = 0;
-        var url = await PromptUrlAsync(ctx, options, ct, () => ctx.RenderCurrentPageAsync(options, ct), initialChar).ConfigureAwait(false);
-        if (url is not null)
-        {
-            await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
-        }
-    }
-
     /// <summary>
     /// Types a URL inside the launcher's URL bar and returns it normalised, or null when cancelled / empty /
     /// malformed (the reason is already on the status line and the launcher repainted). Shared by the real
@@ -580,6 +561,25 @@ internal static class LauncherCommandHandler
         }
 
         return url;
+    }
+
+    private static int PageInCells(int bc, int v, int cellStep)
+    {
+        var cell = Math.Clamp(LauncherSlotMap.CellOf(bc, v) + cellStep, 0, LauncherSlotMap.CellTotal(bc) - 1);
+        return LauncherSlotMap.FirstVirtual(bc, cell);
+    }
+
+    private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)
+    {
+        // Select the URL bar visually. Force the page scroll back to the top
+        // so the URL bar is in the viewport.
+        ctx.NavigationService.LauncherSelectedIndex = -1;
+        ctx.NavigationService.LauncherScrollOffset = 0;
+        var url = await PromptUrlAsync(ctx, options, ct, () => ctx.RenderCurrentPageAsync(options, ct), initialChar).ConfigureAwait(false);
+        if (url is not null)
+        {
+            await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
+        }
     }
 
     private static async Task HandleAddBookmark(CommandContext ctx, RenderOptions options, CancellationToken ct)

@@ -102,11 +102,15 @@ internal static class RoutineSitePicker
     {
         var opts = Options(ctx, routineName);
         return await LauncherCommandHandler.PromptUrlAsync(
-            ctx, opts, ct, () =>
+            ctx,
+            opts,
+            ct,
+            () =>
             {
                 Paint(ctx, Options(ctx, routineName), -1, 0);
                 return Task.CompletedTask;
-            }, seed).ConfigureAwait(false);
+            },
+            seed).ConfigureAwait(false);
     }
 
     private static RenderOptions Options(CommandContext ctx, string routineName) =>
