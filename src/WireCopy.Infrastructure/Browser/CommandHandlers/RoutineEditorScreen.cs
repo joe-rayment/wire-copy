@@ -172,7 +172,7 @@ internal static class RoutineEditorScreen
         var gutter = $"{palette.GetRoutineAccentFg().AnsiFg}▌{Reset}";
         helpers.WriteLine($"  {gutter} {palette.GetMutedFg().AnsiFg}•{Reset} {palette.PrimaryText.AnsiFg}{label}{Reset}{palette.GetDimFg().AnsiFg}{edit.Prefix}{Reset}");
         edit.InputCol = 2 + 1 + 1 + 2 + labelCol + edit.Prefix.Length;
-        var color = edit.Error is null ? palette.GetDimFg().AnsiFg : palette.GetWarningFg().AnsiFg;
+        var color = edit.Error is null ? palette.GetDimFg().AnsiFg : palette.ErrorFg.AnsiFg;
         helpers.WriteLine($"{new string(' ', 6 + labelCol)}{color}{edit.Error ?? edit.Hint}{Reset}");
     }
 
