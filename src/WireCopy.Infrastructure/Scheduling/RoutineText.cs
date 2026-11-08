@@ -25,6 +25,12 @@ public static class RoutineText
     public const string CannotPlace = "Can't place this story — the routine wouldn't find it in its section";
     public const string NameEmpty = "Name can't be empty";
     public const string NameTaken = "A routine with that name already exists";
+    public const string NameEditHint = "type a name · Enter done · Esc keep";
+    public const string PodcastEditHint = "type the podcast name · Enter done · Esc keep";
+    public const string TimeEditHint = "type a time like 07:00 · Enter done · Esc keep";
+    public const string PodcastEmpty = "Podcast name can't be empty";
+    public const string TimeInvalid = "Enter a time like 07:00";
+    public const string DefaultRoutineName = "New routine";
     public const string HomeFooter = "[Enter]:open  [n]:new  [r]:run now  [Space]:on/off  [d]:delete  [Esc]:back";
     public const string EditorFooter = "Enter edit · x remove · r run now · Esc back";
     public const string NewRoutineTitle = "+ New routine";
@@ -100,6 +106,21 @@ public static class RoutineText
             TakeMode.Slots => "● " + Slots(pick.Positions),
             _ => $"● all {sectionCount}",
         };
+    }
+
+    /// <summary>The default name for a freshly created routine: "New routine", then "New routine 2", "New routine 3", …</summary>
+    public static string UniqueDefaultName(IEnumerable<string> existing)
+    {
+        var taken = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
+        var n = 1;
+        var name = DefaultRoutineName;
+        while (taken.Contains(name))
+        {
+            n++;
+            name = $"{DefaultRoutineName} {n}";
+        }
+
+        return name;
     }
 
     public static string SlotBadge(int position, string sectionName) => $"#{position} · {sectionName}";

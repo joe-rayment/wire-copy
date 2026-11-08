@@ -86,7 +86,8 @@ internal static class RoutineEditorScreen
         string routineName,
         IReadOnlyList<RoutineRow> rows,
         int selected,
-        int offset)
+        int offset,
+        RoutineEditView? edit = null)
     {
         helpers.Clear();
         helpers.WriteLine();
@@ -100,7 +101,15 @@ internal static class RoutineEditorScreen
         for (var i = 0; i < rows.Count; i++)
         {
             var start = helpers.CapturedLineCount;
-            WriteRow(helpers, palette, width, rows[i], i == selected);
+            if (edit != null && rows[i].Kind == edit.Kind)
+            {
+                WriteEditRow(helpers, palette, rows[i], edit);
+            }
+            else
+            {
+                WriteRow(helpers, palette, width, rows[i], i == selected);
+            }
+
             if (i == selected)
             {
                 firstLine = start;
@@ -109,10 +118,12 @@ internal static class RoutineEditorScreen
         }
 
         var body = helpers.EndCapture();
+        var bodyTop = helpers.LinesWritten;
         var budget = Math.Max(1, terminalHeight - helpers.LinesWritten - 2);
         if (body.Count <= budget)
         {
             offset = 0;
+            SetEditPosition(edit, bodyTop, firstLine, offset, false);
             body.ForEach(l => helpers.WriteLine(l));
         }
         else
@@ -128,6 +139,7 @@ internal static class RoutineEditorScreen
                 offset = lastLine - window + 1;
             }
 
+            SetEditPosition(edit, bodyTop, firstLine, offset, true);
             var dim = palette.GetDimFg().AnsiFg;
             helpers.WriteLine(offset > 0 ? $"  {dim}▲ more{Reset}" : string.Empty);
             for (var i = offset; i < Math.Min(body.Count, offset + window); i++)
@@ -142,6 +154,26 @@ internal static class RoutineEditorScreen
         helpers.WriteLine($"  {palette.GetDimFg().AnsiFg}{RenderHelpers.TruncateText(RoutineText.EditorFooter, width - 4)}{Reset}");
         helpers.ClearRemainingLines();
         return offset;
+    }
+
+    private static void SetEditPosition(RoutineEditView? edit, int bodyTop, int editLine, int offset, bool scrolled)
+    {
+        if (edit != null)
+        {
+            edit.ScreenRow = bodyTop + (editLine - offset) + (scrolled ? 1 : 0);
+        }
+    }
+
+    /// <summary>The row under edit: label, then blank space where the caller's prompt draws, then a hint (or the error) on the line below.</summary>
+    private static void WriteEditRow(RenderHelpers helpers, ThemePalette palette, RoutineRow row, RoutineEditView edit)
+    {
+        const int labelCol = 24;
+        var label = row.Label.PadRight(labelCol);
+        var gutter = $"{palette.GetRoutineAccentFg().AnsiFg}▌{Reset}";
+        helpers.WriteLine($"  {gutter} {palette.GetMutedFg().AnsiFg}•{Reset} {palette.PrimaryText.AnsiFg}{label}{Reset}{palette.GetDimFg().AnsiFg}{edit.Prefix}{Reset}");
+        edit.InputCol = 2 + 1 + 1 + 2 + labelCol + edit.Prefix.Length;
+        var color = edit.Error is null ? palette.GetDimFg().AnsiFg : palette.GetWarningFg().AnsiFg;
+        helpers.WriteLine($"{new string(' ', 6 + labelCol)}{color}{edit.Error ?? edit.Hint}{Reset}");
     }
 
     private static void WriteRow(RenderHelpers helpers, ThemePalette palette, int width, RoutineRow row, bool selected)

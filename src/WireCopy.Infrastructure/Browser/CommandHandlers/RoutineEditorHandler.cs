@@ -7,6 +7,7 @@ using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
+using WireCopy.Infrastructure.Browser.UI;
 using WireCopy.Infrastructure.Browser.UI.Components;
 using WireCopy.Infrastructure.Browser.UI.Renderers;
 using WireCopy.Infrastructure.Scheduling;
@@ -20,7 +21,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class RoutineEditorHandler
 {
-    public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid routineId, CancellationToken ct)
+    public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid routineId, CancellationToken ct, bool nameNew = false)
     {
         var selectedRow = -1;
         var offset = 0;
@@ -34,6 +35,19 @@ internal static class RoutineEditorHandler
             if (recipe is null)
             {
                 return;
+            }
+
+            if (nameNew)
+            {
+                nameNew = false;
+                if (await EditNameAsync(ctx, options, recipe, ghostDefault: true, ct).ConfigureAwait(false))
+                {
+                    selectedKind = RoutineRowKind.AddSite;
+                    selectedSite = null;
+                    selectedStep = -1;
+                }
+
+                continue;
             }
 
             var rows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now);
@@ -96,10 +110,10 @@ internal static class RoutineEditorHandler
         switch (row.Kind)
         {
             case RoutineRowKind.Name:
-                await EditNameAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
+                await EditNameAsync(ctx, options, recipe, ghostDefault: false, ct).ConfigureAwait(false);
                 break;
             case RoutineRowKind.Podcast:
-                await EditPodcastAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
+                await EditPodcastAsync(ctx, options, recipe, ct).ConfigureAwait(false);
                 break;
             case RoutineRowKind.Enabled:
                 if (recipe.Enabled)
@@ -159,14 +173,10 @@ internal static class RoutineEditorHandler
                 break;
         }
 
-        var field = new FormFieldConfig
-        {
-            Label = "Time (24h, HH:mm, local time)",
-            HelpText = "Enter to save · Esc to cancel",
-            InitialValue = recipe.Cadence.LocalTime.ToString("HH:mm"),
-            Validate = v => TimeOnly.TryParse(v, out _) ? null : "Enter a time like 07:00",
-        };
-        var text = await PromptAsync(ctx, options, field, palette, ct).ConfigureAwait(false);
+        var text = await EditInRowAsync(
+            ctx, options, recipe, RoutineRowKind.Frequency, "at ", RoutineText.TimeEditHint,
+            recipe.Cadence.LocalTime.ToString("HH:mm"), null,
+            v => TimeOnly.TryParse(v, out _) ? null : RoutineText.TimeInvalid, ct).ConfigureAwait(false);
         if (text is null)
         {
             return;
@@ -174,7 +184,6 @@ internal static class RoutineEditorHandler
 
         if (!TimeOnly.TryParse(text, out var time))
         {
-            ctx.NavigationService.SetStatusMessage("Enter a time like 07:00", TimeSpan.FromSeconds(6), StatusSeverity.Error);
             return;
         }
 
@@ -305,33 +314,86 @@ internal static class RoutineEditorHandler
         ctx.NavigationService.SetStatusMessage(RoutineText.LastResult(reloaded, DateTimeOffset.Now), TimeSpan.FromSeconds(10));
     }
 
-    private static async Task EditNameAsync(
-        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ThemePalette palette, CancellationToken ct)
+    /// <summary>Edits the Name row in place; true when a name was committed (a valid typed name).</summary>
+    private static async Task<bool> EditNameAsync(
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, bool ghostDefault, CancellationToken ct)
     {
         var taken = (await GetAllAsync(ctx).ConfigureAwait(false))
             .Where(r => r.Id != recipe.Id)
             .Select(r => r.Name)
             .ToList();
-        var field = new FormFieldConfig
-        {
-            Label = "Name",
-            HelpText = "Enter to save · Esc to cancel",
-            MaxLength = 80,
-            InitialValue = recipe.Name,
-            Validate = v => NameProblem(v, taken),
-        };
-        var input = await PromptAsync(ctx, options, field, palette, ct).ConfigureAwait(false);
+        var input = await EditInRowAsync(
+            ctx, options, recipe, RoutineRowKind.Name, string.Empty, RoutineText.NameEditHint,
+            ghostDefault ? null : recipe.Name, ghostDefault ? recipe.Name : null, v => NameProblem(v, taken), ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))
         {
-            return;
+            return false;
         }
 
-        var newName = input.Trim();
+        var newName = input.Trim()[..Math.Min(input.Trim().Length, 80)];
         var podcast = string.Equals(recipe.OutputCollectionName, recipe.Name, StringComparison.Ordinal)
             ? newName
             : recipe.OutputCollectionName;
         recipe.Rename(newName);
         await SaveAsync(ctx, Rebuild(recipe, podcast)).ConfigureAwait(false);
+        return true;
+    }
+
+    /// <summary>
+    /// Draws the editor with <paramref name="kind"/>'s row in edit mode and reads the text right there in that row.
+    /// Re-asks (error shown under the row) while <paramref name="validate"/> fails. Null on Esc / empty (keep).
+    /// </summary>
+    private static async Task<string?> EditInRowAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        ScheduleRecipe recipe,
+        RoutineRowKind kind,
+        string prefix,
+        string hint,
+        string? initial,
+        string? ghostDefault,
+        Func<string, string?> validate,
+        CancellationToken ct)
+    {
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var view = new RoutineEditView(kind, prefix, hint);
+        var offset = 0;
+        while (!ct.IsCancellationRequested)
+        {
+            var rows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now);
+            var selected = Math.Max(0, rows.FindIndex(r => r.Kind == kind));
+            ctx.Renderer.LeaveHtmlPanes();
+            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
+            var width = Math.Max(20, options.TerminalWidth - 2);
+            offset = RoutineEditorScreen.Draw(helpers, palette, width, options.TerminalHeight, recipe.Name, rows, selected, offset, view);
+
+            var clearWidth = Math.Max(8, width - view.InputCol - 2);
+            string? value;
+            if (ctx.InputHandler is TerminalInputHandler terminal)
+            {
+                value = await terminal.PromptForRowInputAsync(ct, view.ScreenRow, view.InputCol, initial, ghostDefault, clearWidth).ConfigureAwait(false);
+            }
+            else
+            {
+                value = await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, false, view.ScreenRow, view.InputCol, initial, null).ConfigureAwait(false);
+            }
+
+            if (value is null)
+            {
+                return null;
+            }
+
+            view.Error = validate(value);
+            if (view.Error is null)
+            {
+                return value;
+            }
+
+            initial = value;
+            ghostDefault = null;
+        }
+
+        return null;
     }
 
     private static string? NameProblem(string value, List<string> taken)
@@ -345,17 +407,11 @@ internal static class RoutineEditorHandler
     }
 
     private static async Task EditPodcastAsync(
-        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ThemePalette palette, CancellationToken ct)
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
-        var field = new FormFieldConfig
-        {
-            Label = "Podcast",
-            HelpText = "The podcast the episodes go into · Enter to save · Esc to cancel",
-            MaxLength = 80,
-            InitialValue = recipe.OutputCollectionName,
-            Validate = v => string.IsNullOrWhiteSpace(v) ? "Podcast name can't be empty" : null,
-        };
-        var input = await PromptAsync(ctx, options, field, palette, ct).ConfigureAwait(false);
+        var input = await EditInRowAsync(
+            ctx, options, recipe, RoutineRowKind.Podcast, string.Empty, RoutineText.PodcastEditHint,
+            recipe.OutputCollectionName, null, v => string.IsNullOrWhiteSpace(v) ? RoutineText.PodcastEmpty : null, ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))
         {
             return;

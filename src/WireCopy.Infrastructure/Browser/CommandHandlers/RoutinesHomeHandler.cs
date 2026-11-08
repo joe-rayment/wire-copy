@@ -80,7 +80,7 @@ internal static class RoutinesHomeHandler
                 switch (key)
                 {
                     case 'n':
-                        var made = await CreateAsync(ctx, options, store, recipes, palette, ct).ConfigureAwait(false);
+                        var made = await CreateAsync(ctx, options, store, recipes, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         sel = Reselect(recipes, made, sel);
                         continue;
@@ -132,7 +132,7 @@ internal static class RoutinesHomeHandler
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         break;
                     case CommandType.ActivateLink when current == null:
-                        var made = await CreateAsync(ctx, options, store, recipes, palette, ct).ConfigureAwait(false);
+                        var made = await CreateAsync(ctx, options, store, recipes, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         sel = Reselect(recipes, made, sel);
                         break;
@@ -173,39 +173,13 @@ internal static class RoutinesHomeHandler
         RenderOptions options,
         IScheduleStore store,
         List<ScheduleRecipe> recipes,
-        Themes.ThemePalette palette,
         CancellationToken ct)
     {
         ctx.Renderer.HideLauncherPane();
-        var field = new FormFieldConfig
-        {
-            Label = "New routine",
-            Subtitle = "Name your routine · Esc cancels",
-            Placeholder = "e.g. Morning briefing",
-        };
-        var fieldWidth = Math.Min(80, Math.Max(30, options.TerminalWidth - 6));
-        var startRow = Math.Max(0, options.TerminalHeight - FormField.HeightFor(field) - 1);
-        var name = (await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false))?.Trim();
-        if (name == null)
-        {
-            return null; // Esc
-        }
-
-        if (name.Length == 0)
-        {
-            ctx.NavigationService.SetStatusMessage(RoutineText.NameEmpty, TimeSpan.FromSeconds(6));
-            return null;
-        }
-
-        if (recipes.Any(r => string.Equals(r.Name, name, StringComparison.OrdinalIgnoreCase)))
-        {
-            ctx.NavigationService.SetStatusMessage(RoutineText.NameTaken, TimeSpan.FromSeconds(6));
-            return null;
-        }
-
+        var name = RoutineText.UniqueDefaultName(recipes.Select(r => r.Name));
         var recipe = ScheduleRecipe.Create(name, Cadence.Daily(new TimeOnly(5, 0)), Array.Empty<RecipeStep>(), name, true);
         await store.SaveAsync(recipe).ConfigureAwait(false);
-        await RoutineEditorHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
+        await RoutineEditorHandler.OpenAsync(ctx, options, recipe.Id, ct, nameNew: true).ConfigureAwait(false);
         return recipe.Id;
     }
 }

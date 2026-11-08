@@ -128,6 +128,15 @@ public class TerminalInputHandler : IInputHandler
     }
 
     /// <summary>
+    /// workspace-0mo7l.1 — in-row text edit at an exact cell: optional <paramref name="initialInput"/> to edit, or a
+    /// faint <paramref name="ghostDefault"/> that the first keystroke replaces. Enter on an empty buffer and Esc both return null.
+    /// </summary>
+    public Task<string?> PromptForRowInputAsync(CancellationToken cancellationToken, int row, int col, string? initialInput, string? ghostDefault, int clearWidth)
+    {
+        return PromptForInputCoreAsync(string.Empty, cancellationToken, isSecret: false, row: row, col: col, initialInput: initialInput, interceptKey: null, clearWidth: clearWidth, ghostHint: ghostDefault);
+    }
+
+    /// <summary>
     /// workspace-syj1.3 — specialised entry point for the ':' command line: renders a
     /// faint ghost <paramref name="hint"/> (e.g. " (:help)") right after the prompt.
     /// The hint disappears on the first keystroke (the input redraw pads the full
