@@ -174,9 +174,16 @@ internal static class RoutineEditorHandler
         }
 
         var text = await EditInRowAsync(
-            ctx, options, recipe, RoutineRowKind.Frequency, "at ", RoutineText.TimeEditHint,
-            recipe.Cadence.LocalTime.ToString("HH:mm"), null,
-            v => TimeOnly.TryParse(v, out _) ? null : RoutineText.TimeInvalid, ct).ConfigureAwait(false);
+            ctx,
+            options,
+            recipe,
+            RoutineRowKind.Frequency,
+            "at ",
+            RoutineText.TimeEditHint,
+            recipe.Cadence.LocalTime.ToString("HH:mm"),
+            null,
+            v => TimeOnly.TryParse(v, out _) ? null : RoutineText.TimeInvalid,
+            ct).ConfigureAwait(false);
         if (text is null)
         {
             return;
@@ -323,8 +330,16 @@ internal static class RoutineEditorHandler
             .Select(r => r.Name)
             .ToList();
         var input = await EditInRowAsync(
-            ctx, options, recipe, RoutineRowKind.Name, string.Empty, RoutineText.NameEditHint,
-            ghostDefault ? null : recipe.Name, ghostDefault ? recipe.Name : null, v => NameProblem(v, taken), ct).ConfigureAwait(false);
+            ctx,
+            options,
+            recipe,
+            RoutineRowKind.Name,
+            string.Empty,
+            RoutineText.NameEditHint,
+            ghostDefault ? null : recipe.Name,
+            ghostDefault ? recipe.Name : null,
+            v => NameProblem(v, taken),
+            ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))
         {
             return false;
@@ -410,8 +425,16 @@ internal static class RoutineEditorHandler
         CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
         var input = await EditInRowAsync(
-            ctx, options, recipe, RoutineRowKind.Podcast, string.Empty, RoutineText.PodcastEditHint,
-            recipe.OutputCollectionName, null, v => string.IsNullOrWhiteSpace(v) ? RoutineText.PodcastEmpty : null, ct).ConfigureAwait(false);
+            ctx,
+            options,
+            recipe,
+            RoutineRowKind.Podcast,
+            string.Empty,
+            RoutineText.PodcastEditHint,
+            recipe.OutputCollectionName,
+            null,
+            v => string.IsNullOrWhiteSpace(v) ? RoutineText.PodcastEmpty : null,
+            ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))
         {
             return;
