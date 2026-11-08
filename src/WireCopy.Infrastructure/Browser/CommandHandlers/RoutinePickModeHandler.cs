@@ -57,7 +57,8 @@ internal static class RoutinePickModeHandler
         {
             ctx.NavigationService.SetStatusMessage("Loading " + request.SiteUrl + " …", TimeSpan.FromSeconds(30));
             await ctx.NavigateToAsync(request.SiteUrl, options, ct).ConfigureAwait(false);
-            var tree = await WaitForLoadedAsync(ctx, request.SiteUrl, options, ct).ConfigureAwait(false);
+            var carry = new InputCarry();
+            var tree = await WaitForLoadedAsync(ctx, request.SiteUrl, options, carry, ct).ConfigureAwait(false);
             if (tree is null)
             {
                 ctx.NavigationService.SetStatusMessage("Couldn't load " + request.SiteUrl, TimeSpan.FromSeconds(6), StatusSeverity.Error);
@@ -144,7 +145,7 @@ internal static class RoutinePickModeHandler
 
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-            await LoopAsync(ctx, options, session, ct).ConfigureAwait(false);
+            await LoopAsync(ctx, options, session, carry, ct).ConfigureAwait(false);
             RestoreUntouchedLegacy(session, legacy);
             return await SaveAsync(ctx, scheduleStore, configStore, session, recipe).ConfigureAwait(false);
         }
@@ -157,9 +158,12 @@ internal static class RoutinePickModeHandler
                 ctx.NavigationService.GoBack();
             }
 
-            if (startedInLauncher && !ctx.NavigationService.InLauncherMode)
+            if (startedInLauncher)
             {
-                ctx.NavigationService.EnterLauncher();
+                if (!ctx.NavigationService.InLauncherMode)
+                {
+                    ctx.NavigationService.EnterLauncher();
+                }
 
                 // A launcher render is what parks the docked live page (DockSpotlight clears outside the
                 // link list); without it the site's web pane stays over the routine editor drawn next.
@@ -174,11 +178,13 @@ internal static class RoutinePickModeHandler
     }
 
     private static async Task LoopAsync(
-        CommandContext ctx, RenderOptions options, RoutinePickSession session, CancellationToken ct)
+        CommandContext ctx, RenderOptions options, RoutinePickSession session, InputCarry carry, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
-            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            // A key waiter left pending by the load wait is consumed first: abandoning it would let it eat the next key.
+            var command = await (carry.Pending ?? ctx.InputHandler.WaitForInputAsync(ct)).ConfigureAwait(false);
+            carry.Pending = null;
 
             switch (command.Type)
             {
@@ -441,11 +447,10 @@ internal static class RoutinePickModeHandler
     /// Waits for the site's real (non-skeleton) page. The main loop is not running while this handler owns the
     /// input loop, so the finished background load is applied here via ctx.PumpBackgroundLoadAsync. Esc cancels.
     /// </summary>
-    private static async Task<NavigationTree?> WaitForLoadedAsync(CommandContext ctx, string siteUrl, RenderOptions options, CancellationToken ct)
+    private static async Task<NavigationTree?> WaitForLoadedAsync(CommandContext ctx, string siteUrl, RenderOptions options, InputCarry carry, CancellationToken ct)
     {
         var started = DateTime.UtcNow;
         var lastRender = DateTime.MinValue;
-        Task<NavigationCommand>? pending = null;
         while (!ct.IsCancellationRequested && DateTime.UtcNow - started < LoadTimeout)
         {
             var stillLoading = await ctx.PumpBackgroundLoadAsync(options, ct).ConfigureAwait(false);
@@ -464,12 +469,12 @@ internal static class RoutinePickModeHandler
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
             }
 
-            pending ??= ctx.InputHandler.WaitForInputAsync(ct);
-            var done = await Task.WhenAny(pending, Task.Delay(150, ct)).ConfigureAwait(false);
-            if (done == pending)
+            carry.Pending ??= ctx.InputHandler.WaitForInputAsync(ct);
+            var done = await Task.WhenAny(carry.Pending, Task.Delay(150, ct)).ConfigureAwait(false);
+            if (done == carry.Pending)
             {
-                var command = await pending.ConfigureAwait(false);
-                pending = null;
+                var command = await carry.Pending.ConfigureAwait(false);
+                carry.Pending = null;
                 if (command.Type is CommandType.GoBack or CommandType.Quit)
                 {
                     return null;
@@ -478,5 +483,11 @@ internal static class RoutinePickModeHandler
         }
 
         return null;
+    }
+
+    /// <summary>Holds the key waiter the load wait started, so the pick loop reads it instead of abandoning it.</summary>
+    private sealed class InputCarry
+    {
+        public Task<NavigationCommand>? Pending { get; set; }
     }
 }
