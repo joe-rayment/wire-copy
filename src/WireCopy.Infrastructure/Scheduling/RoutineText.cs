@@ -244,6 +244,12 @@ public static class RoutineText
 
     public static string Eyebrow(string name) => $"ROUTINE · {name}";
 
+    /// <summary>Launcher footer hint while choosing a site to add to a routine.</summary>
+    public const string AddSiteFooter = "Enter: pick this site for the routine · Esc: back to the routine";
+
+    /// <summary>Status shown when Enter lands on the Reading List / Routines cell while adding a site.</summary>
+    public const string AddSiteNotASite = "That's not a site — pick a site tile or type a web address.";
+
     private static string Slots(IEnumerable<int> positions) => string.Join(", ", positions.Select(p => $"#{p}"));
 
     private static string Hm(TimeOnly t) => t.ToString("HH:mm", CultureInfo.InvariantCulture);

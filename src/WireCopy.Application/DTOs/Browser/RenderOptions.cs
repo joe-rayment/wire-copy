@@ -13,6 +13,12 @@ public record RenderOptions
     /// <summary>Pane colour variant: "amber" | "cyan" (S6).</summary>
     public string UiModeVariant { get; init; } = "amber";
 
+    /// <summary>Launcher pane eyebrow override (the routine editor's site picker); null keeps "LAUNCHER".</summary>
+    public string? LauncherEyebrow { get; init; }
+
+    /// <summary>Launcher pane footer-hint override (the routine editor's site picker); null keeps the default hints.</summary>
+    public string? LauncherFooterHint { get; init; }
+
     /// <summary>
     /// Routine pick-mode overlay for the link tree (workspace-wyvga.6); null unless a
     /// pick session is active.

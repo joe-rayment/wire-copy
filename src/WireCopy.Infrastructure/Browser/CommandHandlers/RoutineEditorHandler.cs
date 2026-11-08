@@ -210,40 +210,10 @@ internal static class RoutineEditorHandler
     private static async Task AddSiteAsync(
         CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ThemePalette palette, CancellationToken ct)
     {
-        IReadOnlyList<Domain.Entities.Bookmarks.Bookmark> bookmarks;
-        using (var scope = ctx.ScopeFactory.CreateScope())
-        {
-            bookmarks = (await scope.ServiceProvider.GetRequiredService<IBookmarkService>().GetAllBookmarksAsync(ct).ConfigureAwait(false)).ToList();
-        }
-
-        var labels = bookmarks.Select(b => $"{b.Name} · {HostOf(b.Url)}").ToList();
-        labels.Add("Type a URL…");
-        var pick = await RoutineEditorCards.PickAsync(ctx, options, palette, "Add a site", "↑/↓ move · Enter select · Esc back", labels, ct).ConfigureAwait(false);
-        if (pick is null)
+        var url = await RoutineSitePicker.PickAsync(ctx, recipe.Name, ct).ConfigureAwait(false);
+        if (url is null)
         {
             return;
-        }
-
-        string url;
-        if (pick.Value < bookmarks.Count)
-        {
-            url = bookmarks[pick.Value].Url;
-        }
-        else
-        {
-            var field = new FormFieldConfig
-            {
-                Label = "URL",
-                HelpText = "Enter to continue · Esc to cancel",
-                Validate = v => Uri.TryCreate(v.Trim(), UriKind.Absolute, out var u) && u.Scheme is "http" or "https" ? null : "Enter a full web address (https://…)",
-            };
-            var text = await PromptAsync(ctx, options, field, palette, ct).ConfigureAwait(false);
-            if (string.IsNullOrWhiteSpace(text))
-            {
-                return;
-            }
-
-            url = text.Trim();
         }
 
         await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);

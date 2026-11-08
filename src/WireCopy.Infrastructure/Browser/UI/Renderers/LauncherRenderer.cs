@@ -696,6 +696,8 @@ internal class LauncherRenderer
         {
             Mode = options.UiMode,
             ModeVariant = options.UiModeVariant,
+            Eyebrow = options.LauncherEyebrow,
+            FooterHint = options.LauncherFooterHint,
             Slots = slots,
             SelectedIndex = selectedIndex >= 0 ? selectedIndex - offset : -1,
             Columns = columns,

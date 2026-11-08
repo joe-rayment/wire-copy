@@ -113,50 +113,20 @@ internal static class LauncherCommandHandler
                 break;
 
             case CommandType.MoveDown:
-            {
-                var cols = GetLayoutColumns(options);
-                if (ctx.NavigationService.LauncherSelectedIndex == -1)
-                {
-                    // From URL bar → first bookmark
-                    ctx.NavigationService.LauncherSelectedIndex = 0;
-                }
-                else
-                {
-                    ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, ctx.NavigationService.LauncherSelectedIndex, 1, cols);
-                }
-
-                AdjustLauncherScroll(ctx, options);
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                break;
-            }
-
             case CommandType.MoveUp:
             {
-                var cols = GetLayoutColumns(options);
-                var currentIdx = ctx.NavigationService.LauncherSelectedIndex;
-                if (currentIdx != -1)
-                {
-                    // MoveInSlots returns -1 from the top row → URL bar.
-                    ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, currentIdx, 0, cols);
-                }
-
+                ctx.NavigationService.LauncherSelectedIndex = MoveSelection(
+                    command.Type, 0, slotBc, ctx.NavigationService.LauncherSelectedIndex, GetLayoutColumns(options));
                 AdjustLauncherScroll(ctx, options);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
 
             case CommandType.CollapseNode: // h = left
-            {
-                var cols = GetLayoutColumns(options);
-                ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, ctx.NavigationService.LauncherSelectedIndex, 2, cols);
-                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                break;
-            }
-
             case CommandType.ExpandNode: // l = right
             {
-                var cols = GetLayoutColumns(options);
-                ctx.NavigationService.LauncherSelectedIndex = MoveInSlots(slotBc, ctx.NavigationService.LauncherSelectedIndex, 3, cols);
+                ctx.NavigationService.LauncherSelectedIndex = MoveSelection(
+                    command.Type, 0, slotBc, ctx.NavigationService.LauncherSelectedIndex, GetLayoutColumns(options));
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 break;
             }
@@ -402,11 +372,10 @@ internal static class LauncherCommandHandler
                 //   digit N → virtual N-1
                 // Out-of-range digits are no-ops so the badge advertisement
                 // stays honest.
-                var totalSlots = totalItems; // bookmarks + Reading List + Routines
-                var target = command.Count - 1;
-                if (target >= 0 && target < totalSlots)
+                var jumped = MoveSelection(command.Type, command.Count, slotBc, ctx.NavigationService.LauncherSelectedIndex, 0);
+                if (jumped != ctx.NavigationService.LauncherSelectedIndex)
                 {
-                    ctx.NavigationService.LauncherSelectedIndex = target;
+                    ctx.NavigationService.LauncherSelectedIndex = jumped;
                     AdjustLauncherScroll(ctx, options);
                     await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 }
@@ -416,6 +385,56 @@ internal static class LauncherCommandHandler
         }
 
         return true;
+    }
+
+    /// <summary>
+    /// The launcher's movement keys as a pure function of the selection, shared by the real launcher and the
+    /// routine editor's site picker. Down from the URL bar (-1) lands on the first tile; Up from the top row
+    /// lands on the URL bar; digits jump (Count is the 1-based digit, out of range keeps the selection).
+    /// </summary>
+    internal static int MoveSelection(CommandType type, int count, int bookmarkCount, int selected, int cols)
+    {
+        switch (type)
+        {
+            case CommandType.MoveDown:
+                return selected == -1 ? 0 : MoveInSlots(bookmarkCount, selected, 1, cols);
+            case CommandType.MoveUp:
+                return selected == -1 ? -1 : MoveInSlots(bookmarkCount, selected, 0, cols);
+            case CommandType.CollapseNode:
+                return MoveInSlots(bookmarkCount, selected, 2, cols);
+            case CommandType.ExpandNode:
+                return MoveInSlots(bookmarkCount, selected, 3, cols);
+            case CommandType.JumpToIndex:
+                var target = count - 1;
+                return target >= 0 && target < LauncherSlotMap.VirtualTotal(bookmarkCount) ? target : selected;
+            default:
+                return selected;
+        }
+    }
+
+    /// <summary>Layout columns the launcher is currently drawn with (HTML pane columns in the shell).</summary>
+    internal static int LayoutColumns(RenderOptions options) => GetLayoutColumns(options);
+
+    /// <summary>Scroll offset that keeps the selected cell in view (pure form of the launcher's scroll adjust).</summary>
+    internal static int NextScrollOffset(int bookmarkCount, int selectedIndex, int currentOffset, RenderOptions options)
+    {
+        if (selectedIndex <= 0)
+        {
+            return 0;
+        }
+
+        var layout = ComputeVariantLayout(options);
+        var headerPlusUrlBarLines = LauncherRenderer.ComputeHeaderPlusUrlBarLines(options.TerminalWidth, options.ShowSetupHint);
+        var viewportHeight = LauncherRenderer.ComputeViewportHeight(options.TerminalHeight);
+        var selectedRow = LauncherSlotMap.CellOf(bookmarkCount, selectedIndex) / layout.Columns;
+        var cellTopLine = headerPlusUrlBarLines + (selectedRow * layout.CellHeight);
+        var cellBottomLine = cellTopLine + layout.CellHeight - 1;
+        if (cellTopLine < currentOffset)
+        {
+            return cellTopLine;
+        }
+
+        return cellBottomLine >= currentOffset + viewportHeight ? cellBottomLine - viewportHeight + 1 : currentOffset;
     }
 
     /// <summary>Virtual index points at the Reading List half (delegates to <see cref="LauncherSlotMap"/>).</summary>
@@ -489,11 +508,26 @@ internal static class LauncherCommandHandler
     private static async Task HandleGoToUrl(CommandContext ctx, RenderOptions options, CancellationToken ct, char? initialChar = null)
     {
         // Select the URL bar visually. Force the page scroll back to the top
-        // so the URL bar is in the viewport — the user can never type into a
-        // URL bar that has scrolled off-screen.
+        // so the URL bar is in the viewport.
         ctx.NavigationService.LauncherSelectedIndex = -1;
         ctx.NavigationService.LauncherScrollOffset = 0;
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        var url = await PromptUrlAsync(ctx, options, ct, () => ctx.RenderCurrentPageAsync(options, ct), initialChar).ConfigureAwait(false);
+        if (url is not null)
+        {
+            await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <summary>
+    /// Types a URL inside the launcher's URL bar and returns it normalised, or null when cancelled / empty /
+    /// malformed (the reason is already on the status line and the launcher repainted). Shared by the real
+    /// launcher and the routine editor's site picker; <paramref name="repaint"/> paints the launcher with
+    /// the URL bar selected.
+    /// </summary>
+    internal static async Task<string?> PromptUrlAsync(
+        CommandContext ctx, RenderOptions options, CancellationToken ct, Func<Task> repaint, char? initialChar = null)
+    {
+        await repaint().ConfigureAwait(false);
 
         // Calculate URL bar position for inline input. Both the row and the
         // column maths live in LauncherRenderer (ComputeUrlBarInputRow /
@@ -531,8 +565,8 @@ internal static class LauncherCommandHandler
 
         if (string.IsNullOrWhiteSpace(input))
         {
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
+            await repaint().ConfigureAwait(false);
+            return null;
         }
 
         // workspace-khpe.3: validate the typed target before navigating so a
@@ -541,11 +575,11 @@ internal static class LauncherCommandHandler
         if (!NavigationUrl.TryNormalize(input, out var url, out var urlError))
         {
             ctx.NavigationService.SetStatusMessage(urlError);
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
+            await repaint().ConfigureAwait(false);
+            return null;
         }
 
-        await ctx.NavigateToAsync(url, options, ct).ConfigureAwait(false);
+        return url;
     }
 
     private static async Task HandleAddBookmark(CommandContext ctx, RenderOptions options, CancellationToken ct)
@@ -740,43 +774,11 @@ internal static class LauncherCommandHandler
     /// </remarks>
     private static void AdjustLauncherScroll(CommandContext ctx, RenderOptions options)
     {
-        var selectedIndex = ctx.NavigationService.LauncherSelectedIndex;
-
-        // URL-bar focus → snap to top so the URL bar is in the viewport.
-        if (selectedIndex < 0)
-        {
-            ctx.NavigationService.LauncherScrollOffset = 0;
-            return;
-        }
-
-        // First bookmark → snap back to top so the wordmark reappears.
-        if (selectedIndex == 0)
-        {
-            ctx.NavigationService.LauncherScrollOffset = 0;
-            return;
-        }
-
-        var layout = ComputeVariantLayout(options);
-        var headerPlusUrlBarLines = LauncherRenderer.ComputeHeaderPlusUrlBarLines(options.TerminalWidth, options.ShowSetupHint);
-        var viewportHeight = LauncherRenderer.ComputeViewportHeight(options.TerminalHeight);
-
-        // Page-line index of the top and bottom of the cell containing the selection.
-        var selectedRow = LauncherSlotMap.CellOf(ctx.Bookmarks?.Count ?? 0, selectedIndex) / layout.Columns;
-        var cellTopLine = headerPlusUrlBarLines + (selectedRow * layout.CellHeight);
-        var cellBottomLine = cellTopLine + layout.CellHeight - 1;
-
-        var currentOffset = ctx.NavigationService.LauncherScrollOffset;
-
-        if (cellTopLine < currentOffset)
-        {
-            // Cell is above the viewport — scroll up so its top is the first visible line.
-            ctx.NavigationService.LauncherScrollOffset = cellTopLine;
-        }
-        else if (cellBottomLine >= currentOffset + viewportHeight)
-        {
-            // Cell is below the viewport — scroll down so its bottom is the last visible line.
-            ctx.NavigationService.LauncherScrollOffset = cellBottomLine - viewportHeight + 1;
-        }
+        ctx.NavigationService.LauncherScrollOffset = NextScrollOffset(
+            ctx.Bookmarks?.Count ?? 0,
+            ctx.NavigationService.LauncherSelectedIndex,
+            ctx.NavigationService.LauncherScrollOffset,
+            options);
     }
 
     private static LauncherLayout ComputeVariantLayout(RenderOptions options)
