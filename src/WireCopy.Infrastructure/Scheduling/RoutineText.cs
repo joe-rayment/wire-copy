@@ -18,9 +18,9 @@ public static class RoutineText
     public const string CardRunning = "running…";
     public const string Busy = "Another podcast is generating — try again when it finishes";
     public const string NothingToCollect = "Nothing to collect yet";
-    public const string WholeSectionAlready = "Whole section already included — Space on the header to change";
-    public const string StoryHint = "Space includes this position · Esc done";
-    public const string HeaderOnlyYet = "Space on the section header includes it";
+    public const string WholeSectionAlready = "Whole section already included — Space on the header removes it";
+    public const string StoryHint = "Space adds or removes this story · Esc done";
+    public const string HeaderOnlyYet = "Space on the section header adds the whole section";
     public const string NoSection = "This story isn't in a section the routine can follow";
     public const string CannotPlace = "Can't place this story — the routine wouldn't find it in its section";
     public const string NameEmpty = "Name can't be empty";
@@ -211,7 +211,7 @@ public static class RoutineText
 
     public static string PickFooter(int sectionsIncluded, int slotsIncluded)
     {
-        const string keys = "Space include · T take · Esc done";
+        const string keys = "Space add/remove · Esc done";
         if (sectionsIncluded == 0 && slotsIncluded == 0)
         {
             return $"{keys} — nothing from this site yet";
@@ -225,7 +225,7 @@ public static class RoutineText
 
         if (slotsIncluded > 0)
         {
-            parts.Add($"{slotsIncluded} {(slotsIncluded == 1 ? "slot" : "slots")}");
+            parts.Add($"{slotsIncluded} {(slotsIncluded == 1 ? "story" : "stories")}");
         }
 
         return $"{keys} — {string.Join(", ", parts)} from this site";

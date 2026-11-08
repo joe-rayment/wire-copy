@@ -128,8 +128,7 @@ Opened from the editor, or from `g s` on a link list. The list looks like the no
 
 | Key | Action |
 |-----|--------|
-| `Space` | On a section header: include / exclude the whole section · on a story: toggle that story's **position** (e.g. #1, #3) |
-| `T` | Choose what to take from the section: All / Top 3 / Top 5 / Top N / First story |
+| `Space` | On a section header: add / remove the whole section · on a story: add / remove that story's **position** (e.g. #1, #3). The one key — "top 3" is Space on stories 1, 2, 3 |
 | `Enter` | On a story: does nothing (it never opens the article) |
 | `Esc` | Save and go back (from `g s` you return to the same list position in normal colours) |
 

@@ -140,8 +140,7 @@ internal static class KeybindingPopup
                 (":routines", "open the Routines home from anywhere"),
                 (string.Empty, "Home: arrows/hjkl move · Enter open/create · n new · r run now · Space on/off · d delete · Esc back"),
                 (string.Empty, "Editor: Up/Down move · Enter edit · x remove · r run now · Esc back"),
-                (string.Empty, "Pick mode: Space include section / toggle a story's position · Enter on a story does nothing"),
-                (string.Empty, "  T take (All / Top 3 / Top 5 / Top N / First story) · Esc save & back"),
+                (string.Empty, "Pick mode: Space on a section header adds/removes the whole section · Space on a story adds/removes it · Esc save & back"),
                 (KeyFor(CommandType.AddToSchedule), "add to a routine (from a link list)"),
             ],
             _ =>

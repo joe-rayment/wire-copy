@@ -18,7 +18,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
 /// <summary>
 /// workspace-wyvga.6 (S1.4, S2): pick mode for SECTIONS. The normal link tree for one site in
-/// routine colours; Space/T on a section header include it; Esc saves the picks into the routine.
+/// routine colours; Space on a section header includes it, Space on a story toggles its position; Esc saves the picks into the routine.
 /// LinkTreeRenderer draws the chips while <see cref="RoutinePickSession.Active"/>.
 /// </summary>
 internal static class RoutinePickModeHandler
@@ -117,6 +117,10 @@ internal static class RoutinePickModeHandler
             var domain = HierarchyDomainKey.FromUrl(request.SiteUrl);
             session.Start(recipe.Id, recipe.Name, request.SiteUrl, config, configIsNew, todays);
             session.FromSteps(recipe, domain, config.UrlPattern);
+
+            // Legacy "top N" / "first story" steps show (and edit) as their positions #1..#N; steps the user
+            // never touches are written back exactly as stored.
+            var legacy = ConvertLegacyPicksToPositions(session);
             if (request.PreIncludeSection is { } pre)
             {
                 session.Picks[pre] = new SectionPick
@@ -138,11 +142,10 @@ internal static class RoutinePickModeHandler
                 }
             }
 
-            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-            var overlay = new SetupWizardOverlay.State();
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
 
-            await LoopAsync(ctx, options, session, overlay, palette, ct).ConfigureAwait(false);
+            await LoopAsync(ctx, options, session, ct).ConfigureAwait(false);
+            RestoreUntouchedLegacy(session, legacy);
             return await SaveAsync(ctx, scheduleStore, configStore, session, recipe).ConfigureAwait(false);
         }
         finally
@@ -171,18 +174,11 @@ internal static class RoutinePickModeHandler
     }
 
     private static async Task LoopAsync(
-        CommandContext ctx, RenderOptions options, RoutinePickSession session, SetupWizardOverlay.State overlay, ThemePalette palette, CancellationToken ct)
+        CommandContext ctx, RenderOptions options, RoutinePickSession session, CancellationToken ct)
     {
         while (!ct.IsCancellationRequested)
         {
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-
-            // S2 key reading rule: Shift+T arrives as SwitchToHierarchical carrying RawKeyChar 'T'.
-            if (command.RawKeyChar == 'T')
-            {
-                await TakePickerAsync(ctx, options, session, overlay, palette, ct).ConfigureAwait(false);
-                continue;
-            }
 
             switch (command.Type)
             {
@@ -240,6 +236,41 @@ internal static class RoutinePickModeHandler
                 case CommandType.GoToBottom:
                     await NavigationCommandHandler.HandleGoToBottom(ctx, command, options, ct).ConfigureAwait(false);
                     break;
+            }
+        }
+    }
+
+    private static Dictionary<string, (SectionPick Original, SortedSet<int> Converted)> ConvertLegacyPicksToPositions(RoutinePickSession session)
+    {
+        var legacy = new Dictionary<string, (SectionPick, SortedSet<int>)>(StringComparer.OrdinalIgnoreCase);
+        foreach (var (name, pick) in session.Picks.ToList())
+        {
+            if (pick.TakeMode is not (TakeMode.TopN or TakeMode.SingleTopStory))
+            {
+                continue;
+            }
+
+            var count = pick.TakeMode == TakeMode.SingleTopStory ? 1 : Math.Max(1, pick.TakeCount ?? 1);
+            var converted = new SectionPick { Scope = pick.Scope, TakeMode = TakeMode.Slots };
+            for (var i = 1; i <= count; i++)
+            {
+                converted.Positions.Add(i);
+            }
+
+            legacy[name] = (pick, new SortedSet<int>(converted.Positions));
+            session.Picks[name] = converted;
+        }
+
+        return legacy;
+    }
+
+    private static void RestoreUntouchedLegacy(RoutinePickSession session, Dictionary<string, (SectionPick Original, SortedSet<int> Converted)> legacy)
+    {
+        foreach (var (name, (original, converted)) in legacy)
+        {
+            if (session.Picks.TryGetValue(name, out var now) && now.TakeMode == TakeMode.Slots && now.Positions.SetEquals(converted))
+            {
+                session.Picks[name] = original;
             }
         }
     }
@@ -305,7 +336,7 @@ internal static class RoutinePickModeHandler
         }
 
         if (session.Picks.TryGetValue(sel.Name, out var existing)
-            && existing.TakeMode is TakeMode.WholeSection or TakeMode.TopN or TakeMode.SingleTopStory)
+            && existing.TakeMode is TakeMode.WholeSection)
         {
             Status(ctx, RoutineText.WholeSectionAlready);
             return;
@@ -349,100 +380,6 @@ internal static class RoutinePickModeHandler
         {
             session.Picks.Remove(sel.Name);
         }
-    }
-
-    private static async Task TakePickerAsync(
-        CommandContext ctx, RenderOptions options, RoutinePickSession session, SetupWizardOverlay.State overlay, ThemePalette palette, CancellationToken ct)
-    {
-        if (SelectedSection(ctx, session) is not { OnHeader: true } sel)
-        {
-            Status(ctx, RoutineText.HeaderOnlyYet);
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var labels = new[] { "All", "Top 3", "Top 5", "Top N…", "First story" };
-        var index = await CardAsync(ctx, options, overlay, palette, "Take from " + sel.Name, "How much of this section? Enter select · Esc back", labels, ct).ConfigureAwait(false);
-        if (index >= 0)
-        {
-            var pick = new SectionPick { Scope = sel.Scope };
-            switch (index)
-            {
-                case 0:
-                    pick.TakeMode = TakeMode.WholeSection;
-                    break;
-                case 1 or 2:
-                    pick.TakeMode = TakeMode.TopN;
-                    pick.TakeCount = index == 1 ? 3 : 5;
-                    break;
-                case 3:
-                    var field = new FormFieldConfig
-                    {
-                        Label = "How many stories (N)?",
-                        InitialValue = "3",
-                        Validate = v => int.TryParse(v, out var n) && n >= 1 ? null : "Enter a whole number ≥ 1",
-                    };
-                    var startRow = Math.Max(1, (options.TerminalHeight / 2) - 3);
-                    var fieldWidth = Math.Min(Math.Max(20, UI.OverlayViewport.Width - 6), 60);
-                    ctx.SetOverlayPainter(null);
-                    var text = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
-                    if (text is null || !int.TryParse(text, out var count) || count < 1)
-                    {
-                        index = -1;
-                        break;
-                    }
-
-                    pick.TakeMode = TakeMode.TopN;
-                    pick.TakeCount = count;
-                    break;
-                default:
-                    pick.TakeMode = TakeMode.SingleTopStory;
-                    pick.TakeCount = 1;
-                    break;
-            }
-
-            if (index >= 0)
-            {
-                session.Picks[sel.Name] = pick;
-            }
-        }
-
-        ctx.SetOverlayPainter(null);
-        await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-    }
-
-    private static async Task<int> CardAsync(
-        CommandContext ctx, RenderOptions options, SetupWizardOverlay.State overlay, ThemePalette palette, string title, string prompt, string[] labels, CancellationToken ct)
-    {
-        var card = new SetupWizardOverlay.WizardCard { Title = title, Prompt = prompt, Hint = "↑/↓ move · Enter select · Esc back", Cursor = 0 };
-        foreach (var l in labels)
-        {
-            card.Options.Add(new SetupWizardOverlay.CardOption { Label = l });
-        }
-
-        ctx.SetOverlayPainter(opts => SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
-        while (!ct.IsCancellationRequested)
-        {
-            overlay.Mode = SetupWizardOverlay.Mode.Card;
-            overlay.Card = card;
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-            switch (command.Type)
-            {
-                case CommandType.GoBack or CommandType.Quit:
-                    return -1;
-                case CommandType.MoveDown or CommandType.ExpandNode:
-                    card.Cursor = (card.Cursor + 1) % labels.Length;
-                    break;
-                case CommandType.MoveUp or CommandType.CollapseNode:
-                    card.Cursor = (card.Cursor - 1 + labels.Length) % labels.Length;
-                    break;
-                case CommandType.ActivateLink:
-                    return card.Cursor;
-            }
-        }
-
-        return -1;
     }
 
     private static async Task<bool> SaveAsync(
