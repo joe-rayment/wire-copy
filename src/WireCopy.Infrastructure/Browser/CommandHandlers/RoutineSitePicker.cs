@@ -20,6 +20,11 @@ internal static class RoutineSitePicker
         var savedScroll = nav.LauncherScrollOffset;
         var sel = 0;
         var scroll = 0;
+        ctx.LauncherOptionsOverride = o => o with
+        {
+            LauncherEyebrow = RoutineText.Eyebrow(routineName),
+            LauncherFooterHint = RoutineText.AddSiteFooter,
+        };
         try
         {
             while (!ct.IsCancellationRequested)
@@ -93,6 +98,7 @@ internal static class RoutineSitePicker
         }
         finally
         {
+            ctx.LauncherOptionsOverride = null;
             nav.LauncherSelectedIndex = savedSel;
             nav.LauncherScrollOffset = savedScroll;
         }

@@ -201,6 +201,11 @@ public partial class BrowserOrchestrator
         }
 
         var options = GetCurrentRenderOptions();
+        if (_commandContext.LauncherOptionsOverride is { } over)
+        {
+            options = over(options);
+        }
+
         var bookmarks = _commandContext.Bookmarks
             ?? Array.Empty<Domain.Entities.Bookmarks.Bookmark>();
         var state = UI.Renderers.LauncherRenderer.BuildViewState(
