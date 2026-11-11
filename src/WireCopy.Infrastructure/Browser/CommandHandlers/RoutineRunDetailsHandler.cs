@@ -41,6 +41,7 @@ internal static class RoutineRunDetailsHandler
         Task<NavigationCommand>? inputTask = null;
         string? status = null;
         var selected = 0;
+        IReadOnlyList<ActionKind> previousActions = Array.Empty<ActionKind>();
         var offset = 0;
         var follow = true;
 
@@ -55,7 +56,13 @@ internal static class RoutineRunDetailsHandler
 
             var latest = runs.FirstOrDefault();
             var diagnosis = latest is null ? null : RoutineRunDiagnosis.Diagnose(latest);
-            var actions = BuildActions(diagnosis, latest is null);
+            var actions = BuildActions(diagnosis, latest is null, runTask != null);
+            if (!actions.SequenceEqual(previousActions))
+            {
+                selected = 0;
+                previousActions = actions;
+            }
+
             selected = Math.Clamp(selected, 0, actions.Count - 1);
 
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
@@ -172,9 +179,15 @@ internal static class RoutineRunDetailsHandler
         return (recipe, runs);
     }
 
-    private static List<ActionKind> BuildActions(RunDiagnosis? diagnosis, bool neverRan)
+    private static List<ActionKind> BuildActions(RunDiagnosis? diagnosis, bool neverRan, bool running)
     {
         var list = new List<ActionKind>();
+        if (running && !neverRan)
+        {
+            list.Add(ActionKind.Log);
+            return list;
+        }
+
         if (!neverRan && diagnosis is { Fix.Kind: RunFixKind.SetupRow or RunFixKind.OpenSite })
         {
             list.Add(ActionKind.Fix);
@@ -273,14 +286,30 @@ internal static class RoutineRunDetailsHandler
         else
         {
             var color = running ? palette.GetWarningFg().AnsiFg : HeadlineColor(palette, diagnosis.Headline);
-            var headline = running ? RoutineText.DetailsRunning : diagnosis.Headline;
-            var took = latest.FinishedAtUtc is { } fin ? " · took " + RoutineText.Took(fin - latest.StartedAtUtc) : string.Empty;
-            body.Add($"  {color}{RenderHelpers.TruncateText($"{headline} · {RoutineText.When(latest.StartedAtUtc, now)}{took}", width - 4)}{Reset}");
+            if (running)
+            {
+                body.Add($"  {color}{RenderHelpers.TruncateText(RoutineText.CardRunning, width - 4)}{Reset}");
+            }
+            else
+            {
+                var took = latest.FinishedAtUtc is { } fin ? " · took " + RoutineText.Took(fin - latest.StartedAtUtc) : string.Empty;
+                body.Add($"  {color}{RenderHelpers.TruncateText($"{diagnosis.Headline} · {RoutineText.When(latest.StartedAtUtc, now)}{took}", width - 4)}{Reset}");
+                if (latest.Status is ScheduledRunStatus.Completed or ScheduledRunStatus.PartialSuccess)
+                {
+                    AddLabelled(body, width, dim, primary, RoutineText.SavedTo, latest.TargetLocalPath);
+                    AddLabelled(body, width, dim, primary, RoutineText.FeedLabel, latest.TargetFeedUrl);
+                }
+            }
+
             body.Add(string.Empty);
-            AddLabelled(body, width, dim, primary, RoutineText.WhatHappened, diagnosis.What);
-            AddLabelled(body, width, dim, primary, RoutineText.AtStep, diagnosis.Step);
-            AddLabelled(body, width, dim, primary, RoutineText.HowToFix, diagnosis.HowToFix);
-            body.Add(string.Empty);
+            if (!running)
+            {
+                AddLabelled(body, width, dim, primary, RoutineText.WhatHappened, diagnosis.What);
+                AddLabelled(body, width, dim, primary, RoutineText.AtStep, diagnosis.Step);
+                AddLabelled(body, width, dim, primary, RoutineText.HowToFix, diagnosis.HowToFix);
+                body.Add(string.Empty);
+            }
+
             for (var i = 0; i < actions.Count; i++)
             {
                 if (i == selected)
@@ -297,26 +326,29 @@ internal static class RoutineRunDetailsHandler
                 body.Add(ActionLine(palette, width, i == selected, label));
             }
 
-            AddSteps(body, palette, width, RoutineRunDiagnosis.Steps(latest));
-            body.Add(string.Empty);
-            body.Add($"  {palette.SecondaryText.AnsiFg}{RoutineText.LogHeading}{Reset}");
-            var log = RoutineRunLog.Read(latest.Id);
-            if (log.Count == 0)
+            if (!running)
             {
-                body.Add($"    {dim}{RoutineText.NoLogKept}{Reset}");
+                AddSteps(body, palette, width, RoutineRunDiagnosis.Steps(latest));
+                body.Add(string.Empty);
+                body.Add($"  {palette.SecondaryText.AnsiFg}{RoutineText.LogHeading}{Reset}");
+                var log = RoutineRunLog.Read(latest.Id);
+                if (log.Count == 0)
+                {
+                    body.Add($"    {dim}{RoutineText.NoLogKept}{Reset}");
+                }
+
+                foreach (var line in log)
+                {
+                    var lineColor = LogColor(palette, line, dim);
+                    AddWrapped(body, line, lineColor, width);
+                }
             }
 
-            foreach (var line in log)
-            {
-                var lineColor = LogColor(palette, line, dim);
-                AddWrapped(body, line, lineColor, width);
-            }
-
-            if (runs.Count > 1)
+            if (runs.Count > (running ? 0 : 1))
             {
                 body.Add(string.Empty);
                 body.Add($"  {palette.SecondaryText.AnsiFg}{RoutineText.EarlierRunsHeading}{Reset}");
-                foreach (var older in runs.Skip(1).Take(5))
+                foreach (var older in runs.Skip(running ? 0 : 1).Take(5))
                 {
                     var d = RoutineRunDiagnosis.Diagnose(older);
                     var text = $"{d.Headline} · {RoutineText.When(older.StartedAtUtc, now)}" + (d.Short.Length > 0 ? " · " + d.Short : string.Empty);

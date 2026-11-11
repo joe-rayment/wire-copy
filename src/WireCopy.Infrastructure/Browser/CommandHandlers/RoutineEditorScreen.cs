@@ -190,7 +190,16 @@ internal static class RoutineEditorScreen
             case RoutineRowKind.Name or RoutineRowKind.Frequency or RoutineRowKind.Podcast or RoutineRowKind.Enabled or RoutineRowKind.LastRun:
                 var action = row.Kind switch { RoutineRowKind.Enabled => "toggle", RoutineRowKind.LastRun => RoutineText.LastRunAction, _ => "edit" };
                 var muted = palette.GetMutedFg().AnsiFg;
-                var (main, _) = SettingsRowRenderer.Build(palette, width, selected, false, "•", muted, row.Label, row.Value, palette.PrimaryText.AnsiFg, action);
+                var value = row.Value ?? string.Empty;
+                if (row.Kind == RoutineRowKind.LastRun)
+                {
+                    // Room the renderer leaves for the value: fixed columns, padded label, min pad and the action button.
+                    // Cutting the reason at its END here means the renderer never middle-ellipsizes it.
+                    var room = width - (2 + 1 + 1 + 2 + Math.Max(24, row.Label.Length) + 2) - ("[Enter] ".Length + action.Length);
+                    value = RenderHelpers.TruncateText(value, Math.Max(1, room));
+                }
+
+                var (main, _) = SettingsRowRenderer.Build(palette, width, selected, false, "•", muted, row.Label, value, palette.PrimaryText.AnsiFg, action);
                 helpers.WriteLine(main);
                 break;
             case RoutineRowKind.ContentsHeading:

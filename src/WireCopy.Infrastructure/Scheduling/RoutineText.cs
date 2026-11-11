@@ -45,6 +45,8 @@ public static class RoutineText
     public const string DetailsRunning = "running…";
     public const string NeverRanYet = "This routine hasn't run yet.";
     public const string NoLogKept = "No log was kept for this run.";
+    public const string SavedTo = "Saved to";
+    public const string FeedLabel = "Feed";
     public const string WhatHappened = "What happened";
     public const string AtStep = "At step";
     public const string HowToFix = "How to fix";
