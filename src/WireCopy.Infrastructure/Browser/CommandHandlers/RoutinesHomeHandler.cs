@@ -38,6 +38,7 @@ internal static class RoutinesHomeHandler
         {
             var recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
             var sel = 0;
+            await RoutineRunDetailsHandler.AcknowledgeAsync(ctx, r => recipes.All(x => x.Id != r.RecipeId)).ConfigureAwait(false);
 
             while (!ct.IsCancellationRequested)
             {
@@ -58,6 +59,16 @@ internal static class RoutinesHomeHandler
                         if (task.IsCompletedSuccessfully && task.Result.Outcome == RunNowOutcome.Busy)
                         {
                             ctx.NavigationService.SetStatusMessage(RoutineText.Busy, TimeSpan.FromSeconds(6));
+                        }
+                        else if (task.IsCompletedSuccessfully && task.Result.Run is { } finished)
+                        {
+                            var d = RoutineRunDiagnosis.Diagnose(finished);
+                            if (d.NeedsAttention)
+                            {
+                                var runName = recipes.FirstOrDefault(r => r.Id == id)?.Name ?? string.Empty;
+                                ctx.NavigationService.SetStatusMessage(
+                                    RoutineText.RunNeedsAttention(runName, d.Short), TimeSpan.FromSeconds(10), StatusSeverity.Error);
+                            }
                         }
                     }
 
@@ -91,6 +102,11 @@ internal static class RoutinesHomeHandler
                         }
 
                         continue;
+                    case 'e' when current != null:
+                        ctx.Renderer.HideLauncherPane();
+                        await RoutineRunDetailsHandler.OpenAsync(ctx, options, current.Id, ct).ConfigureAwait(false);
+                        recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
+                        continue;
                     case 'd' when current != null:
                         ctx.Renderer.HideLauncherPane();
                         var ok = await ConfirmationDialog.ConfirmAsync(
@@ -98,6 +114,8 @@ internal static class RoutinesHomeHandler
                         if (ok)
                         {
                             await store.DeleteAsync(current.Id).ConfigureAwait(false);
+                            var deletedId = current.Id;
+                            await RoutineRunDetailsHandler.AcknowledgeAsync(ctx, r => r.RecipeId == deletedId).ConfigureAwait(false);
                             recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         }
 
