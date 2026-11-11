@@ -23,7 +23,7 @@ internal static class RoutineRunDiagnosis
         ("couldn't find it", "can't find audio-engine to start it"),
         ("wants an API key", "audio-engine wants an API key"),
         ("rejected the API key", "audio-engine rejected the API key"),
-        ("has no OpenAI key", "audio-engine has no OpenAI key"),
+        ("Finish setting it up in audio-engine", "audio-engine's narration engine is not ready"),
         ("isn't set up", "audio-engine isn't set up"),
         ("isn't running at", "audio-engine isn't running"),
     };
@@ -108,7 +108,6 @@ internal static class RoutineRunDiagnosis
         SettingsCommandHandler.SetupRow.OpenAiKey => "OpenAI key",
         SettingsCommandHandler.SetupRow.GcsBucket => "podcast bucket",
         SettingsCommandHandler.SetupRow.GcsKey => "storage key",
-        SettingsCommandHandler.SetupRow.NarrationEngine => "narration engine",
         _ => row.ToString(),
     };
 

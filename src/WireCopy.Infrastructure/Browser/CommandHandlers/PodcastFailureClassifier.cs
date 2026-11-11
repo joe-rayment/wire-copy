@@ -101,15 +101,14 @@ internal static class PodcastFailureClassifier
                 Fix: "Install ffmpeg: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)");
         }
 
-        // Engine-neutral orchestrator preflight copy (workspace-2xej.10) — the
-        // active engine is unknown here, so point at the engine picker.
+        // Engine-neutral orchestrator preflight copy — the engine is chosen in audio-engine,
+        // so the fix is in audio-engine's Settings, not a Wire Copy row.
         if (error.Contains("Narration isn't ready", StringComparison.OrdinalIgnoreCase))
         {
             return new PodcastFailureClassification(
                 Step: "Pre-flight (narration)",
                 Reason: "The narration engine isn't ready yet",
-                Fix: "Open Settings (c) → Narration engine to finish setup, then press p again",
-                RelevantSetupRow: SettingsCommandHandler.SetupRow.NarrationEngine);
+                Fix: "Finish setting up the narration engine in audio-engine's Settings, then press p again");
         }
 
         if (error.Contains("API key", StringComparison.OrdinalIgnoreCase) ||
@@ -266,14 +265,14 @@ internal static class PodcastFailureClassifier
                 RelevantSetupRow: SettingsCommandHandler.SetupRow.AudioEngine);
         }
 
-        // audio-engine's own OpenAI key lives in audio-engine, not in WireCopy — checked before the
-        // generic "API key" rule below, which is about the key WireCopy sends TO audio-engine.
-        if (error.Contains("no OpenAI key", StringComparison.OrdinalIgnoreCase))
+        // The engine audio-engine narrates with is set up in audio-engine, not in WireCopy — checked
+        // before the generic "API key" rule below, which is about the key WireCopy sends TO audio-engine.
+        if (error.Contains("Finish setting it up in audio-engine", StringComparison.OrdinalIgnoreCase))
         {
             return new PodcastFailureClassification(
                 Step: Step,
                 Reason: error,
-                Fix: "Open audio-engine's settings page and add the OpenAI key there, then press p again");
+                Fix: "Finish setting up the narration engine in audio-engine's Settings, then press p again");
         }
 
         if (error.Contains("no address", StringComparison.OrdinalIgnoreCase))

@@ -39,7 +39,7 @@ internal static class NarratorPreflight
         var status = await CheckAsync(narrator, ct).ConfigureAwait(false);
 
         // An engine that answers at all tells us where it lives, even when it is not usable yet
-        // (no OpenAI key, wants an API key) — remember it for the day it is not running.
+        // (engine not ready, wants an API key) — remember it for the day it is not running.
         if (status.Reachable && launcher != null && AudioEngineLauncher.IsLocal(status.Url))
         {
             launcher.NoteRunning(status.Url);
