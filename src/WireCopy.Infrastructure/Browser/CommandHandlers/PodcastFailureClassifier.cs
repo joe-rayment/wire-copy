@@ -27,6 +27,8 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class PodcastFailureClassifier
 {
+    private const string AudioEngineFeedsFix = "Open audio-engine's Feeds page to see why, fix it there, then run this again.";
+
     /// <summary>
     /// Maps a typed <see cref="PodcastFailureDetail"/> (when present) to the
     /// (Step, Reason, Fix) tuple — bypasses the heuristic string fallback so
@@ -45,26 +47,19 @@ internal static class PodcastFailureClassifier
                 ? typedDetail.FailureClass.ToString()
                 : typedDetail.RawMessage;
 
-            // workspace-n0kb: any non-None publish failure points the user
-            // at the GcsBucket row — that's where the bucket name, public
-            // ACL, and (via the inline gate) the service-account key are
-            // edited. NoAudioFiles is a generation-side missing local file
-            // rather than a credential bug, so it gets no setup row.
-            SettingsCommandHandler.SetupRow? relevantRow = typedDetail.FailureClass switch
-            {
-                FeedPublishFailureClass.BucketNotPublic
-                    or FeedPublishFailureClass.FeedNotReachable
-                    or FeedPublishFailureClass.FeedNotParseable
-                    or FeedPublishFailureClass.Generic
-                    => SettingsCommandHandler.SetupRow.GcsBucket,
-                _ => null,
-            };
+            // Publishing now lives in audio-engine: a feed/publish failure is fixed
+            // on its Feeds page, not in a Wire Copy row. NoAudioFiles is a
+            // generation-side missing local file, so it keeps its own remediation.
+            var isPublishFailure = typedDetail.FailureClass
+                is FeedPublishFailureClass.BucketNotPublic
+                or FeedPublishFailureClass.FeedNotReachable
+                or FeedPublishFailureClass.FeedNotParseable
+                or FeedPublishFailureClass.Generic;
 
             return new PodcastFailureClassification(
                 Step: typedDetail.Step,
                 Reason: reason,
-                Fix: typedDetail.RemediationCopy,
-                RelevantSetupRow: relevantRow);
+                Fix: isPublishFailure ? AudioEngineFeedsFix : typedDetail.RemediationCopy);
         }
 
         return Classify(errorMessage, failedArticles);
@@ -128,10 +123,9 @@ internal static class PodcastFailureClassifier
             error.Contains("storage.googleapis", StringComparison.OrdinalIgnoreCase))
         {
             return new PodcastFailureClassification(
-                Step: "RSS publish (GCS upload)",
-                Reason: "Couldn't upload or publish the feed to your GCS bucket",
-                Fix: "Check the bucket name + service-account key in Setup, or run gsutil iam ch allUsers:objectViewer gs://your-bucket",
-                RelevantSetupRow: SettingsCommandHandler.SetupRow.GcsBucket);
+                Step: "RSS publish",
+                Reason: "Couldn't upload or publish the feed",
+                Fix: AudioEngineFeedsFix);
         }
 
         // ---- OpenAI API errors (429 / 401 / 403 / 5xx) ----

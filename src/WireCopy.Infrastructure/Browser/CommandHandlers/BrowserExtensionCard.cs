@@ -583,9 +583,68 @@ internal static class BrowserExtensionCard
         return $"  {indicator} {palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{content}{new string(' ', pad)}{Reset}";
     }
 
+    /// <summary>Word-wraps <paramref name="text"/> into lines of at most <paramref name="maxLen"/> characters.</summary>
+    private static List<string> WrapToWidth(string text, int maxLen)
+    {
+        var lines = new List<string>();
+        if (string.IsNullOrEmpty(text))
+        {
+            return lines;
+        }
+
+        if (maxLen <= 0)
+        {
+            lines.Add(text);
+            return lines;
+        }
+
+        var current = new System.Text.StringBuilder();
+        foreach (var word in text.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+        {
+            var w = word;
+            if (w.Length > maxLen)
+            {
+                if (current.Length > 0)
+                {
+                    lines.Add(current.ToString());
+                    current.Clear();
+                }
+
+                while (w.Length > maxLen)
+                {
+                    lines.Add(w[..maxLen]);
+                    w = w[maxLen..];
+                }
+
+                current.Append(w);
+                continue;
+            }
+
+            if (current.Length > 0 && current.Length + 1 + w.Length > maxLen)
+            {
+                lines.Add(current.ToString());
+                current.Clear();
+            }
+
+            if (current.Length > 0)
+            {
+                current.Append(' ');
+            }
+
+            current.Append(w);
+        }
+
+        if (current.Length > 0)
+        {
+            lines.Add(current.ToString());
+        }
+
+        return lines;
+    }
+
     private static void WriteWrapped(RenderHelpers helpers, int width, string colour, string text)
     {
-        foreach (var line in GcsCopy.WrapToWidth(text, width - 4))
+        foreach (var line in WrapToWidth(text, width - 4))
         {
             helpers.WriteLine($"  {colour}{line}{Reset}");
         }
