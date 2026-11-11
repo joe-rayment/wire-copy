@@ -29,6 +29,12 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <summary>How long <c>/healthz</c> may take to answer after the spawn.</summary>
     private static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(90);
 
+    /// <summary>How long a source checkout may take to answer: its first <c>dotnet run</c> builds it.</summary>
+    private static readonly TimeSpan SourceHealthTimeout = TimeSpan.FromMinutes(5);
+
+    /// <summary>Folder names that hold build or test output inside a source checkout.</summary>
+    private static readonly string[] BuildOutputFolders = ["bin", "obj", "tests", ".artifacts"];
+
     /// <summary>Extra, non-fatal time given to <c>/readyz</c> once healthy.</summary>
     private static readonly TimeSpan ReadyGrace = TimeSpan.FromSeconds(15);
 
@@ -341,8 +347,20 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
             if (fileExists(path))
             {
                 lookedIn.Add(Shorten(path, home));
-                var folder = Path.GetDirectoryName(path) ?? path;
-                return new AudioEngineProgram(path, [], folder, Shorten(path, home));
+                if (CheckoutOfBuildOutput(path, dirExists) is { } checkout)
+                {
+                    // A build or test binary inside a source checkout is never run: use the checkout itself.
+                    var viaCheckout = ProbeFolder(checkout, home, fileExists, dirExists, isWindows, lookedIn);
+                    if (viaCheckout is not null)
+                    {
+                        return viaCheckout;
+                    }
+                }
+                else
+                {
+                    var folder = Path.GetDirectoryName(path) ?? path;
+                    return new AudioEngineProgram(path, [], folder, Shorten(path, home));
+                }
             }
 
             if (dirExists(path))
@@ -435,7 +453,7 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
             foreach (var hit in extraCandidates())
             {
                 var folder = Path.GetDirectoryName(hit);
-                for (var level = 0; level < 5 && !string.IsNullOrEmpty(folder); level++)
+                for (var level = 0; level < 8 && !string.IsNullOrEmpty(folder); level++)
                 {
                     var found = ProbeFolder(folder, home, fileExists, dirExists, isWindows, new List<string>());
                     if (found is not null)
@@ -522,9 +540,17 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         if (fileExists(path))
         {
             var name = Path.GetFileNameWithoutExtension(path);
-            return name.Equals(ServerName, StringComparison.OrdinalIgnoreCase)
-                ? new AudioEngineProgram(path, [], Path.GetDirectoryName(path) ?? path, Shorten(path, home))
-                : null;
+            if (!name.Equals(ServerName, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            if (CheckoutOfBuildOutput(path, dirExists) is { } checkout)
+            {
+                return ProbeFolder(checkout, home, fileExists, dirExists, isWindows, lookedIn);
+            }
+
+            return new AudioEngineProgram(path, [], Path.GetDirectoryName(path) ?? path, Shorten(path, home));
         }
 
         if (!dirExists(path))
@@ -584,16 +610,39 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
             return null;
         }
 
-        var published = Path.Combine(folder, isWindows ? ServerName + ".exe" : ServerName);
-        if (fileExists(published))
-        {
-            return new AudioEngineProgram(published, [], folder, display);
-        }
-
+        // A source checkout wins over any binary inside it.
         var dotnet = Path.Combine(folder, isWindows ? "dotnet.exe" : "dotnet");
         if (fileExists(dotnet) && dirExists(Path.Combine(folder, "src", ServerName)))
         {
             return new AudioEngineProgram(dotnet, ["run", "--project", SourceProject, "-c", "Release"], folder, display);
+        }
+
+        var published = Path.Combine(folder, isWindows ? ServerName + ".exe" : ServerName);
+        if (fileExists(published) && CheckoutOfBuildOutput(published, dirExists) is null)
+        {
+            return new AudioEngineProgram(published, [], folder, display);
+        }
+
+        return null;
+    }
+
+    /// <summary>Tells whether a path is build or test output inside a source checkout.</summary>
+    /// <param name="path">A file or folder path.</param>
+    /// <param name="dirExists">Whether a path is an existing folder.</param>
+    /// <returns>The checkout's root folder when <paramref name="path"/> lies in its bin, obj, tests or .artifacts; otherwise null.</returns>
+    private static string? CheckoutOfBuildOutput(string path, Func<string, bool> dirExists)
+    {
+        var folder = Path.GetDirectoryName(path);
+        var insideOutput = false;
+        for (var level = 0; level < 12 && !string.IsNullOrEmpty(folder); level++)
+        {
+            if (dirExists(Path.Combine(folder, "src", ServerName)))
+            {
+                return insideOutput ? folder : null;
+            }
+
+            insideOutput |= BuildOutputFolders.Contains(Path.GetFileName(folder), StringComparer.OrdinalIgnoreCase);
+            folder = Path.GetDirectoryName(folder);
         }
 
         return null;
@@ -725,7 +774,8 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         {
             var client = _httpClientFactory.CreateClient("AudioEngine");
             var baseUrl = url.TrimEnd('/');
-            var healthy = await WaitForAsync(client, baseUrl + "/healthz", HealthTimeout, process).ConfigureAwait(false);
+            var timeout = discovery.Program.Arguments.Count > 0 ? SourceHealthTimeout : HealthTimeout;
+            var healthy = await WaitForAsync(client, baseUrl + "/healthz", timeout, process).ConfigureAwait(false);
             if (healthy is not null)
             {
                 return healthy with { StartedFrom = discovery.Program.Display };
