@@ -39,6 +39,15 @@ public static class RoutineText
     public const string DefaultRoutineName = "New routine";
     public const string HomeFooter = "[Enter]:open  [n]:new  [r]:run now  [e]:last run  [Space]:on/off  [d]:delete  [Esc]:back";
     public const string FixedRunAgainFormat = "Saved. Press r to run {0} again.";
+
+    /// <summary>Status while the fix row looks for audio-engine.</summary>
+    public const string LookingForAudioEngine = "Looking for audio-engine…";
+
+    /// <summary>Status while the fix row starts audio-engine (a first start can take a minute or more).</summary>
+    public const string StartingAudioEngine = "Starting audio-engine…";
+
+    /// <summary>Fix result when the person closed the location prompt without choosing.</summary>
+    public const string NothingChosen = "Nothing chosen — WireCopy still can't find audio-engine.";
     public const string RunNowRow = "Run now";
     public const string RunAgainRow = "Run again";
     public const string OpenLogRow = "Open the full app log";
@@ -273,6 +282,10 @@ public static class RoutineText
     public static string FixedRunAgain(string name) => string.Format(CultureInfo.InvariantCulture, FixedRunAgainFormat, name);
 
     public static string NarrationReady(string name) => $"Narration is ready. Press r to run {name} again.";
+
+    /// <summary>Fix result once audio-engine answers; <paramref name="startedFrom"/> may be null when unknown.</summary>
+    public static string AudioEngineRunning(string name, string? startedFrom)
+        => $"audio-engine is running{(string.IsNullOrWhiteSpace(startedFrom) ? string.Empty : $" (started from {startedFrom})")}. Press r to run {name} again.";
 
     /// <summary>Fourth line on a Routines-home card whose newest run needs attention (⚠ for a partial success, ✗ otherwise).</summary>
     public static string CardAlert(string shortReason, bool partial) => $"{(partial ? "⚠" : "✗")} {shortReason} — e for details";

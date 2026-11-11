@@ -104,7 +104,7 @@ internal static class RoutineRunDiagnosis
     {
         SettingsCommandHandler.SetupRow.AudioEngine => "audio-engine address",
         SettingsCommandHandler.SetupRow.AudioEngineKey => "audio-engine API key",
-        SettingsCommandHandler.SetupRow.AudioEngineProgram => "audio-engine program",
+        SettingsCommandHandler.SetupRow.AudioEngineProgram => "find audio-engine and start it",
         SettingsCommandHandler.SetupRow.OpenAiKey => "OpenAI key",
         SettingsCommandHandler.SetupRow.GcsBucket => "podcast bucket",
         SettingsCommandHandler.SetupRow.GcsKey => "storage key",

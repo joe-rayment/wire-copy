@@ -108,7 +108,25 @@ internal static class RoutineRunDetailsHandler
             }
             else if (activate && action == ActionKind.Fix && latest is not null && diagnosis is not null)
             {
-                status = await FixAsync(ctx, options, recipe, latest, diagnosis.Fix, ct).ConfigureAwait(false);
+                var capturedSelected = selected;
+                var capturedOffset = offset;
+                var capturedOptions = options;
+                void Paint(string interim) => Draw(
+                    new RenderHelpers { TerminalHeight = capturedOptions.TerminalHeight },
+                    BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme),
+                    Math.Max(20, capturedOptions.TerminalWidth - 2),
+                    capturedOptions.TerminalHeight,
+                    recipe,
+                    runs,
+                    diagnosis,
+                    actions,
+                    capturedSelected,
+                    capturedOffset,
+                    true,
+                    false,
+                    interim);
+
+                status = await FixAsync(ctx, options, recipe, latest, diagnosis.Fix, Paint, ct).ConfigureAwait(false);
                 selected = Math.Max(0, actions.IndexOf(ActionKind.Again));
             }
             else if (command.Type is CommandType.GoBack or CommandType.Quit)
@@ -202,7 +220,7 @@ internal static class RoutineRunDetailsHandler
         return list;
     }
 
-    private static async Task<string> FixAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ScheduledRun run, RunFix fix, CancellationToken ct)
+    private static async Task<string> FixAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ScheduledRun run, RunFix fix, Action<string> paint, CancellationToken ct)
     {
         if (fix.Kind == RunFixKind.OpenSite && fix.SiteUrl is not null)
         {
@@ -216,23 +234,58 @@ internal static class RoutineRunDetailsHandler
         }
 
         var handled = new HashSet<SettingsCommandHandler.SetupRow> { first };
-        await SettingsCommandHandler.DispatchRowAsync(ctx, options, first, ct).ConfigureAwait(false);
-        if (run.ErrorClass is not ("NarrationNotReady" or "GenerationFailed"))
+        if (first == SettingsCommandHandler.SetupRow.AudioEngineProgram)
         {
-            return RoutineText.FixedRunAgain(recipe.Name);
+            // Try to get it running without asking anything; only ask where it is when it can't be found.
+            var status = await EnsureEngineAsync(ctx, recipe, paint, RoutineText.LookingForAudioEngine, ct).ConfigureAwait(false);
+            if (status.Ready)
+            {
+                return AudioEngineRunning(ctx, recipe);
+            }
+
+            var reason = PodcastFailureClassifier.Classify(status.Message, Array.Empty<WireCopy.Application.DTOs.Podcast.ArticleFailure>()).RelevantSetupRow;
+            if (reason == SettingsCommandHandler.SetupRow.AudioEngineProgram)
+            {
+                var (outcome, message) = await SettingsCommandHandler.PromptAudioEngineLocationAsync(ctx, ct).ConfigureAwait(false);
+                if (outcome == SettingsCommandHandler.AudioEngineLocationOutcome.Cancelled)
+                {
+                    return RoutineText.NothingChosen;
+                }
+
+                if (outcome == SettingsCommandHandler.AudioEngineLocationOutcome.NotAnEngine)
+                {
+                    return message ?? RoutineText.NothingChosen;
+                }
+            }
+            else if (reason is { } other)
+            {
+                handled.Add(other);
+                await SettingsCommandHandler.DispatchRowAsync(ctx, options, other, ct).ConfigureAwait(false);
+            }
+            else
+            {
+                return string.IsNullOrWhiteSpace(status.Message) ? RoutineText.FixedRunAgain(recipe.Name) : status.Message;
+            }
+        }
+        else
+        {
+            await SettingsCommandHandler.DispatchRowAsync(ctx, options, first, ct).ConfigureAwait(false);
+            if (run.ErrorClass is not ("NarrationNotReady" or "GenerationFailed"))
+            {
+                return RoutineText.FixedRunAgain(recipe.Name);
+            }
         }
 
-        // Chained fix: a fresh install can miss both the address and the key — walk them in one pass.
+        // Chained fix: a fresh install can miss both the address and the key — walk them in one pass,
+        // actually starting the engine from the new location/address/key rather than only checking.
         var hop = 0;
         while (true)
         {
             hop++;
-            using var scope = ctx.ScopeFactory.CreateScope();
-            var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
-            var check = await NarratorPreflight.CheckAsync(narrator, ct).ConfigureAwait(false);
+            var check = await EnsureEngineAsync(ctx, recipe, paint, RoutineText.StartingAudioEngine, ct).ConfigureAwait(false);
             if (check.Ready)
             {
-                return RoutineText.NarrationReady(recipe.Name);
+                return AudioEngineRunning(ctx, recipe);
             }
 
             var next = PodcastFailureClassifier.Classify(check.Message, Array.Empty<WireCopy.Application.DTOs.Podcast.ArticleFailure>()).RelevantSetupRow;
@@ -243,6 +296,25 @@ internal static class RoutineRunDetailsHandler
 
             await SettingsCommandHandler.DispatchRowAsync(ctx, options, row, ct).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>Repaints with an interim status, then checks audio-engine and starts it when it is a local one that is down.</summary>
+    private static async Task<WireCopy.Application.DTOs.Podcast.NarratorStatus> EnsureEngineAsync(
+        CommandContext ctx, ScheduleRecipe recipe, Action<string> paint, string interim, CancellationToken ct)
+    {
+        _ = recipe;
+        paint(interim);
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
+        var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
+        return await NarratorPreflight.EnsureReadyAsync(narrator, launcher, ct).ConfigureAwait(false);
+    }
+
+    private static string AudioEngineRunning(CommandContext ctx, ScheduleRecipe recipe)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
+        return RoutineText.AudioEngineRunning(recipe.Name, launcher.Discover().Program?.Display);
     }
 
     private static int Draw(

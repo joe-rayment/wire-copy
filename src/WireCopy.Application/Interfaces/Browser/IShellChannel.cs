@@ -65,4 +65,25 @@ public interface IShellChannel
     /// not await this, and it never throws (a lost channel fails soft).
     /// </summary>
     Task SendLinkTreeStateAsync(bool visible, LinkTreeViewState? state, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Opens the shell's native file/folder picker and waits for the person to answer (no
+    /// timeout; only <paramref name="cancellationToken"/> ends the wait). Returns null when no
+    /// shell is connected, the shell does not know the request (older shell), or on any failure.
+    /// </summary>
+    Task<ShellPickResult?> PickPathAsync(ShellPickRequest request, CancellationToken cancellationToken)
+        => Task.FromResult<ShellPickResult?>(null);
 }
+
+/// <summary>What the native picker should ask for.</summary>
+/// <param name="Title">Dialog title.</param>
+/// <param name="Message">Explanatory message shown in the dialog.</param>
+/// <param name="ButtonLabel">Label of the accept button.</param>
+/// <param name="DefaultPath">Folder the dialog opens in, or null.</param>
+/// <param name="Kind">"folder", "file" or "either".</param>
+public sealed record ShellPickRequest(string Title, string Message, string ButtonLabel, string? DefaultPath, string Kind);
+
+/// <summary>The picker's answer.</summary>
+/// <param name="Canceled">True when nothing was chosen (cancelled, busy or shell error).</param>
+/// <param name="Path">The chosen absolute path, or null.</param>
+public sealed record ShellPickResult(bool Canceled, string? Path);
