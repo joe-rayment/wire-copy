@@ -232,8 +232,6 @@ internal static class PodcastCommandHandler
                 return false;
             }
 
-            var engineIsLocal = string.Equals(narrator.EngineName, "chatterbox", StringComparison.OrdinalIgnoreCase);
-
             // Pre-flight GCS validation: check credentials BEFORE slow cache
             // analysis. workspace-ny44 (Phase 6) retired the confirmation
             // screen, so the success/error tuple from this probe is now
@@ -313,7 +311,7 @@ internal static class PodcastCommandHandler
                 if (costGateConfig.ShouldShowGate(analysis))
                 {
                     var proceed = await PodcastCostGateModal
-                        .ShowAsync(ctx, options, analysis, costGateConfig, ct, engineIsLocal: engineIsLocal)
+                        .ShowAsync(ctx, options, analysis, costGateConfig, ct, engineIsLocal: analysis.EngineIsLocal)
                         .ConfigureAwait(false);
                     if (!proceed)
                     {

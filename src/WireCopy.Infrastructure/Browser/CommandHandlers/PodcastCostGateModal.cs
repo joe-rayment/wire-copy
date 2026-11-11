@@ -140,7 +140,7 @@ internal static class PodcastCostGateModal
         // that local generation is time-bound, not money-bound.
         if (engineIsLocal)
         {
-            return $"Generate {totalArticles} {article} · $0.00 — generated locally (Chatterbox) · takes roughly the audio's length on a GPU, longer on CPU";
+            return $"Generate {totalArticles} {article} · $0.00 — generated locally · takes roughly the audio's length on a GPU, longer on CPU";
         }
 
         // When cached articles dominate, surface the cache savings inline so

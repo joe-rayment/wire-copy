@@ -844,6 +844,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             CachedArticles = cached,
             UncachedArticles = articles.Count - cached,
             EstimatedCost = estimate.EstimateUsd,
+            EngineIsLocal = estimate.EngineIsLocal,
             ArticleStatuses = statuses,
         };
     }

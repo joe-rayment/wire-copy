@@ -125,7 +125,10 @@ public sealed record NarrationEstimate
     /// <summary>Gets audio-engine's budget limit in USD, when one is set.</summary>
     public decimal? BudgetLimitUsd { get; init; }
 
-    /// <summary>Gets a value indicating whether the engine runs on this machine (no per-character cost).</summary>
+    /// <summary>Gets the engine audio-engine priced this job for.</summary>
+    public string EngineName { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether the job costs nothing (the engine runs locally; the full price is zero).</summary>
     public bool EngineIsLocal { get; init; }
 
     /// <summary>Gets the per-chapter breakdown.</summary>
@@ -194,8 +197,8 @@ public sealed record NarrationResult
     public string? JobId { get; init; }
 }
 
-/// <summary>One narration engine hosted by audio-engine.</summary>
-public sealed record NarratorEngine(string Name, bool IsConfigured, IReadOnlyList<string> Voices, string? DefaultVoice);
+/// <summary>One narration engine hosted by audio-engine; <c>IsDefault</c> marks the one it will narrate with.</summary>
+public sealed record NarratorEngine(string Name, bool IsConfigured, bool IsDefault);
 
 /// <summary>Result of <see cref="Interfaces.Podcast.IPodcastNarrator.CheckAsync"/>: can narration run right now?</summary>
 public sealed record NarratorStatus
@@ -212,10 +215,10 @@ public sealed record NarratorStatus
     /// <summary>Gets a value indicating whether every check passed and narration can start.</summary>
     public bool Ready { get; init; }
 
-    /// <summary>Gets the engine the current settings select ("openai" or "chatterbox").</summary>
+    /// <summary>Gets the engine audio-engine is set to narrate with (empty when it could not be asked).</summary>
     public string EngineName { get; init; } = string.Empty;
 
-    /// <summary>Gets a value indicating whether the selected engine has its credentials inside audio-engine.</summary>
+    /// <summary>Gets a value indicating whether the engine audio-engine is set to use is ready.</summary>
     public bool EngineConfigured { get; init; }
 
     /// <summary>Gets the engines audio-engine reports (empty when it could not be asked).</summary>

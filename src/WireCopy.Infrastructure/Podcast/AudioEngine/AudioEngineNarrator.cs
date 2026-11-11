@@ -24,21 +24,9 @@ namespace WireCopy.Infrastructure.Podcast.AudioEngine;
 /// </summary>
 public sealed class AudioEngineNarrator : IPodcastNarrator
 {
-    /// <summary>
-    /// What Test narration says when audio-engine answers 504: its speech lane stayed busy (usually with a
-    /// podcast job) past its own wait limit (workspace-z9kq4).
-    /// </summary>
-    internal const string SpeechBusyMessage = "audio-engine is busy with another job — try Test narration again when it finishes.";
-
     private const string UnauthorizedText = "audio-engine rejected the API key. Set it in Settings -> Podcast narration.";
     private const string NotConfiguredText = "audio-engine has no address set. Set it in Settings -> Podcast narration.";
     private const string UrlSeparator = "/";
-
-    /// <summary>
-    /// Container the narration test asks audio-engine for: AAC in MP4, so the bytes match the
-    /// <c>.m4a</c> name the Settings screen saves them under (audio-engine defaults to mp3).
-    /// </summary>
-    private const string TestClipFormat = "aac";
 
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(10);
@@ -103,14 +91,11 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     public bool IsConfigured => IsReady(CurrentSettings());
 
     /// <inheritdoc />
-    public string EngineName => CurrentSettings().Engine;
-
-    /// <inheritdoc />
     public async Task<NarratorStatus> CheckAsync(CancellationToken ct = default)
     {
         var s = CurrentSettings();
         var url = s.Url ?? string.Empty;
-        var baseStatus = new NarratorStatus { Url = url, EngineName = s.Engine };
+        var baseStatus = new NarratorStatus { Url = url };
 
         if (string.IsNullOrEmpty(s.Url))
         {
@@ -156,7 +141,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
 
             baseStatus = baseStatus with { Reachable = true };
 
-            // 2. Does audio-engine accept the key, and can it run the selected engine?
+            // 2. Does audio-engine accept the key, and is the engine it is set to use ready?
             List<EngineDto> dtos;
             try
             {
@@ -183,10 +168,10 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             }
 
             var engines = dtos
-                .Select(d => new NarratorEngine(d.Name ?? string.Empty, d.IsConfigured, d.Voices ?? [], d.DefaultVoice))
+                .Select(d => new NarratorEngine(d.Name ?? string.Empty, d.IsConfigured, d.IsDefault))
                 .ToList();
-            var active = engines.Find(e => string.Equals(e.Name, s.Engine, StringComparison.OrdinalIgnoreCase));
-            baseStatus = baseStatus with { Authorized = true, Engines = engines };
+            var active = engines.Find(e => e.IsDefault);
+            baseStatus = baseStatus with { Authorized = true, Engines = engines, EngineName = active?.Name ?? string.Empty };
 
             if (active is null || !active.IsConfigured)
             {
@@ -194,7 +179,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                 {
                     EngineConfigured = false,
                     ErrorKind = NarrationErrorKind.EngineNotConfigured,
-                    Message = EngineNotConfiguredMessage(s),
+                    Message = EngineNotConfiguredMessage(active?.Name, url),
                 };
             }
 
@@ -203,7 +188,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                 Ready = true,
                 EngineConfigured = true,
                 ErrorKind = NarrationErrorKind.None,
-                Message = $"audio-engine is ready at {url} ({s.Engine}).",
+                Message = $"audio-engine is ready at {url} (narrating with {active.Name}).",
             };
         }
         catch (Exception ex) when (!IsCallerCancel(ex, ct))
@@ -231,7 +216,8 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         try
         {
             session = OpenSession(s);
-            var estimate = await session.Client.EstimateAsync(BuildJobRequest(request, s), ct).ConfigureAwait(false);
+            var fingerprint = await EngineFingerprintAsync(session.Client, ct).ConfigureAwait(false);
+            var estimate = await session.Client.EstimateAsync(BuildJobRequest(request, fingerprint), ct).ConfigureAwait(false);
             return new NarrationEstimate
             {
                 Success = true,
@@ -241,7 +227,8 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                 BudgetAllowed = estimate.Budget?.Allowed ?? true,
                 BudgetReason = estimate.Budget?.Reason,
                 BudgetLimitUsd = estimate.Budget?.LimitUsd,
-                EngineIsLocal = s.IsChatterbox,
+                EngineName = estimate.Engine,
+                EngineIsLocal = estimate.EngineConfigured && estimate.FullEstimateUsd == 0m,
                 Chapters = estimate.Chapters
                     .Select(c => new NarrationChapterEstimate(c.Index, c.Title, c.ChunksTotal, c.ChunksCached, c.EstimateUsd))
                     .ToList(),
@@ -279,7 +266,8 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             session = OpenSession(s);
             var client = session.Client;
 
-            var created = await client.SubmitAsync(BuildJobRequest(request, s), ct).ConfigureAwait(false);
+            var fingerprint = await EngineFingerprintAsync(client, ct).ConfigureAwait(false);
+            var created = await client.SubmitAsync(BuildJobRequest(request, fingerprint), ct).ConfigureAwait(false);
             jobId = created.Id;
 
             // The same reading list + settings + text maps to the same job. If that job already died,
@@ -340,81 +328,17 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         }
     }
 
-    /// <inheritdoc />
-    public async Task<NarrationResult> NarrateTestAsync(string text, string outputPath, CancellationToken ct = default)
-    {
-        ArgumentNullException.ThrowIfNull(text);
-        ArgumentException.ThrowIfNullOrWhiteSpace(outputPath);
-        var s = CurrentSettings();
-        if (!IsReady(s))
-        {
-            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredText };
-        }
-
-        Session? session = null;
-        try
-        {
-            session = OpenSession(s);
-            var speech = new SpeechRequest(
-                s.Engine,
-                text,
-                s.IsChatterbox ? null : s.Voice,
-                s.IsChatterbox ? null : s.Instructions,
-                s.IsChatterbox ? null : s.Speed,
-                TestClipFormat);
-
-            using var request = NewRequest(HttpMethod.Post, "v1/audio/speech", s.ApiKey);
-            request.Content = JsonContent.Create(speech, options: Json);
-            using var response = await session.Http.SendAsync(request, HttpCompletionOption.ResponseHeadersRead, ct).ConfigureAwait(false);
-            if (response.StatusCode == HttpStatusCode.GatewayTimeout)
-            {
-                _logger.LogWarning("audio-engine test narration timed out waiting for the speech lane (504)");
-                return new NarrationResult { ErrorKind = NarrationErrorKind.Transient, ErrorMessage = SpeechBusyMessage };
-            }
-
-            if (!response.IsSuccessStatusCode)
-            {
-                var failure = await FailureFromResponseAsync(response, s, ct).ConfigureAwait(false);
-                return new NarrationResult { ErrorKind = failure.Kind, ErrorMessage = failure.Message };
-            }
-
-            var audio = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
-            var directory = Path.GetDirectoryName(Path.GetFullPath(outputPath));
-            if (!string.IsNullOrEmpty(directory))
-            {
-                Directory.CreateDirectory(directory);
-            }
-
-            await File.WriteAllBytesAsync(outputPath, audio, ct).ConfigureAwait(false);
-            return new NarrationResult { Success = true, OutputPath = outputPath, Bytes = audio.LongLength };
-        }
-        catch (Exception ex) when (!IsCallerCancel(ex, ct))
-        {
-            var failure = Describe(ex, s);
-            _logger.LogWarning(ex, "audio-engine test narration failed: {Message}", failure.Message);
-            return new NarrationResult { ErrorKind = failure.Kind, ErrorMessage = failure.Message };
-        }
-        finally
-        {
-            session?.Dispose();
-        }
-    }
-
     /// <summary>
-    /// Builds the audio-engine job for a request: chapters, engine options, tags, cover art and an
-    /// idempotency key that changes whenever anything affecting the audio changes.
+    /// Builds the audio-engine job for a request: chapters, tags, cover art and an idempotency key
+    /// that changes whenever anything affecting the audio changes. Engine, voice and style are never
+    /// sent: audio-engine decides them.
     /// </summary>
     /// <param name="request">What to narrate.</param>
-    /// <param name="s">The settings in effect.</param>
+    /// <param name="engineFingerprint">The settings fingerprint of the engine audio-engine will use.</param>
     /// <returns>The job request to submit or price.</returns>
-    internal JobRequest BuildJobRequest(NarrationRequest request, AudioEngineSettings s)
+    internal JobRequest BuildJobRequest(NarrationRequest request, string engineFingerprint)
     {
         ArgumentNullException.ThrowIfNull(request);
-        ArgumentNullException.ThrowIfNull(s);
-
-        var options = s.IsChatterbox
-            ? new JobOptions { Exaggeration = s.Exaggeration, VoiceSample = s.VoiceSamplePath }
-            : new JobOptions { Model = s.Model, Instructions = s.Instructions, Speed = s.Speed };
 
         string? coverArt = null;
         var coverHash = string.Empty;
@@ -428,9 +352,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             Title = request.Title,
             Chapters = request.Chapters.Select(c => new ChapterInput(c.Title, c.Text)).ToList(),
             Format = "m4b",
-            Engine = s.Engine,
-            Voice = s.IsChatterbox ? null : s.Voice,
-            Options = options,
+            Feed = JobRequest.DefaultFeed,
             Author = request.Author,
             Album = request.Album,
             Description = request.Description,
@@ -440,22 +362,16 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             Metadata = string.IsNullOrEmpty(request.ListId)
                 ? null
                 : new Dictionary<string, string> { ["readingListId"] = request.ListId },
-            IdempotencyKey = BuildIdempotencyKey(request, s, coverHash),
+            IdempotencyKey = BuildIdempotencyKey(request, engineFingerprint, coverHash),
         };
     }
 
-    private static string BuildIdempotencyKey(NarrationRequest request, AudioEngineSettings s, string coverHash)
+    private static string BuildIdempotencyKey(NarrationRequest request, string engineFingerprint, string coverHash)
     {
         var parts = new List<string>
         {
             Part(request.ListId),
-            Part(s.Engine),
-            Part(s.IsChatterbox ? null : s.Voice),
-            Part(s.IsChatterbox ? null : s.Model),
-            Part(s.IsChatterbox ? null : s.Instructions),
-            Part(s.IsChatterbox ? null : s.Speed?.ToString("R", CultureInfo.InvariantCulture)),
-            Part(s.IsChatterbox ? s.Exaggeration?.ToString("R", CultureInfo.InvariantCulture) : null),
-            Part(s.IsChatterbox ? HashFile(s.VoiceSamplePath) : null),
+            Part(engineFingerprint),
             Part(request.Title),
             Part(request.Author),
             Part(request.Album),
@@ -480,23 +396,6 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     }
 
     private static string Sha256Hex(byte[] bytes) => Convert.ToHexStringLower(SHA256.HashData(bytes));
-
-    private static string HashFile(string? path)
-    {
-        if (string.IsNullOrEmpty(path))
-        {
-            return string.Empty;
-        }
-
-        try
-        {
-            return Sha256Hex(File.ReadAllBytes(path));
-        }
-        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
-        {
-            return string.Empty;
-        }
-    }
 
     private static bool IsReady(AudioEngineSettings s) => !string.IsNullOrEmpty(s.Url);
 
@@ -558,10 +457,16 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private static string UnreachableMessage(string? url) =>
         $"audio-engine isn't running at {url}. Start it (audio-engine README: Run natively) or change its address in Settings.";
 
-    private static string EngineNotConfiguredMessage(AudioEngineSettings s) =>
-        s.IsChatterbox || s.Engine != AudioEngineSettings.EngineOpenAi
-            ? $"audio-engine can't run {s.Engine} right now."
-            : $"audio-engine has no OpenAI key. Add it in audio-engine's settings ({s.Url}).";
+    private static string EngineNotConfiguredMessage(string? engine, string? url) =>
+        string.IsNullOrEmpty(engine)
+            ? $"audio-engine's narration engine is not ready. Finish setting it up in audio-engine's Settings at {url}."
+            : $"audio-engine is set to narrate with {engine}, which is not ready. Finish setting it up in audio-engine's Settings at {url}.";
+
+    private static async Task<string> EngineFingerprintAsync(AudioEngineClient client, CancellationToken ct)
+    {
+        var engines = await client.ListEnginesAsync(ct).ConfigureAwait(false);
+        return engines.FirstOrDefault(e => e.IsDefault)?.SettingsFingerprint ?? string.Empty;
+    }
 
     private static Uri BuildBaseAddress(string? url)
     {
@@ -610,7 +515,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
 
         if (MentionsNotConfigured(problemType) || MentionsNotConfigured(title) || MentionsNotConfigured(detail))
         {
-            return new Failure(NarrationErrorKind.EngineNotConfigured, EngineNotConfiguredMessage(s));
+            return new Failure(NarrationErrorKind.EngineNotConfigured, EngineNotConfiguredMessage(null, s.Url));
         }
 
         var text = !string.IsNullOrWhiteSpace(detail) ? detail : title ?? string.Empty;
@@ -768,15 +673,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
 
     private readonly record struct Failure(NarrationErrorKind Kind, string Message);
 
-    private sealed record EngineDto(string? Name, bool IsConfigured, List<string>? Voices, string? DefaultVoice);
-
-    private sealed record SpeechRequest(
-        string Model,
-        string Input,
-        string? Voice,
-        string? Instructions,
-        double? Speed,
-        [property: JsonPropertyName("response_format")] string ResponseFormat);
+    private sealed record EngineDto(string? Name, bool IsConfigured, bool IsDefault);
 
     /// <summary>Reports each audio-engine event to the caller's callback synchronously, on the thread that raised it.</summary>
     private sealed class ProgressSink : IProgress<JobEvent>

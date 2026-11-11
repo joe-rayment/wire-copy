@@ -15,19 +15,4 @@ public sealed class AudioEngineConfiguration
 
     /// <summary>Gets the audio-engine base address used when neither a setting nor the environment names one.</summary>
     public string Url { get; init; } = "http://127.0.0.1:8080";
-
-    /// <summary>Gets the OpenAI voice used when the user has not picked one.</summary>
-    public string OpenAiVoice { get; init; } = "nova";
-
-    /// <summary>Gets the OpenAI TTS model used when the user has not picked one.</summary>
-    public string OpenAiModel { get; init; } = "tts-1";
-
-    /// <summary>Gets the OpenAI speaking-style instructions used when the user has not set any.</summary>
-    public string? OpenAiInstructions { get; init; } = "Speak like a playful but knowing news anchor";
-
-    /// <summary>Gets the OpenAI speaking speed (1.0 is normal).</summary>
-    public double Speed { get; init; } = 1.0;
-
-    /// <summary>Gets the Chatterbox exaggeration used when the user has not set one.</summary>
-    public double ChatterboxExaggeration { get; init; } = 0.5;
 }
