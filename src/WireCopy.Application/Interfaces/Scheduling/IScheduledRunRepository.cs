@@ -22,4 +22,8 @@ public interface IScheduledRunRepository
 
     /// <summary>Finished runs the user hasn't acknowledged — drives the failure/last-result badge (B11).</summary>
     Task<IReadOnlyList<ScheduledRun>> GetUnacknowledgedFinishedRunsAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>A recipe's most recent runs (any status), newest first by StartedAtUtc.</summary>
+    Task<IReadOnlyList<ScheduledRun>> GetRecentForRecipeAsync(Guid recipeId, int take, CancellationToken cancellationToken = default)
+        => Task.FromResult<IReadOnlyList<ScheduledRun>>(Array.Empty<ScheduledRun>());
 }

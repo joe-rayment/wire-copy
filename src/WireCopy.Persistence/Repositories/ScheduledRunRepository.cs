@@ -58,4 +58,13 @@ public class ScheduledRunRepository : IScheduledRunRepository
             .OrderByDescending(r => r.StartedAtUtc)
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<ScheduledRun>> GetRecentForRecipeAsync(Guid recipeId, int take, CancellationToken cancellationToken = default)
+    {
+        return await _context.Set<ScheduledRun>()
+            .Where(r => r.RecipeId == recipeId)
+            .OrderByDescending(r => r.StartedAtUtc)
+            .Take(take)
+            .ToListAsync(cancellationToken);
+    }
 }
