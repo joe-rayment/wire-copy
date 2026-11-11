@@ -137,6 +137,18 @@
     document.fonts.load(`bold ${FONT_PX}px 'WireCopy Mono'`)
   ]).catch(() => {}).then(() => {
   term.open(document.getElementById('term'))
+  // OSC 52 (ESC ] 52 ; c ; <base64> BEL): the TUI's copy-to-clipboard (log viewer 'c').
+  // xterm.js ignores it by default, so the copy silently went nowhere; hand it to Electron.
+  term.parser.registerOscHandler(52, data => {
+    const i = data.indexOf(';')
+    const b64 = i < 0 ? '' : data.slice(i + 1)
+    if (!b64 || b64 === '?') return true
+    try {
+      const bytes = Uint8Array.from(atob(b64), c => c.charCodeAt(0))
+      window.wc.copyText(new TextDecoder().decode(bytes))
+    } catch {}
+    return true
+  })
   fit.fit()
   term.focus()
 

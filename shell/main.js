@@ -11,7 +11,7 @@
 //   2. enforcement loop: renderer-internal focus() emits no event — cheap poll restores
 //   3. forwarding: keys that still land on a page are re-sent to the terminal, never lost
 // 'browser' mode is an explicit user gesture (click into the pane); Esc returns to reader.
-const { app, BaseWindow, WebContentsView, dialog, ipcMain, Menu, screen, session, webContents } = require('electron')
+const { app, BaseWindow, WebContentsView, clipboard, dialog, ipcMain, Menu, screen, session, webContents } = require('electron')
 const { buildAppMenuTemplate } = require('./menu')
 const path = require('path')
 const os = require('os')
@@ -1475,6 +1475,7 @@ app.whenReady().then(() => {
     }
   })
   ipcMain.on('pty:input', (_e, d) => { if (state.ptyProc) state.ptyProc.write(d) })
+  ipcMain.on('clip:write', (_e, t) => { if (typeof t === 'string') clipboard.writeText(t) })
   ipcMain.on('term:resize', (_e, dims) => {
     state.ptyDims = dims
     if (state.ptyProc) state.ptyProc.resize(dims.cols, dims.rows)

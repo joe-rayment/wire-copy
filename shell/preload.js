@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('wc', {
   onFont: cb => ipcRenderer.on('wc:font', (_e, px) => cb(px)),
   ready: dims => ipcRenderer.send('term:ready', dims),
   input: d => ipcRenderer.send('pty:input', d),
+  copyText: t => ipcRenderer.send('clip:write', String(t)),
   resize: dims => ipcRenderer.send('term:resize', dims),
   // dev/gate hooks
   reveal: on => ipcRenderer.send('wcdev:reveal', on),
