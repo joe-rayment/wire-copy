@@ -2,6 +2,21 @@ using System.Text.Json.Serialization;
 
 namespace AudioEngine.Client;
 
+/// <summary>
+/// One TTS engine as reported by <c>GET /v1/engines</c>. <see cref="IsDefault"/> marks the engine a job with no engine named will use right now;
+/// <see cref="SettingsFingerprint"/> changes whenever the server's generation settings for that engine change, so fold it into an idempotency key.
+/// </summary>
+public sealed record EngineInfo
+{
+    public string Name { get; init; } = "";
+    public bool IsConfigured { get; init; }
+    public IReadOnlyList<string> Voices { get; init; } = [];
+    public string DefaultVoice { get; init; } = "";
+    public bool SupportsInstructions { get; init; }
+    public bool IsDefault { get; init; }
+    public string SettingsFingerprint { get; init; } = "";
+}
+
 /// <summary>One chapter of a multi-chapter job (for example one article of a reading list).</summary>
 public sealed record ChapterInput(string Title, string Text);
 
@@ -48,6 +63,12 @@ public sealed record JobRequest
 
     /// <summary><c>fail</c> (server default) fails the job on a chapter error; <c>skip</c> skips that chapter and lists it in <see cref="Job.SkippedChapters"/>.</summary>
     public string? OnChapterError { get; init; }
+
+    /// <summary>Reserved <see cref="Feed"/> value: publish to the feed chosen in audio-engine's settings (nothing is published when none is chosen).</summary>
+    public const string DefaultFeed = "@default";
+
+    /// <summary>A feed name (see <see cref="AudioEngineClient.CreateFeedAsync"/>) to publish the finished audio to, or <see cref="DefaultFeed"/> to publish to the feed chosen in audio-engine's settings; null = no publishing. The outcome is in <see cref="Job.Publication"/>.</summary>
+    public string? Feed { get; init; }
 
     /// <summary>Build a <see cref="CoverArt"/> data URI from image bytes (<c>image/jpeg</c> or <c>image/png</c>).</summary>
     public static string CoverArtFromBytes(byte[] bytes, string contentType) =>
@@ -125,6 +146,9 @@ public sealed record Job
     /// <summary>Chapters skipped under <c>OnChapterError = "skip"</c>; null when none.</summary>
     public IReadOnlyList<SkippedChapter>? SkippedChapters { get; init; }
 
+    /// <summary>Feed publication of the finished audio; null when the job was not submitted with a <see cref="JobRequest.Feed"/>.</summary>
+    public Publication? Publication { get; init; }
+
     [JsonIgnore]
     public bool IsTerminal => JobStatuses.IsTerminal(Status);
 
@@ -194,3 +218,80 @@ public sealed record ChapterEstimate
 
 /// <summary>Whether submitting would be allowed under the spend budget (false means the submit would get a 402).</summary>
 public sealed record EstimateBudget(bool Allowed, string? Reason, decimal? LimitUsd);
+
+/// <summary>Where a job's audio stands in its feed: <see cref="Status"/> is <c>pending</c>, <c>published</c>, <c>failed</c> or <c>removed</c>.</summary>
+public sealed record Publication(string Feed, string Status, string? AudioUrl, string? Error, DateTimeOffset? PublishedAt);
+
+/// <summary>A private podcast feed. <see cref="SubscribeUrl"/> is the secret RSS URL to paste into a podcast app.</summary>
+public sealed record Feed
+{
+    public string Name { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string? Description { get; init; }
+    public string? Author { get; init; }
+    public string Language { get; init; } = "";
+    public string? Category { get; init; }
+    public bool Explicit { get; init; }
+    public string? SubscribeUrl { get; init; }
+    public int EpisodeCount { get; init; }
+    public int PendingCount { get; init; }
+    public DateTimeOffset CreatedAt { get; init; }
+    public DateTimeOffset UpdatedAt { get; init; }
+}
+
+/// <summary>Response of <c>GET /v1/feeds</c>.</summary>
+public sealed record FeedList(IReadOnlyList<Feed> Items);
+
+/// <summary>Body of <c>POST /v1/feeds</c>. <see cref="Name"/> is a slug (<c>a-z0-9-</c>, 1-64 chars) and cannot change later.</summary>
+public sealed record CreateFeedRequest
+{
+    public required string Name { get; init; }
+    public required string Title { get; init; }
+    public string? Description { get; init; }
+    public string? Author { get; init; }
+
+    /// <summary>Server default <c>en-us</c> when null.</summary>
+    public string? Language { get; init; }
+    public string? Category { get; init; }
+    public bool Explicit { get; init; }
+
+    /// <summary>Base64 or a <c>data:image/jpeg|png;base64,...</c> URI; see <see cref="JobRequest.CoverArtFromFile"/>.</summary>
+    public string? CoverArt { get; init; }
+}
+
+/// <summary>Body of <c>PATCH /v1/feeds/{name}</c>. A null member is left unchanged; <see cref="CoverArt"/> = <c>""</c> removes the cover.</summary>
+public sealed record UpdateFeedRequest
+{
+    public string? Title { get; init; }
+    public string? Description { get; init; }
+    public string? Author { get; init; }
+    public string? Language { get; init; }
+    public string? Category { get; init; }
+    public bool? Explicit { get; init; }
+    public string? CoverArt { get; init; }
+}
+
+/// <summary>One episode of a feed. <see cref="Status"/> is <c>pending</c>, <c>published</c>, <c>failed</c> or <c>removed</c>.</summary>
+public sealed record FeedEpisode
+{
+    public string JobId { get; init; } = "";
+    public string Title { get; init; } = "";
+    public string Status { get; init; } = "";
+    public string? AudioUrl { get; init; }
+    public long Bytes { get; init; }
+    public double DurationSeconds { get; init; }
+    public DateTimeOffset? PublishedAt { get; init; }
+
+    /// <summary>When the retention sweep will remove the episode from the feed.</summary>
+    public DateTimeOffset? ExpiresAt { get; init; }
+    public string? Error { get; init; }
+}
+
+/// <summary>Response of <c>GET /v1/feeds/{name}/episodes</c>.</summary>
+public sealed record FeedEpisodeList(IReadOnlyList<FeedEpisode> Items);
+
+/// <summary>Result of <c>POST /v1/feeds/test</c>, a bucket round-trip self-test. <see cref="Ok"/> is true only when every step passed.</summary>
+public sealed record FeedTest(bool Ok, FeedTestStep Configured, FeedTestStep NotListable, FeedTestStep Upload, FeedTestStep Fetch, FeedTestStep Delete);
+
+/// <summary>One step of a <see cref="FeedTest"/>.</summary>
+public sealed record FeedTestStep(bool Ok, string? Error);
