@@ -37,7 +37,10 @@ internal static class NarratorPreflight
         IPodcastNarrator narrator, IAudioEngineLauncher? launcher, CancellationToken ct)
     {
         var status = await CheckAsync(narrator, ct).ConfigureAwait(false);
-        if (status.Ready && launcher != null && AudioEngineLauncher.IsLocal(status.Url))
+
+        // An engine that answers at all tells us where it lives, even when it is not usable yet
+        // (no OpenAI key, wants an API key) — remember it for the day it is not running.
+        if (status.Reachable && launcher != null && AudioEngineLauncher.IsLocal(status.Url))
         {
             launcher.NoteRunning(status.Url);
         }
@@ -51,7 +54,7 @@ internal static class NarratorPreflight
             if (start.Ready)
             {
                 status = await CheckAsync(narrator, ct).ConfigureAwait(false);
-                if (status.Ready)
+                if (status.Reachable)
                 {
                     launcher.NoteRunning(status.Url);
                 }
