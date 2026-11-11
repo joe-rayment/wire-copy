@@ -384,25 +384,8 @@ internal static class PodcastCommandHandler
     /// <param name="narrator">The narrator to check.</param>
     /// <param name="ct">The user's cancellation token.</param>
     /// <returns>The narrator's status, or a synthetic not-ready status on timeout.</returns>
-    internal static async Task<NarratorStatus> CheckNarratorAsync(IPodcastNarrator narrator, CancellationToken ct)
-    {
-        try
-        {
-            using var checkCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            checkCts.CancelAfter(TimeSpan.FromSeconds(5));
-            return await narrator.CheckAsync(checkCts.Token).ConfigureAwait(false);
-        }
-        catch (OperationCanceledException) when (!ct.IsCancellationRequested)
-        {
-            return new NarratorStatus
-            {
-                Ready = false,
-                ErrorKind = NarrationErrorKind.Unreachable,
-                Message = "audio-engine isn't running or isn't answering (no reply within 5 seconds). "
-                    + "Start it (audio-engine README: Run natively) or change its address in Settings.",
-            };
-        }
-    }
+    internal static Task<NarratorStatus> CheckNarratorAsync(IPodcastNarrator narrator, CancellationToken ct)
+        => NarratorPreflight.CheckAsync(narrator, ct);
 
     /// <summary>
     /// Reads cost-gate thresholds from the user-settings store, falling back
