@@ -23,7 +23,7 @@ internal static class RoutineRunDiagnosis
         ("couldn't find it", "can't find audio-engine to start it"),
         ("wants an API key", "audio-engine wants an API key"),
         ("rejected the API key", "audio-engine rejected the API key"),
-        ("has no OpenAI key", "audio-engine has no OpenAI key"),
+        ("Finish setting it up in audio-engine", "audio-engine's narration engine is not ready"),
         ("isn't set up", "audio-engine isn't set up"),
         ("isn't running at", "audio-engine isn't running"),
     };
@@ -52,7 +52,7 @@ internal static class RoutineRunDiagnosis
         var attention = ScheduledRunBadge.NeedsAttention(run);
         if (run.Status == ScheduledRunStatus.Completed)
         {
-            return Make(string.IsNullOrWhiteSpace(run.TargetFeedUrl) ? "✓ Done — saved on this computer" : "✓ Published", string.Empty, null, null, None, attention);
+            return Make(string.IsNullOrWhiteSpace(run.TargetFeedUrl) ? "✓ Done — saved on this computer" : "✓ Published", run.ErrorMessage ?? string.Empty, null, null, None, attention);
         }
 
         if (run.Status == ScheduledRunStatus.Skipped && run.ErrorClass == "NothingToCollect")
@@ -106,9 +106,6 @@ internal static class RoutineRunDiagnosis
         SettingsCommandHandler.SetupRow.AudioEngineKey => "audio-engine API key",
         SettingsCommandHandler.SetupRow.AudioEngineProgram => "find audio-engine and start it",
         SettingsCommandHandler.SetupRow.OpenAiKey => "OpenAI key",
-        SettingsCommandHandler.SetupRow.GcsBucket => "podcast bucket",
-        SettingsCommandHandler.SetupRow.GcsKey => "storage key",
-        SettingsCommandHandler.SetupRow.NarrationEngine => "narration engine",
         _ => row.ToString(),
     };
 

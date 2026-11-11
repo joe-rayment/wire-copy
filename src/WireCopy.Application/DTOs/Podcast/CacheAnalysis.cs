@@ -31,4 +31,10 @@ public record CacheAnalysis
     /// Per-article cache status details.
     /// </summary>
     public required IReadOnlyList<ArticleCacheStatus> ArticleStatuses { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether audio-engine priced the job at zero (a local engine), so the
+    /// cost gate can say so instead of showing a bare $0.00.
+    /// </summary>
+    public bool EngineIsLocal { get; init; }
 }

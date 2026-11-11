@@ -125,7 +125,10 @@ public sealed record NarrationEstimate
     /// <summary>Gets audio-engine's budget limit in USD, when one is set.</summary>
     public decimal? BudgetLimitUsd { get; init; }
 
-    /// <summary>Gets a value indicating whether the engine runs on this machine (no per-character cost).</summary>
+    /// <summary>Gets the engine audio-engine priced this job for.</summary>
+    public string EngineName { get; init; } = string.Empty;
+
+    /// <summary>Gets a value indicating whether the job costs nothing (the engine runs locally; the full price is zero).</summary>
     public bool EngineIsLocal { get; init; }
 
     /// <summary>Gets the per-chapter breakdown.</summary>
@@ -163,6 +166,19 @@ public sealed record NarrationProgress
 /// <summary>A chapter audio-engine skipped because narrating it failed.</summary>
 public sealed record NarrationSkippedChapter(int Index, string? Title, string? Error);
 
+/// <summary>Where audio-engine published a narrated episode. <c>Status</c> is pending, published or failed.</summary>
+/// <param name="FeedName">The audio-engine feed name.</param>
+/// <param name="Status">pending, published or failed.</param>
+/// <param name="AudioUrl">The episode's audio URL once published.</param>
+/// <param name="Error">Why publishing failed, when it did.</param>
+public sealed record NarrationPublication(string FeedName, string Status, string? AudioUrl, string? Error);
+
+/// <summary>The audio-engine feed episodes are published to by default.</summary>
+/// <param name="Name">The feed's slug.</param>
+/// <param name="Title">The feed's display title.</param>
+/// <param name="SubscribeUrl">The secret RSS URL for podcast apps.</param>
+public sealed record NarrationFeed(string Name, string Title, string? SubscribeUrl);
+
 /// <summary>The outcome of a narration call.</summary>
 public sealed record NarrationResult
 {
@@ -192,10 +208,13 @@ public sealed record NarrationResult
 
     /// <summary>Gets the audio-engine job id, when a job was created.</summary>
     public string? JobId { get; init; }
+
+    /// <summary>Gets where audio-engine published the episode; null when it has no default feed (narrated, not published).</summary>
+    public NarrationPublication? Publication { get; init; }
 }
 
-/// <summary>One narration engine hosted by audio-engine.</summary>
-public sealed record NarratorEngine(string Name, bool IsConfigured, IReadOnlyList<string> Voices, string? DefaultVoice);
+/// <summary>One narration engine hosted by audio-engine; <c>IsDefault</c> marks the one it will narrate with.</summary>
+public sealed record NarratorEngine(string Name, bool IsConfigured, bool IsDefault);
 
 /// <summary>Result of <see cref="Interfaces.Podcast.IPodcastNarrator.CheckAsync"/>: can narration run right now?</summary>
 public sealed record NarratorStatus
@@ -212,10 +231,10 @@ public sealed record NarratorStatus
     /// <summary>Gets a value indicating whether every check passed and narration can start.</summary>
     public bool Ready { get; init; }
 
-    /// <summary>Gets the engine the current settings select ("openai" or "chatterbox").</summary>
+    /// <summary>Gets the engine audio-engine is set to narrate with (empty when it could not be asked).</summary>
     public string EngineName { get; init; } = string.Empty;
 
-    /// <summary>Gets a value indicating whether the selected engine has its credentials inside audio-engine.</summary>
+    /// <summary>Gets a value indicating whether the engine audio-engine is set to use is ready.</summary>
     public bool EngineConfigured { get; init; }
 
     /// <summary>Gets the engines audio-engine reports (empty when it could not be asked).</summary>

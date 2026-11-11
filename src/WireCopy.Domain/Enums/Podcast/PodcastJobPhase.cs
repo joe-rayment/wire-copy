@@ -21,7 +21,7 @@ public enum PodcastJobPhase
     /// <summary>FFmpeg M4B assembly + faststart atom.</summary>
     Assembly = 3,
 
-    /// <summary>GCS upload + feed.xml + manifest + reachability probe.</summary>
+    /// <summary>audio-engine publishes the episode to its feed.</summary>
     Publish = 4,
 
     /// <summary>Terminal — no more phases to advance to.</summary>

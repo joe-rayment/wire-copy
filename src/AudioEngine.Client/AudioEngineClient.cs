@@ -79,6 +79,10 @@ public sealed class AudioEngineClient : IDisposable
             ?? throw new InvalidOperationException("audio-engine returned an empty body for POST /v1/jobs/estimate.");
     }
 
+    /// <summary>List the server's TTS engines: which one is the default, whether it is ready, and a fingerprint of its generation settings.</summary>
+    public Task<IReadOnlyList<EngineInfo>> ListEnginesAsync(CancellationToken ct = default) =>
+        SendJsonAsync<IReadOnlyList<EngineInfo>>(HttpMethod.Get, "v1/engines", ct);
+
     /// <summary>Fetch one job.</summary>
     public Task<Job> GetAsync(string id, CancellationToken ct = default) =>
         SendJsonAsync<Job>(HttpMethod.Get, $"v1/jobs/{Uri.EscapeDataString(id)}", ct);
@@ -118,6 +122,60 @@ public sealed class AudioEngineClient : IDisposable
         using var resp = await _http.SendAsync(msg, ct).ConfigureAwait(false);
         await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
     }
+
+    /// <summary>Create a private podcast feed (409 if the name is taken, 400 for an invalid name or cover).</summary>
+    public async Task<Feed> CreateFeedAsync(CreateFeedRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        using var msg = NewRequest(HttpMethod.Post, "v1/feeds");
+        msg.Content = JsonContent.Create(request, options: Json);
+        return await SendJsonAsync<Feed>(msg, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>List all feeds.</summary>
+    public async Task<IReadOnlyList<Feed>> ListFeedsAsync(CancellationToken ct = default) =>
+        (await SendJsonAsync<FeedList>(HttpMethod.Get, "v1/feeds", ct).ConfigureAwait(false)).Items;
+
+    /// <summary>Fetch one feed by name (404 if unknown).</summary>
+    public Task<Feed> GetFeedAsync(string name, CancellationToken ct = default) =>
+        SendJsonAsync<Feed>(HttpMethod.Get, $"v1/feeds/{Uri.EscapeDataString(name)}", ct);
+
+    /// <summary>Change a feed's metadata or cover; the name cannot change. Null members of <paramref name="request"/> are left as they are.</summary>
+    public async Task<Feed> UpdateFeedAsync(string name, UpdateFeedRequest request, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+        using var msg = NewRequest(HttpMethod.Patch, $"v1/feeds/{Uri.EscapeDataString(name)}");
+        msg.Content = JsonContent.Create(request, options: Json);
+        return await SendJsonAsync<Feed>(msg, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Delete a feed and its published files (404 if unknown, 409 while it is busy).</summary>
+    public async Task DeleteFeedAsync(string name, CancellationToken ct = default)
+    {
+        using var msg = NewRequest(HttpMethod.Delete, $"v1/feeds/{Uri.EscapeDataString(name)}");
+        using var resp = await _http.SendAsync(msg, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Replace the feed's secret URL with a fresh one; the old <see cref="Feed.SubscribeUrl"/> stops working.</summary>
+    public Task<Feed> RotateFeedAsync(string name, CancellationToken ct = default) =>
+        SendJsonAsync<Feed>(HttpMethod.Post, $"v1/feeds/{Uri.EscapeDataString(name)}/rotate", ct);
+
+    /// <summary>List a feed's episodes (pending, published, failed or removed).</summary>
+    public async Task<IReadOnlyList<FeedEpisode>> ListFeedEpisodesAsync(string name, CancellationToken ct = default) =>
+        (await SendJsonAsync<FeedEpisodeList>(HttpMethod.Get, $"v1/feeds/{Uri.EscapeDataString(name)}/episodes", ct).ConfigureAwait(false)).Items;
+
+    /// <summary>Take one episode out of a feed (404 if unknown, 409 while it is busy).</summary>
+    public async Task RemoveFeedEpisodeAsync(string name, string jobId, CancellationToken ct = default)
+    {
+        using var msg = NewRequest(HttpMethod.Delete, $"v1/feeds/{Uri.EscapeDataString(name)}/episodes/{Uri.EscapeDataString(jobId)}");
+        using var resp = await _http.SendAsync(msg, ct).ConfigureAwait(false);
+        await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>Round-trip the feeds bucket (configured, not publicly listable, upload, fetch, delete) and report each step. A failing step is data, not an exception.</summary>
+    public Task<FeedTest> TestFeedsAsync(CancellationToken ct = default) =>
+        SendJsonAsync<FeedTest>(HttpMethod.Post, "v1/feeds/test", ct);
 
     /// <summary>
     /// Wait until the job reaches a terminal status (succeeded, failed, cancelled or interrupted) and return it.
@@ -295,10 +353,15 @@ public sealed class AudioEngineClient : IDisposable
     private async Task<T> SendJsonAsync<T>(HttpMethod method, string relative, CancellationToken ct)
     {
         using var msg = NewRequest(method, relative);
+        return await SendJsonAsync<T>(msg, ct).ConfigureAwait(false);
+    }
+
+    private async Task<T> SendJsonAsync<T>(HttpRequestMessage msg, CancellationToken ct)
+    {
         using var resp = await _http.SendAsync(msg, ct).ConfigureAwait(false);
         await EnsureSuccessAsync(resp, ct).ConfigureAwait(false);
         return await resp.Content.ReadFromJsonAsync<T>(Json, ct).ConfigureAwait(false)
-            ?? throw new InvalidOperationException($"audio-engine returned an empty body for {method} {relative}.");
+            ?? throw new InvalidOperationException($"audio-engine returned an empty body for {msg.Method} {msg.RequestUri}.");
     }
 
     private static async Task EnsureSuccessAsync(HttpResponseMessage resp, CancellationToken ct)

@@ -167,18 +167,7 @@ internal static class PodcastCommandHandler
             using var scope = ctx.ScopeFactory.CreateScope();
             var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
             var orchestrator = scope.ServiceProvider.GetRequiredService<IPodcastOrchestrator>();
-            var gcsConfig = scope.ServiceProvider
-                .GetRequiredService<IOptions<GcsConfiguration>>().Value;
             var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-
-            if (string.IsNullOrWhiteSpace(gcsConfig.BucketName))
-            {
-                var savedBucket = settingsStore.Get("GcsBucketName");
-                if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
-                {
-                    gcsConfig.BucketName = savedBucket;
-                }
-            }
 
             // workspace-c3ec4.4: narration runs in audio-engine, which owns the TTS keys. Ask it
             // whether it is up, accepts our key and has the selected engine configured BEFORE the
@@ -230,22 +219,6 @@ internal static class PodcastCommandHandler
                     ct).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 return false;
-            }
-
-            var engineIsLocal = string.Equals(narrator.EngineName, "chatterbox", StringComparison.OrdinalIgnoreCase);
-
-            // Pre-flight GCS validation: check credentials BEFORE slow cache
-            // analysis. workspace-ny44 (Phase 6) retired the confirmation
-            // screen, so the success/error tuple from this probe is now
-            // either consumed by the auto-remediation flow (workspace-p1px,
-            // which lives in PodcastPublisher) or surfaced via the typed
-            // failure pipeline in the result screen — we no longer need to
-            // pass it forward as banner copy.
-            var preflightBucketName = gcsConfig.BucketName;
-            if (!string.IsNullOrWhiteSpace(preflightBucketName))
-            {
-                await PodcastGcsWizard.ValidateAndBootstrapBucketAsync(
-                    ctx, options, preflightBucketName, gcsConfig, ct).ConfigureAwait(false);
             }
 
             // workspace-reym: deleted the standalone "Analyzing Articles"
@@ -313,7 +286,7 @@ internal static class PodcastCommandHandler
                 if (costGateConfig.ShouldShowGate(analysis))
                 {
                     var proceed = await PodcastCostGateModal
-                        .ShowAsync(ctx, options, analysis, costGateConfig, ct, engineIsLocal: engineIsLocal)
+                        .ShowAsync(ctx, options, analysis, costGateConfig, ct, engineIsLocal: analysis.EngineIsLocal)
                         .ConfigureAwait(false);
                     if (!proceed)
                     {

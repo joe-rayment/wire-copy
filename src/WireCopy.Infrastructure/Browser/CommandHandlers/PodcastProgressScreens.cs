@@ -1151,7 +1151,7 @@ internal static class PodcastProgressScreens
         // full success from partial failure.
         var (glyph, glyphColor, headline) = shape switch
         {
-            CompletionShape.FullSuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated and published"),
+            CompletionShape.FullSuccess => ("✓", p.GetSuccessFg().AnsiFg, string.IsNullOrWhiteSpace(result.FeedTitle) ? "Published" : $"Published to {result.FeedTitle}"),
             CompletionShape.LocalOnlySuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated (local-only — no RSS publish)"),
             CompletionShape.PartialFailure => ("⚠", p.GetWarningFg().AnsiFg, $"Podcast generated with {result.ArticlesFailed} article failure{(result.ArticlesFailed == 1 ? string.Empty : "s")}"),
             _ => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated"),
@@ -1239,7 +1239,11 @@ internal static class PodcastProgressScreens
 
             case CompletionShape.LocalOnlySuccess:
                 lines.Add($"  {p.SecondaryText.AnsiFg}Listen with VLC, Apple Books, or any M4B-aware player.{Reset}");
-                lines.Add($"  {p.SecondaryText.AnsiFg}Configure a GCS bucket in Setup to enable RSS publishing.{Reset}");
+                if (!string.IsNullOrWhiteSpace(result.PublicationNote))
+                {
+                    lines.Add($"  {p.SecondaryText.AnsiFg}{result.PublicationNote}{Reset}");
+                }
+
                 break;
 
             case CompletionShape.PartialFailure:
@@ -1296,8 +1300,8 @@ internal static class PodcastProgressScreens
         // workspace-n49i Shape D: typed (Step, Reason, Fix) tuple replaces
         // the previous heuristic-bulleted "What to try" list.
         // workspace-3a2k Phase E: prefer the typed FailureDetail when present
-        // (publish-step failures with a configured bucket carry it) so the
-        // bucket-public remediation surfaces verbatim instead of via the
+        // (publish-step failures carry it) so the
+        // audio-engine remediation surfaces verbatim instead of via the
         // string-pattern heuristic.
         var classification = PodcastFailureClassifier.Classify(typedDetail, errorMessage, failedArticles);
 
@@ -1369,13 +1373,13 @@ internal static class PodcastProgressScreens
                 helpers.WriteLine();
             }
 
-            // workspace-p1px: surface the retry affordance so the BucketNotPublic
-            // remediation flow ("run this gsutil one-liner, then press r") works
+            // workspace-p1px: surface the retry affordance so the publish-failure
+            // remediation flow ("fix it in audio-engine, then press r") works
             // end-to-end. The retry signal returns up through HandleGeneratePodcast's
             // retry loop, which re-runs from scratch with fresh pre-flight checks.
             //
             // workspace-n0kb: when the failure points at a fixable credential
-            // (TTS auth → OpenAI key, GCS publish → bucket), surface an `s`
+            // (TTS auth → OpenAI key), surface an `s`
             // hint that deep-links into the relevant Setup row. Hidden for
             // failure modes where no Setup row maps (FFmpeg install, network).
             var hintParts = new List<string>
@@ -1696,7 +1700,7 @@ internal static class PodcastProgressScreens
                 $"  {p.SecondaryText.AnsiFg}{LocalLabel.PadRight(labelWidth)}{Reset}  " +
                 $"{p.PrimaryText.AnsiFg}{localDisplay}{Reset}");
             helpers.WriteLine(
-                $"  {p.SecondaryText.AnsiFg}(no GCS bucket configured — generating locally only){Reset}");
+                $"  {p.SecondaryText.AnsiFg}(audio-engine has no default feed — the episode will be saved on this computer only){Reset}");
         }
 
         helpers.WriteLine();

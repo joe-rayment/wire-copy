@@ -17,12 +17,6 @@ public interface IPodcastNarrator
     /// </summary>
     bool IsConfigured { get; }
 
-    /// <summary>
-    /// Gets the engine the current settings select: "chatterbox" when the TtsEngine setting says so,
-    /// otherwise "openai".
-    /// </summary>
-    string EngineName { get; }
-
     /// <summary>Checks that audio-engine is reachable, accepts the key and has the selected engine configured.</summary>
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The status; never throws for an expected failure.</returns>
@@ -41,10 +35,14 @@ public interface IPodcastNarrator
     /// <returns>The result; never throws for an expected failure (only for cancellation).</returns>
     Task<NarrationResult> NarrateAsync(NarrationRequest request, IProgress<NarrationProgress>? progress = null, CancellationToken ct = default);
 
-    /// <summary>Narrates a short sample with the current voice settings to <paramref name="outputPath"/>.</summary>
-    /// <param name="text">The sample text.</param>
-    /// <param name="outputPath">Where the audio is written.</param>
+    /// <summary>Polls the job every 2 s while its publication is pending; gives up after 10 minutes.</summary>
+    /// <param name="jobId">The audio-engine job id.</param>
     /// <param name="ct">Cancellation token.</param>
-    /// <returns>The result; never throws for an expected failure (only for cancellation).</returns>
-    Task<NarrationResult> NarrateTestAsync(string text, string outputPath, CancellationToken ct = default);
+    /// <returns>The last publication state (still pending on timeout); null when there is none or audio-engine can't be asked.</returns>
+    Task<NarrationPublication?> WaitForPublicationAsync(string jobId, CancellationToken ct = default);
+
+    /// <summary>Asks audio-engine which feed is its default.</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The default feed; null when none is set or audio-engine is unreachable.</returns>
+    Task<NarrationFeed?> GetDefaultFeedAsync(CancellationToken ct = default);
 }

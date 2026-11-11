@@ -108,7 +108,7 @@ public class TerminalInputHandler : IInputHandler
     public Task<string?> PromptForInputAsync(string prompt, CancellationToken cancellationToken = default, bool isSecret = false, int? row = null, int? col = null, string? initialInput = null, Func<char, bool>? interceptKey = null)
     {
         // Public 7-arg signature unchanged (workspace-cgnt: do NOT extend
-        // this signature — the GCS verify branch tried that and broke
+        // this signature — an earlier branch tried that and broke
         // qi5p's NSubstitute mocks). Delegates to PromptForInputCoreAsync
         // with clearWidth=null, preserving the historical "clear to right
         // edge" behaviour for command-line / search-bar callers.

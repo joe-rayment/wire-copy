@@ -13,8 +13,8 @@ internal sealed class FormFieldConfig
     /// Optional one-line "where to find this" pointer rendered between the
     /// Label and the input box. Surfaces the disambiguating sentence above
     /// the field so the user reads it before they start typing — used by the
-    /// GCS service-account row and bucket row (workspace-cgnt) to point at
-    /// the GCP console path.
+    /// settings rows (workspace-cgnt) to point at
+    /// where to find the value.
     /// </summary>
     public string? Subtitle { get; init; }
 
@@ -38,7 +38,7 @@ internal sealed class FormFieldConfig
     /// <c>false</c> lets the character fall through to normal text insertion.
     ///
     /// <para>
-    /// Used to wire hotkey overlays into a FormField — e.g. the GCS bucket
+    /// Used to wire hotkey overlays into a FormField — e.g. a settings
     /// row uses this to render a verbose <c>?</c> help panel without leaving
     /// the input loop (workspace-dlq5).
     /// </para>

@@ -20,6 +20,21 @@ public record PodcastResult
     public string? FeedUrl { get; init; }
 
     /// <summary>
+    /// Gets the title of the audio-engine feed the episode was published to; null when not published.
+    /// </summary>
+    public string? FeedTitle { get; init; }
+
+    /// <summary>
+    /// Gets the episode's audio URL in audio-engine's feed; null when not published.
+    /// </summary>
+    public string? EpisodeUrl { get; init; }
+
+    /// <summary>
+    /// Gets a one-line publishing note for the result screen (not published, still publishing); null when published normally.
+    /// </summary>
+    public string? PublicationNote { get; init; }
+
+    /// <summary>
     /// Gets the local M4B file path, if assembly succeeded.
     /// </summary>
     public string? LocalFilePath { get; init; }
@@ -68,8 +83,8 @@ public record PodcastResult
     /// Gets the explicit classification of the result (workspace-3a2k).
     /// Defaults to <c>null</c> meaning "let the screen infer from
     /// <see cref="Success"/> + <see cref="FeedUrl"/> + <see cref="ArticlesFailed"/>".
-    /// The orchestrator sets this explicitly for the publish-failed-while-bucket-
-    /// configured path, which must render as <see cref="PodcastResultClassification.TotalFailure"/>
+    /// The orchestrator sets this explicitly for the publish-failed-in-audio-engine
+    /// path, which must render as <see cref="PodcastResultClassification.TotalFailure"/>
     /// rather than the legacy "local-only success" silent-degradation behaviour.
     /// </summary>
     public PodcastResultClassification? Classification { get; init; }
@@ -93,10 +108,16 @@ public record PodcastResult
         long fileSizeBytes,
         int articlesCached = 0,
         decimal totalCost = 0m,
-        IReadOnlyList<ArticleFailure>? failedArticleDetails = null) => new()
+        IReadOnlyList<ArticleFailure>? failedArticleDetails = null,
+        string? feedTitle = null,
+        string? episodeUrl = null,
+        string? publicationNote = null) => new()
     {
         Success = true,
         FeedUrl = feedUrl,
+        FeedTitle = feedTitle,
+        EpisodeUrl = episodeUrl,
+        PublicationNote = publicationNote,
         LocalFilePath = localFilePath,
         TotalDuration = totalDuration,
         ArticlesProcessed = articlesProcessed,
@@ -124,9 +145,8 @@ public record PodcastResult
 
     /// <summary>
     /// Creates a typed failure result (workspace-3a2k Phase E). Used by the
-    /// orchestrator when the publish step fails but the user did configure a
-    /// GCS bucket — the failure-class drives targeted remediation copy on
-    /// the result screen instead of the heuristic string-pattern fallback.
+    /// orchestrator when the publish step fails in audio-engine — the
+    /// detail drives targeted remediation copy on the result screen instead of the heuristic string-pattern fallback.
     /// </summary>
     public static PodcastResult Failure(
         string errorMessage,

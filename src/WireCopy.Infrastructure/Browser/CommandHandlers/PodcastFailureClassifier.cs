@@ -19,8 +19,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// "What to try:" list.
 ///
 /// <para>
-/// Mirrors the pattern of <c>GcsCredentialVerifier.RemediationFor</c>:
-/// pattern-match against the error string + first article-failure reason,
+/// Pattern-match against the error string + first article-failure reason,
 /// pick the most specific classification, fall back to a generic
 /// "see logs" tuple if nothing matches.
 /// </para>
@@ -42,29 +41,13 @@ internal static class PodcastFailureClassifier
         if (typedDetail is not null)
         {
             var reason = string.IsNullOrWhiteSpace(typedDetail.RawMessage)
-                ? typedDetail.FailureClass.ToString()
+                ? typedDetail.Step
                 : typedDetail.RawMessage;
-
-            // workspace-n0kb: any non-None publish failure points the user
-            // at the GcsBucket row — that's where the bucket name, public
-            // ACL, and (via the inline gate) the service-account key are
-            // edited. NoAudioFiles is a generation-side missing local file
-            // rather than a credential bug, so it gets no setup row.
-            SettingsCommandHandler.SetupRow? relevantRow = typedDetail.FailureClass switch
-            {
-                FeedPublishFailureClass.BucketNotPublic
-                    or FeedPublishFailureClass.FeedNotReachable
-                    or FeedPublishFailureClass.FeedNotParseable
-                    or FeedPublishFailureClass.Generic
-                    => SettingsCommandHandler.SetupRow.GcsBucket,
-                _ => null,
-            };
 
             return new PodcastFailureClassification(
                 Step: typedDetail.Step,
                 Reason: reason,
-                Fix: typedDetail.RemediationCopy,
-                RelevantSetupRow: relevantRow);
+                Fix: typedDetail.RemediationCopy);
         }
 
         return Classify(errorMessage, failedArticles);
@@ -101,15 +84,14 @@ internal static class PodcastFailureClassifier
                 Fix: "Install ffmpeg: brew install ffmpeg (macOS) or apt install ffmpeg (Linux)");
         }
 
-        // Engine-neutral orchestrator preflight copy (workspace-2xej.10) — the
-        // active engine is unknown here, so point at the engine picker.
+        // Engine-neutral orchestrator preflight copy — the engine is chosen in audio-engine,
+        // so the fix is in audio-engine's Settings, not a Wire Copy row.
         if (error.Contains("Narration isn't ready", StringComparison.OrdinalIgnoreCase))
         {
             return new PodcastFailureClassification(
                 Step: "Pre-flight (narration)",
                 Reason: "The narration engine isn't ready yet",
-                Fix: "Open Settings (c) → Narration engine to finish setup, then press p again",
-                RelevantSetupRow: SettingsCommandHandler.SetupRow.NarrationEngine);
+                Fix: "Finish setting up the narration engine in audio-engine's Settings, then press p again");
         }
 
         if (error.Contains("API key", StringComparison.OrdinalIgnoreCase) ||
@@ -120,19 +102,6 @@ internal static class PodcastFailureClassifier
                 Reason: "OpenAI API key missing or not yet configured",
                 Fix: "Open Setup (:config), paste your key, then press p again",
                 RelevantSetupRow: SettingsCommandHandler.SetupRow.OpenAiKey);
-        }
-
-        // ---- GCS / publish failures (must come before generic 403 — a
-        // GCS bucket 403 means "bucket isn't public", not "OpenAI auth"). ----
-        if (error.Contains("GCS", StringComparison.OrdinalIgnoreCase) ||
-            error.Contains("bucket", StringComparison.OrdinalIgnoreCase) ||
-            error.Contains("storage.googleapis", StringComparison.OrdinalIgnoreCase))
-        {
-            return new PodcastFailureClassification(
-                Step: "RSS publish (GCS upload)",
-                Reason: "Couldn't upload or publish the feed to your GCS bucket",
-                Fix: "Check the bucket name + service-account key in Setup, or run gsutil iam ch allUsers:objectViewer gs://your-bucket",
-                RelevantSetupRow: SettingsCommandHandler.SetupRow.GcsBucket);
         }
 
         // ---- OpenAI API errors (429 / 401 / 403 / 5xx) ----
@@ -266,14 +235,14 @@ internal static class PodcastFailureClassifier
                 RelevantSetupRow: SettingsCommandHandler.SetupRow.AudioEngine);
         }
 
-        // audio-engine's own OpenAI key lives in audio-engine, not in WireCopy — checked before the
-        // generic "API key" rule below, which is about the key WireCopy sends TO audio-engine.
-        if (error.Contains("no OpenAI key", StringComparison.OrdinalIgnoreCase))
+        // The engine audio-engine narrates with is set up in audio-engine, not in WireCopy — checked
+        // before the generic "API key" rule below, which is about the key WireCopy sends TO audio-engine.
+        if (error.Contains("Finish setting it up in audio-engine", StringComparison.OrdinalIgnoreCase))
         {
             return new PodcastFailureClassification(
                 Step: Step,
                 Reason: error,
-                Fix: "Open audio-engine's settings page and add the OpenAI key there, then press p again");
+                Fix: "Finish setting up the narration engine in audio-engine's Settings, then press p again");
         }
 
         if (error.Contains("no address", StringComparison.OrdinalIgnoreCase))
