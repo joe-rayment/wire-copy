@@ -1,15 +1,18 @@
 #!/usr/bin/env python3
 """Fake audio-engine for the Routines harness (workspace-wyvga.9). stdlib only.
 
-  fake_audio_engine.py --port 8090 [--log FILE]
+  fake_audio_engine.py --port 8090 [--log FILE] [--no-default-feed]
 
 Any bearer key is accepted. Jobs succeed instantly; audio is ~1 s of silent MP3.
 --log: "METHOD path" per request, and per POST /v1/jobs one line per chapter:
-"CHAPTER <title> | <source url or ->". The client's ChapterInput carries only
+"CHAPTER <title> | <source url or ->".
+By default one fake feed is the Default feed: jobs sent with feed "@default" get a
+"publication" that is pending, then published ~2 s after the job succeeds.
+--no-default-feed: no feed exists and publication is null (episode not published). The client's ChapterInput carries only
 Title+Text, so the source url is the first http(s) URL found in the chapter
 text/title, else in request metadata, else "-".
 """
-import argparse, json, re, uuid, datetime, threading
+import argparse, hashlib, json, re, time, uuid, datetime, threading
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 # MPEG-1 Layer III, 128 kbps, 44.1 kHz, no padding: 417-byte frame, 26.1 ms. Zeroed
@@ -23,6 +26,11 @@ DURATION = 40 * 1152 / 44100
 JOBS = {}
 LOCK = threading.Lock()
 LOGF = None
+NO_DEFAULT_FEED = False
+PUBLISH_DELAY = 2.0
+FEED = dict(name="wire-copy", title="Wire Copy", description=None, author=None, language="en", category=None,
+            explicit=False, subscribeUrl="https://example.invalid/feeds/fake-token/feed.xml", episodeCount=0,
+            pendingCount=0, createdAt="2026-01-01T00:00:00Z", updatedAt="2026-01-01T00:00:00Z", isDefault=True)
 URL_RE = re.compile(r"https?://[^\s\"'<>)\]]+")
 
 def log(line):
@@ -31,12 +39,20 @@ def log(line):
 
 def now(): return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+def publication(j):
+    if not j.get("feed"): return None
+    done = time.time() - j["created"] >= PUBLISH_DELAY
+    return dict(feed=j["feed"], status="published" if done else "pending",
+                audioUrl=f"{FEED['subscribeUrl'].rsplit('/', 1)[0]}/{j['id']}.m4b" if done else None,
+                error=None, publishedAt=now() if done else None, removedAt=None)
+
 def job_json(j):
     return dict(id=j["id"], status="succeeded", phase="done", progress=1, chunksDone=j["chunks"],
                 chunksTotal=j["chunks"], title=j["title"], engine="fake", voice="fake", format="m4b",
                 priority=0, attempts=1, estCostUsd=0, durationSeconds=DURATION, bytes=len(M4B),
                 createdAt=j["createdAt"], startedAt=j["createdAt"], finishedAt=j["createdAt"],
-                updatedAt=j["createdAt"], metadata=j["metadata"], audioUrl=f"/v1/jobs/{j['id']}/audio")
+                updatedAt=j["createdAt"], metadata=j["metadata"], audioUrl=f"/v1/jobs/{j['id']}/audio",
+                publication=publication(j))
 
 class H(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.0"  # one request per connection: no keep-alive bookkeeping
@@ -67,8 +83,13 @@ class H(BaseHTTPRequestHandler):
             # WireCopy's readiness check (routine runs do it before loading any page) looks
             # its selected engine up BY NAME — "openai" or "chatterbox" — and needs it
             # configured, so the fake offers both.
-            return self.send(200, [dict(name=n, isConfigured=True, voices=["fake"], defaultVoice="fake")
+            return self.send(200, [dict(name=n, isConfigured=True, voices=["fake"], defaultVoice="fake",
+                                        supportsInstructions=False, maxConcurrency=1, maxChunkSize=4096,
+                                        audioExtension=".mp3", isDefault=(n == "chatterbox"),
+                                        settingsFingerprint=hashlib.sha256(n.encode()).hexdigest())
                                    for n in ("openai", "chatterbox", "fake")])
+        if p == "/v1/feeds":
+            return self.send(200, dict(items=[] if NO_DEFAULT_FEED else [FEED]))
         if p == "/v1/jobs":
             return self.send(200, dict(items=[job_json(j) for j in JOBS.values()], nextCursor=None))
         m = re.fullmatch(r"/v1/jobs/([^/]+)(?:/(events|audio))?", p)
@@ -95,8 +116,11 @@ class H(BaseHTTPRequestHandler):
                     m = URL_RE.search((c.get("text") or "") + " " + (c.get("title") or ""))
                     src = m.group(0) if m else mdurl
                 log(f"CHAPTER {c.get('title', '')} | {src or '-'}")
-            JOBS[jid] = dict(id=jid, title=b.get("title"), chunks=max(1, len(chs)), createdAt=now(), metadata=md or None)
-            return self.send(202, dict(id=jid, status="succeeded", createdAt=JOBS[jid]["createdAt"]))
+            feed = b.get("feed")
+            if feed == "@default": feed = None if NO_DEFAULT_FEED else FEED["name"]
+            JOBS[jid] = dict(id=jid, feed=feed, created=time.time(), title=b.get("title"), chunks=max(1, len(chs)), createdAt=now(), metadata=md or None)
+            return self.send(202, dict(id=jid, status="succeeded", createdAt=JOBS[jid]["createdAt"],
+                                       publication=publication(JOBS[jid])))
         if p == "/v1/jobs/estimate":
             chs = b.get("chapters") or []
             chars = sum(len(c.get("text") or "") for c in chs) + len(b.get("text") or "")
@@ -111,5 +135,6 @@ class H(BaseHTTPRequestHandler):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8090)
-    ap.add_argument("--log"); a = ap.parse_args(); LOGF = a.log
+    ap.add_argument("--log"); ap.add_argument("--no-default-feed", action="store_true")
+    a = ap.parse_args(); LOGF = a.log; NO_DEFAULT_FEED = a.no_default_feed
     ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
