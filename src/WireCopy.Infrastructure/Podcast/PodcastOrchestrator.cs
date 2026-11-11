@@ -590,7 +590,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
                     reason,
                     new PodcastFailureDetail(
                         Step: "Publishing",
-                        FailureClass: FeedPublishFailureClass.Generic,
                         RawMessage: reason,
                         RemediationCopy: "Open audio-engine's Feeds page to see why, fix it there, then run this again."),
                     localFilePath: finalAudioPath,

@@ -83,8 +83,8 @@ public record PodcastResult
     /// Gets the explicit classification of the result (workspace-3a2k).
     /// Defaults to <c>null</c> meaning "let the screen infer from
     /// <see cref="Success"/> + <see cref="FeedUrl"/> + <see cref="ArticlesFailed"/>".
-    /// The orchestrator sets this explicitly for the publish-failed-while-bucket-
-    /// configured path, which must render as <see cref="PodcastResultClassification.TotalFailure"/>
+    /// The orchestrator sets this explicitly for the publish-failed-in-audio-engine
+    /// path, which must render as <see cref="PodcastResultClassification.TotalFailure"/>
     /// rather than the legacy "local-only success" silent-degradation behaviour.
     /// </summary>
     public PodcastResultClassification? Classification { get; init; }
@@ -145,9 +145,8 @@ public record PodcastResult
 
     /// <summary>
     /// Creates a typed failure result (workspace-3a2k Phase E). Used by the
-    /// orchestrator when the publish step fails but the user did configure a
-    /// GCS bucket — the failure-class drives targeted remediation copy on
-    /// the result screen instead of the heuristic string-pattern fallback.
+    /// orchestrator when the publish step fails in audio-engine — the
+    /// detail drives targeted remediation copy on the result screen instead of the heuristic string-pattern fallback.
     /// </summary>
     public static PodcastResult Failure(
         string errorMessage,

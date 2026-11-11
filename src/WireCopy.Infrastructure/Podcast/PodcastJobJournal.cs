@@ -144,7 +144,7 @@ internal sealed class PodcastJobJournal
         {
             PodcastJobStatus.FullSuccess => null,
             PodcastJobStatus.PartialSuccess => "Partial",
-            _ => result.FailureDetail?.FailureClass.ToString() ?? "Failed",
+            _ => result.FailureDetail?.Step ?? "Failed",
         };
         var errorMessage = status switch
         {

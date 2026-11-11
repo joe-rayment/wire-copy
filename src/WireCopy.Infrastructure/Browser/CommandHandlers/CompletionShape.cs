@@ -18,7 +18,7 @@ internal enum CompletionShape
     /// <summary>Shape A — file written, feed published, no article failures.</summary>
     FullSuccess,
 
-    /// <summary>Shape B — file written, no feed (no GCS bucket configured), no failures.</summary>
+    /// <summary>Shape B — file written, no feed (audio-engine published none), no failures.</summary>
     LocalOnlySuccess,
 
     /// <summary>Shape C — at least one article failed; file may or may not be present.</summary>

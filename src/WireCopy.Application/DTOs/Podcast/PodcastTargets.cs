@@ -16,8 +16,8 @@ public record PodcastTargets
     public required string LocalFilePath { get; init; }
 
     /// <summary>
-    /// Public URL the feed will be published at, or null if no GCS bucket
-    /// is configured (local-only mode).
+    /// Public URL the feed will be published at, or null if audio-engine
+    /// has no feed for it (local-only mode).
     /// </summary>
     public string? FeedUrl { get; init; }
 }

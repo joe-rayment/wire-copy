@@ -102,7 +102,7 @@ public record RenderOptions
 
     /// <summary>
     /// Public RSS feed URL of the active podcast generation job, or null
-    /// when no job is active or the job is local-only (no GCS bucket).
+    /// when no job is active or the job is local-only (no published feed).
     /// workspace-y41e: surfaced on the reading-list CTA's Generating state
     /// so the user can subscribe in their podcast app before walking away.
     /// </summary>

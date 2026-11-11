@@ -68,7 +68,7 @@ public class PodcastJob
     /// </summary>
     public string? TargetLocalPath { get; private set; }
 
-    /// <summary>Where the feed.xml will be published (GCS public URL).</summary>
+    /// <summary>Where the feed.xml will be published (audio-engine feed URL).</summary>
     public string? TargetFeedUrl { get; private set; }
 
     /// <summary>

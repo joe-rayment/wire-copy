@@ -46,8 +46,8 @@ public interface IPodcastOrchestrator
     /// <summary>
     /// Resolves the destination paths (local file + feed URL) for an upcoming
     /// generation run BEFORE the pipeline starts, so the progress screen can
-    /// pin them to the footer (workspace-zh3u). The feed URL is null when no
-    /// GCS bucket is configured — caller renders a "local-only" line in that
+    /// pin them to the footer (workspace-zh3u). The feed URL is null when
+    /// audio-engine has no feed for the job — caller renders a "local-only" line in that
     /// case.
     /// </summary>
     Task<PodcastTargets> ResolveTargetsAsync(

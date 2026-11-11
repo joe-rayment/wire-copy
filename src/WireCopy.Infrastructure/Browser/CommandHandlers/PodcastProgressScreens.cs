@@ -1300,8 +1300,8 @@ internal static class PodcastProgressScreens
         // workspace-n49i Shape D: typed (Step, Reason, Fix) tuple replaces
         // the previous heuristic-bulleted "What to try" list.
         // workspace-3a2k Phase E: prefer the typed FailureDetail when present
-        // (publish-step failures with a configured bucket carry it) so the
-        // bucket-public remediation surfaces verbatim instead of via the
+        // (publish-step failures carry it) so the
+        // audio-engine remediation surfaces verbatim instead of via the
         // string-pattern heuristic.
         var classification = PodcastFailureClassifier.Classify(typedDetail, errorMessage, failedArticles);
 
@@ -1373,13 +1373,13 @@ internal static class PodcastProgressScreens
                 helpers.WriteLine();
             }
 
-            // workspace-p1px: surface the retry affordance so the BucketNotPublic
-            // remediation flow ("run this gsutil one-liner, then press r") works
+            // workspace-p1px: surface the retry affordance so the publish-failure
+            // remediation flow ("fix it in audio-engine, then press r") works
             // end-to-end. The retry signal returns up through HandleGeneratePodcast's
             // retry loop, which re-runs from scratch with fresh pre-flight checks.
             //
             // workspace-n0kb: when the failure points at a fixable credential
-            // (TTS auth → OpenAI key, GCS publish → bucket), surface an `s`
+            // (TTS auth → OpenAI key), surface an `s`
             // hint that deep-links into the relevant Setup row. Hidden for
             // failure modes where no Setup row maps (FFmpeg install, network).
             var hintParts = new List<string>

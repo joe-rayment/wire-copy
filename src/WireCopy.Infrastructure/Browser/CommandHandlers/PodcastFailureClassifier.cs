@@ -19,16 +19,13 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// "What to try:" list.
 ///
 /// <para>
-/// Mirrors the pattern of <c>GcsCredentialVerifier.RemediationFor</c>:
-/// pattern-match against the error string + first article-failure reason,
+/// Pattern-match against the error string + first article-failure reason,
 /// pick the most specific classification, fall back to a generic
 /// "see logs" tuple if nothing matches.
 /// </para>
 /// </summary>
 internal static class PodcastFailureClassifier
 {
-    private const string AudioEngineFeedsFix = "Open audio-engine's Feeds page to see why, fix it there, then run this again.";
-
     /// <summary>
     /// Maps a typed <see cref="PodcastFailureDetail"/> (when present) to the
     /// (Step, Reason, Fix) tuple — bypasses the heuristic string fallback so
@@ -44,22 +41,13 @@ internal static class PodcastFailureClassifier
         if (typedDetail is not null)
         {
             var reason = string.IsNullOrWhiteSpace(typedDetail.RawMessage)
-                ? typedDetail.FailureClass.ToString()
+                ? typedDetail.Step
                 : typedDetail.RawMessage;
-
-            // Publishing now lives in audio-engine: a feed/publish failure is fixed
-            // on its Feeds page, not in a Wire Copy row. NoAudioFiles is a
-            // generation-side missing local file, so it keeps its own remediation.
-            var isPublishFailure = typedDetail.FailureClass
-                is FeedPublishFailureClass.BucketNotPublic
-                or FeedPublishFailureClass.FeedNotReachable
-                or FeedPublishFailureClass.FeedNotParseable
-                or FeedPublishFailureClass.Generic;
 
             return new PodcastFailureClassification(
                 Step: typedDetail.Step,
                 Reason: reason,
-                Fix: isPublishFailure ? AudioEngineFeedsFix : typedDetail.RemediationCopy);
+                Fix: typedDetail.RemediationCopy);
         }
 
         return Classify(errorMessage, failedArticles);
@@ -114,18 +102,6 @@ internal static class PodcastFailureClassifier
                 Reason: "OpenAI API key missing or not yet configured",
                 Fix: "Open Setup (:config), paste your key, then press p again",
                 RelevantSetupRow: SettingsCommandHandler.SetupRow.OpenAiKey);
-        }
-
-        // ---- GCS / publish failures (must come before generic 403 — a
-        // GCS bucket 403 means "bucket isn't public", not "OpenAI auth"). ----
-        if (error.Contains("GCS", StringComparison.OrdinalIgnoreCase) ||
-            error.Contains("bucket", StringComparison.OrdinalIgnoreCase) ||
-            error.Contains("storage.googleapis", StringComparison.OrdinalIgnoreCase))
-        {
-            return new PodcastFailureClassification(
-                Step: "RSS publish",
-                Reason: "Couldn't upload or publish the feed",
-                Fix: AudioEngineFeedsFix);
         }
 
         // ---- OpenAI API errors (429 / 401 / 403 / 5xx) ----

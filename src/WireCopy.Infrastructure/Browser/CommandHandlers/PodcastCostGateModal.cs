@@ -44,7 +44,7 @@ internal static class PodcastCostGateModal
     /// <summary>
     /// Cached articles still take real wall-clock to upload + assemble — they
     /// don't synth, so they're cheaper, but they aren't free. ~0.5 min is a
-    /// conservative read across the assembly + GCS upload phases.
+    /// conservative read across the assembly + publish phases.
     /// </summary>
     private const double MinutesPerArticleCached = 0.5;
 
