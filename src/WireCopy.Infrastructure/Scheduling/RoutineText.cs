@@ -288,13 +288,13 @@ public static class RoutineText
 
     public static string BadgeFailed(string name, string shortReason, string suffix) => $"⚠ {name} failed: {shortReason}{suffix}";
 
+    public static string BadgeFailedOnHome(string name, string suffix) => $"⚠ {name} failed{suffix}";
+
     public static string BadgeRecovered(string name, string suffix) => $"⚠ {name}: a routine run used a re-derived section{suffix}";
 
     public static string BadgeDegraded(string name, string suffix) => $"⚠ {name}: routine run published with a degraded source{suffix}";
 
     public static string BadgeSeveral(int count, string suffix) => $"⚠ {count} routines need attention{suffix}";
-
-    public static string RunNeedsAttention(string name, string shortReason) => $"{name} failed: {shortReason} — press e for details";
 
     /// <summary>Editor "Last run" row value: glyph + status word + when, plus the short reason when it needs attention.</summary>
     public static string LastRunValue(ScheduledRun? run, string? shortReason, DateTimeOffset nowLocal)

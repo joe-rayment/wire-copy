@@ -276,6 +276,20 @@ internal static class RoutineEditorHandler
     private static async Task RunNowAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
         ctx.NavigationService.SetStatusMessage(RoutineText.Running(recipe.Name), TimeSpan.FromMinutes(10));
+
+        // Immediate feedback: repaint once with the Last run row reading "running…" while the run is awaited.
+        var runningRows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now, await LoadLastRunAsync(ctx, recipe.Id).ConfigureAwait(false), running: true);
+        var lastRunRow = runningRows.FindIndex(r => r.Kind == RoutineRowKind.LastRun);
+        ctx.Renderer.LeaveHtmlPanes();
+        RoutineEditorScreen.Draw(
+            new RenderHelpers { TerminalHeight = options.TerminalHeight },
+            BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme),
+            Math.Max(20, options.TerminalWidth - 2),
+            options.TerminalHeight,
+            recipe.Name,
+            runningRows,
+            Math.Max(0, lastRunRow),
+            0);
         RunNowResult result;
         using (var scope = ctx.ScopeFactory.CreateScope())
         {

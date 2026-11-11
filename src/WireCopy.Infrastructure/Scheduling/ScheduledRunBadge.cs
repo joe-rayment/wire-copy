@@ -55,7 +55,10 @@ internal static class ScheduledRunBadge
         var suffix = RoutineText.BadgeSuffix(onRoutinesHome, several: false);
         if (run.Status is ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted)
         {
-            return RoutineText.BadgeFailed(run.RecipeName, RoutineRunDiagnosis.Diagnose(run).Short, suffix);
+            // The Routines home card already carries the reason; the badge there only points at it.
+            return onRoutinesHome
+                ? RoutineText.BadgeFailedOnHome(run.RecipeName, suffix)
+                : RoutineText.BadgeFailed(run.RecipeName, RoutineRunDiagnosis.Diagnose(run).Short, suffix);
         }
 
         return IsRecovered(run)

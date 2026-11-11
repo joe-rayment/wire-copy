@@ -14,7 +14,7 @@ internal static class RoutineEditorScreen
     private const string Reset = "\x1b[0m";
 
     /// <summary>Builds every row, top to bottom. Sites = distinct Domain + ConfigUrlPattern in first-appearance order.</summary>
-    public static List<RoutineRow> BuildRows(ScheduleRecipe recipe, DateTimeOffset now, ScheduledRun? lastRun = null)
+    public static List<RoutineRow> BuildRows(ScheduleRecipe recipe, DateTimeOffset now, ScheduledRun? lastRun = null, bool running = false)
     {
         var rows = new List<RoutineRow>
         {
@@ -22,7 +22,7 @@ internal static class RoutineEditorScreen
             new(RoutineRowKind.Frequency, "Frequency", RoutineText.Frequency(recipe.Cadence) + " · " + RoutineText.NextRun(recipe.Cadence, now)),
             new(RoutineRowKind.Podcast, "Podcast", recipe.OutputCollectionName),
             new(RoutineRowKind.Enabled, "Enabled", recipe.Enabled ? "on" : "off"),
-            new(RoutineRowKind.LastRun, RoutineText.LastRunRow, LastRunValue(lastRun, now)),
+            new(RoutineRowKind.LastRun, RoutineText.LastRunRow, running ? RoutineText.CardRunning : LastRunValue(lastRun, now)),
             new(RoutineRowKind.ContentsHeading, "Contents"),
         };
 

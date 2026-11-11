@@ -62,16 +62,6 @@ internal static class RoutinesHomeHandler
                         {
                             ctx.NavigationService.SetStatusMessage(RoutineText.Busy, TimeSpan.FromSeconds(6));
                         }
-                        else if (task.IsCompletedSuccessfully && task.Result.Run is { } finished)
-                        {
-                            var d = RoutineRunDiagnosis.Diagnose(finished);
-                            if (d.NeedsAttention)
-                            {
-                                var runName = recipes.FirstOrDefault(r => r.Id == id)?.Name ?? string.Empty;
-                                ctx.NavigationService.SetStatusMessage(
-                                    RoutineText.RunNeedsAttention(runName, d.Short), TimeSpan.FromSeconds(10), StatusSeverity.Error);
-                            }
-                        }
                     }
 
                     recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
