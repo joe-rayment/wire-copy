@@ -539,8 +539,10 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
 
         if (fileExists(path))
         {
-            var name = Path.GetFileNameWithoutExtension(path);
-            if (!name.Equals(ServerName, StringComparison.OrdinalIgnoreCase))
+            // "AudioEngine.Server" has an "extension" on Unix, so compare the full name too.
+            var isServer = Path.GetFileName(path).Equals(ServerName, StringComparison.OrdinalIgnoreCase)
+                || Path.GetFileNameWithoutExtension(path).Equals(ServerName, StringComparison.OrdinalIgnoreCase);
+            if (!isServer)
             {
                 return null;
             }
