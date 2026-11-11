@@ -122,6 +122,40 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
         => await RequestAsync("linkTreeState", new { visible, state }).ConfigureAwait(false);
 
     /// <inheritdoc />
+    public async Task<ShellPickResult?> PickPathAsync(ShellPickRequest request, CancellationToken cancellationToken)
+    {
+        try
+        {
+            // The native dialog stays open as long as the person takes: no 5 s cap, only ct.
+            var result = await RequestAsync(
+                "pickPath",
+                new
+                {
+                    title = request.Title,
+                    message = request.Message,
+                    buttonLabel = request.ButtonLabel,
+                    defaultPath = request.DefaultPath,
+                    kind = request.Kind,
+                },
+                waitIndefinitely: true,
+                cancellationToken).ConfigureAwait(false);
+            if (result is not { ValueKind: JsonValueKind.Object } r)
+            {
+                return null;
+            }
+
+            var canceled = r.TryGetProperty("canceled", out var c) && c.ValueKind == JsonValueKind.True;
+            var path = r.TryGetProperty("path", out var pe) && pe.ValueKind == JsonValueKind.String ? pe.GetString() : null;
+            return new ShellPickResult(canceled, path);
+        }
+        catch (Exception ex) when (ex is not OutOfMemoryException)
+        {
+            _logger.LogWarning(ex, "Shell pickPath failed");
+            return null;
+        }
+    }
+
+    /// <inheritdoc />
     public async ValueTask DisposeAsync()
     {
         _dead = true;
@@ -140,7 +174,8 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
         _writeLock.Dispose();
     }
 
-    private async Task<JsonElement?> RequestAsync(string method, object payload)
+    private async Task<JsonElement?> RequestAsync(
+        string method, object payload, bool waitIndefinitely = false, CancellationToken cancellationToken = default)
     {
         if (_dead)
         {
@@ -164,7 +199,8 @@ public sealed class ShellChannel : IShellChannel, IAsyncDisposable
             }
 
             var waitSw = System.Diagnostics.Stopwatch.StartNew();
-            var done = await Task.WhenAny(tcs.Task, Task.Delay(RequestTimeout)).ConfigureAwait(false);
+            var timeout = waitIndefinitely ? Task.Delay(Timeout.Infinite, cancellationToken) : Task.Delay(RequestTimeout);
+            var done = await Task.WhenAny(tcs.Task, timeout).ConfigureAwait(false);
             if (done != tcs.Task)
             {
                 _logger.LogWarning("Shell channel request {Method} timed out", method);

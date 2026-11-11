@@ -35,6 +35,9 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <summary>Pause between probes.</summary>
     private static readonly TimeSpan PollInterval = TimeSpan.FromMilliseconds(500);
 
+    /// <summary>How long a not-found discovery is reused, so drawing Settings never repeats the home walk.</summary>
+    private static readonly TimeSpan NotFoundCacheTtl = TimeSpan.FromSeconds(60);
+
     /// <summary>Per-probe request budget.</summary>
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(3);
 
@@ -48,6 +51,9 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
 
     /// <summary>In-flight and finished attempts keyed by URL.</summary>
     private readonly Dictionary<string, Task<AudioEngineStartResult>> _attempts = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The last not-found discovery and what it saw; guarded by <see cref="_gate"/>.</summary>
+    private NotFoundCache? _notFound;
 
     /// <summary>Initializes a new instance of the <see cref="AudioEngineLauncher"/> class.</summary>
     /// <param name="store">The user settings store.</param>
@@ -81,17 +87,40 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
 
     /// <inheritdoc/>
     public AudioEngineDiscovery Discover()
-        => Discover(
-            _store.Get(SettingsCommandHandler.KeyAudioEngineProgram),
+    {
+        var setting = _store.Get(SettingsCommandHandler.KeyAudioEngineProgram);
+        var remembered = _store.Get(KeyLastKnown);
+        lock (_gate)
+        {
+            if (_notFound is { } cached
+                && DateTime.UtcNow - cached.At < NotFoundCacheTtl
+                && string.Equals(cached.Setting, setting, StringComparison.Ordinal)
+                && string.Equals(cached.Remembered, remembered, StringComparison.Ordinal))
+            {
+                return cached.Result;
+            }
+        }
+
+        var result = Discover(
+            setting,
             Environment.GetEnvironmentVariable,
             Home,
             File.Exists,
             Directory.Exists,
             OperatingSystem.IsWindows(),
-            _store.Get(KeyLastKnown),
+            remembered,
             NearAppRoots(),
             AudioEngineSearch.ListDirectories,
             OperatingSystem.IsMacOS() ? AudioEngineSearch.SpotlightCandidates : null);
+
+        lock (_gate)
+        {
+            // Only a NOT-FOUND result is cached (the home walk is the slow part); a find never is.
+            _notFound = result.Program is null ? new NotFoundCache(result, setting, remembered, DateTime.UtcNow) : null;
+        }
+
+        return result;
+    }
 
     /// <inheritdoc/>
     public AudioEngineProgram? Probe(string path)
@@ -185,6 +214,7 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     {
         lock (_gate)
         {
+            _notFound = null;
             foreach (var key in _attempts.Where(p => p.Value.IsCompleted).Select(p => p.Key).ToList())
             {
                 _attempts.Remove(key);
@@ -628,6 +658,11 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <param name="location">A folder or executable that probed OK.</param>
     private void SaveLastKnown(string location)
     {
+        lock (_gate)
+        {
+            _notFound = null;
+        }
+
         if (!string.Equals(_store.Get(KeyLastKnown), location, StringComparison.Ordinal))
         {
             _store.Set(KeyLastKnown, location);
@@ -816,4 +851,11 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
             psi.Environment["PATH"] = string.Join(':', parts);
         }
     }
+
+    /// <summary>A cached not-found discovery with the inputs it was computed from.</summary>
+    /// <param name="Result">The not-found result.</param>
+    /// <param name="Setting">The program setting it saw.</param>
+    /// <param name="Remembered">The remembered location it saw.</param>
+    /// <param name="At">When it was computed (UTC).</param>
+    private sealed record NotFoundCache(AudioEngineDiscovery Result, string? Setting, string? Remembered, DateTime At);
 }

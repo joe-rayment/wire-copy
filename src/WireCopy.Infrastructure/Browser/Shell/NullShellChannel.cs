@@ -59,4 +59,8 @@ public sealed class NullShellChannel : IShellChannel
     /// <inheritdoc />
     public Task SendLinkTreeStateAsync(bool visible, LinkTreeViewState? state, CancellationToken cancellationToken = default)
         => Task.CompletedTask;
+
+    /// <inheritdoc />
+    public Task<ShellPickResult?> PickPathAsync(ShellPickRequest request, CancellationToken cancellationToken)
+        => Task.FromResult<ShellPickResult?>(null);
 }

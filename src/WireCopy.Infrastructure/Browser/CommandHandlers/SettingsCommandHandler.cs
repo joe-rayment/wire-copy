@@ -2663,66 +2663,171 @@ internal static class SettingsCommandHandler
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
+    /// <summary>How the audio-engine location prompt ended.</summary>
+    internal enum AudioEngineLocationOutcome
+    {
+        /// <summary>A location was chosen, verified and saved.</summary>
+        Saved,
+
+        /// <summary>The setting was blanked; WireCopy will look for audio-engine itself.</summary>
+        Cleared,
+
+        /// <summary>The person backed out without choosing.</summary>
+        Cancelled,
+
+        /// <summary>The chosen folder holds no audio-engine; an error status was set.</summary>
+        NotAnEngine,
+    }
+
     /// <summary>
-    /// Enter on the Audio engine program row (workspace-08e4u): prompts for the folder or executable
-    /// WireCopy starts when nothing answers at the audio-engine URL. Blank forgets the setting so the
-    /// <c>AUDIO_ENGINE_HOME</c> / <c>~/audio-engine</c> lookup applies again; either way the launcher's
-    /// one-attempt guard is reset so the next probe tries the new program.
+    /// Enter on the Audio engine program row (workspace-08e4u): asks where audio-engine is, so
+    /// WireCopy can start it when nothing answers at the audio-engine URL.
     /// </summary>
     private static async Task HandleSetAudioEngineProgramAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
-        using var scope = ctx.ScopeFactory.CreateScope();
-        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-        var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
-        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-        var field = new FormFieldConfig
-        {
-            Label = "Audio engine program",
-            Placeholder = "~/audio-engine",
-            HelpText = "Folder or executable WireCopy starts for you · blank to forget · Enter to save · Esc to cancel",
-            IsSecret = false,
-            MaxLength = 400,
-            InitialValue = settingsStore.Get(KeyAudioEngineProgram) ?? string.Empty,
-            Validate = ValidateAudioEngineProgram,
-        };
-
-        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
-        var fieldWidth = Math.Min(UI.OverlayViewport.Width - 6, 60);
-        var input = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
-        if (input is null)
-        {
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-            return;
-        }
-
-        var trimmed = input.Trim();
-        try
-        {
-            if (trimmed.Length == 0)
-            {
-                settingsStore.Remove(KeyAudioEngineProgram);
-                ctx.NavigationService.SetStatusMessage("Audio engine program → found automatically");
-            }
-            else
-            {
-                settingsStore.Set(KeyAudioEngineProgram, trimmed);
-                ctx.NavigationService.SetStatusMessage($"Audio engine program → {trimmed}");
-            }
-
-            launcher.ResetAttempts();
-        }
-        catch (Exception ex)
-        {
-            ctx.Logger.LogWarning(ex, "Failed to save audio-engine program");
-            ctx.NavigationService.SetStatusMessage("Failed to save audio-engine program", StatusSeverity.Error);
-        }
-
+        _ = await PromptAudioEngineLocationAsync(ctx, ct).ConfigureAwait(false);
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
     }
 
     /// <summary>
+    /// Asks where audio-engine lives: the shell's native folder picker when one is attached,
+    /// otherwise (or when the picker is dismissed) a guided typed prompt. Saves the location the
+    /// launcher resolved (an absolute folder or executable, never the raw text), resets the
+    /// launcher's attempt guard and sets the status line. Does not redraw the page.
+    /// </summary>
+    /// <param name="ctx">The command context.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>How the prompt ended, plus the error text when it was <see cref="AudioEngineLocationOutcome.NotAnEngine"/>.</returns>
+    internal static async Task<(AudioEngineLocationOutcome Outcome, string? Message)> PromptAudioEngineLocationAsync(CommandContext ctx, CancellationToken ct)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
+        var shell = scope.ServiceProvider.GetService<IShellChannel>();
+        var home = Environment.GetFolderPath(Environment.SpecialFolder.UserProfile);
+        var current = settingsStore.Get(KeyAudioEngineProgram) ?? string.Empty;
+
+        if (shell is { IsConnected: true })
+        {
+            var currentPath = current.Length > 0
+                ? AudioEnginePathInput.Normalize(current, home, p => File.Exists(p) || Directory.Exists(p))
+                : string.Empty;
+            var start = home;
+            if (currentPath.Length > 0 && Directory.Exists(currentPath))
+            {
+                start = currentPath;
+            }
+            else if (currentPath.Length > 0 && File.Exists(currentPath))
+            {
+                start = Path.GetDirectoryName(currentPath) ?? home;
+            }
+
+            var picked = await shell.PickPathAsync(
+                new ShellPickRequest(
+                    "Choose the audio-engine folder",
+                    "Choose the folder audio-engine is in — the one that holds AudioEngine.Server.",
+                    "Use this folder",
+                    start,
+                    "folder"),
+                ct).ConfigureAwait(false);
+            if (picked is { Canceled: false, Path: { Length: > 0 } chosen })
+            {
+                var program = launcher.Probe(chosen);
+                if (program is null)
+                {
+                    var error = $"No audio-engine in {ShortenHome(chosen, home)}. Choose the folder that holds AudioEngine.Server.";
+                    ctx.NavigationService.SetStatusMessage(error, StatusSeverity.Error);
+                    return (AudioEngineLocationOutcome.NotAnEngine, error);
+                }
+
+                return (SaveAudioEngineLocation(ctx, settingsStore, launcher, chosen, program, home), null);
+            }
+        }
+
+        var field = new FormFieldConfig
+        {
+            Label = "Where is audio-engine on this computer?",
+            Placeholder = "~/audio-engine",
+            HelpText = "audio-engine is the separate program that reads articles aloud. Type or paste the folder it is in — the one that holds AudioEngine.Server.\n"
+                + "Paste the path exactly as you copied it: spaces are fine, quotes and backslashes are cleaned up for you, and ~ means your home folder.\n"
+                + "Enter saves and starts it · leave blank to let WireCopy look for it · Esc cancels",
+            IsSecret = false,
+            MaxLength = 400,
+            InitialValue = current,
+            Validate = v => ValidateAudioEngineProgram(v)
+                ?? (string.IsNullOrWhiteSpace(v) || launcher.Probe(v) is not null
+                    ? null
+                    : "No audio-engine there — choose the folder that holds AudioEngine.Server"),
+        };
+
+        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
+        var startRow = Math.Max(1, (Console.WindowHeight / 2) - 3);
+        var fieldWidth = Math.Max(20, UI.OverlayViewport.Width - 6);
+        var input = await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false);
+        if (input is null)
+        {
+            return (AudioEngineLocationOutcome.Cancelled, null);
+        }
+
+        var trimmed = input.Trim();
+        if (trimmed.Length == 0)
+        {
+            return (SaveAudioEngineLocation(ctx, settingsStore, launcher, null, null, home), null);
+        }
+
+        var found = launcher.Probe(trimmed);
+        if (found is null)
+        {
+            const string notThere = "No audio-engine there — choose the folder that holds AudioEngine.Server";
+            ctx.NavigationService.SetStatusMessage(notThere, StatusSeverity.Error);
+            return (AudioEngineLocationOutcome.NotAnEngine, notThere);
+        }
+
+        return (SaveAudioEngineLocation(ctx, settingsStore, launcher, trimmed, found, home), null);
+    }
+
+    /// <summary>Stores the resolved location (or forgets it when <paramref name="program"/> is null) and sets the status.</summary>
+    private static AudioEngineLocationOutcome SaveAudioEngineLocation(
+        CommandContext ctx,
+        IUserSettingsStore settingsStore,
+        IAudioEngineLauncher launcher,
+        string? rawPath,
+        AudioEngineProgram? program,
+        string home)
+    {
+        try
+        {
+            if (program is null)
+            {
+                settingsStore.Remove(KeyAudioEngineProgram);
+                launcher.ResetAttempts();
+                ctx.NavigationService.SetStatusMessage("audio-engine location → WireCopy will look for it");
+                return AudioEngineLocationOutcome.Cleared;
+            }
+
+            var normalized = AudioEnginePathInput.Normalize(rawPath ?? string.Empty, home, p => File.Exists(p) || Directory.Exists(p));
+            var location = File.Exists(normalized) ? Path.GetFullPath(normalized) : Path.GetFullPath(program.WorkingDirectory);
+            settingsStore.Set(KeyAudioEngineProgram, location);
+            launcher.ResetAttempts();
+            ctx.NavigationService.SetStatusMessage($"audio-engine location → {program.Display}");
+            return AudioEngineLocationOutcome.Saved;
+        }
+        catch (Exception ex)
+        {
+            ctx.Logger.LogWarning(ex, "Failed to save audio-engine program");
+            ctx.NavigationService.SetStatusMessage("Failed to save audio-engine location", StatusSeverity.Error);
+            return AudioEngineLocationOutcome.NotAnEngine;
+        }
+    }
+
+    /// <summary>Shows <paramref name="path"/> with the home folder as <c>~</c>.</summary>
+    private static string ShortenHome(string path, string home)
+        => !string.IsNullOrEmpty(home) && path.StartsWith(home, StringComparison.Ordinal) ? "~" + path[home.Length..] : path;
+
+    /// <summary>
     /// Validates the Audio engine program field (workspace-08e4u): blank is allowed (forgets the
-    /// setting); otherwise the path, with <c>~</c> expanded, must be an existing file or folder.
+    /// setting); otherwise the path, normalised (quotes, <c>file://</c>, backslash escapes, <c>~</c>),
+    /// must be an existing file or folder.
     /// </summary>
     /// <param name="value">The typed path.</param>
     /// <returns>Null when acceptable; the problem otherwise.</returns>
@@ -2737,7 +2842,7 @@ internal static class SettingsCommandHandler
         string full;
         try
         {
-            full = AudioEngineLauncher.ExpandHome(value.Trim(), home);
+            full = AudioEnginePathInput.Normalize(value, home, p => File.Exists(p) || Directory.Exists(p));
         }
         catch (Exception ex) when (ex is ArgumentException or IOException or NotSupportedException)
         {
