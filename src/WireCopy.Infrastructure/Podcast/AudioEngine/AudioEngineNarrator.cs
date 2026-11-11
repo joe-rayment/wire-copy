@@ -31,6 +31,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     internal const string SpeechBusyMessage = "audio-engine is busy with another job — try Test narration again when it finishes.";
 
     private const string UnauthorizedText = "audio-engine rejected the API key. Set it in Settings -> Podcast narration.";
+    private const string NotConfiguredText = "audio-engine has no address set. Set it in Settings -> Podcast narration.";
     private const string UrlSeparator = "/";
 
     /// <summary>
@@ -116,7 +117,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             return baseStatus with
             {
                 ErrorKind = NarrationErrorKind.NotConfigured,
-                Message = NotConfiguredMessage(),
+                Message = NotConfiguredText,
             };
         }
 
@@ -223,7 +224,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         var s = CurrentSettings();
         if (!IsReady(s))
         {
-            return new NarrationEstimate { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage() };
+            return new NarrationEstimate { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredText };
         }
 
         Session? session = null;
@@ -268,7 +269,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         var s = CurrentSettings();
         if (!IsReady(s))
         {
-            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage() };
+            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredText };
         }
 
         Session? session = null;
@@ -347,7 +348,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         var s = CurrentSettings();
         if (!IsReady(s))
         {
-            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage() };
+            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredText };
         }
 
         Session? session = null;
@@ -556,9 +557,6 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
 
     private static string UnreachableMessage(string? url) =>
         $"audio-engine isn't running at {url}. Start it (audio-engine README: Run natively) or change its address in Settings.";
-
-    private static string NotConfiguredMessage() =>
-        "audio-engine has no address set. Set it in Settings -> Podcast narration.";
 
     private static string EngineNotConfiguredMessage(AudioEngineSettings s) =>
         s.IsChatterbox || s.Engine != AudioEngineSettings.EngineOpenAi
