@@ -302,14 +302,15 @@ internal static class RoutineEditorHandler
             return;
         }
 
+        // Replace the 10-minute "Running…" status in every outcome — left in place it outlives
+        // the run and shows on the Routines home and the launcher long after it finished.
+        var reloaded = await LoadAsync(ctx, recipe.Id).ConfigureAwait(false) ?? recipe;
+        ctx.NavigationService.SetStatusMessage(RoutineText.LastResult(reloaded, DateTimeOffset.Now), TimeSpan.FromSeconds(10));
+
         if (result.Run is { } finished && RoutineRunDiagnosis.Diagnose(finished).NeedsAttention)
         {
             await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
-            return;
         }
-
-        var reloaded = await LoadAsync(ctx, recipe.Id).ConfigureAwait(false) ?? recipe;
-        ctx.NavigationService.SetStatusMessage(RoutineText.LastResult(reloaded, DateTimeOffset.Now), TimeSpan.FromSeconds(10));
     }
 
     /// <summary>Edits the Name row in place; true when a name was committed (a valid typed name).</summary>

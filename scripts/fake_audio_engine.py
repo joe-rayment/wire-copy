@@ -64,7 +64,11 @@ class H(BaseHTTPRequestHandler):
         p = self.path.split("?")[0]; log(f"GET {p}")
         if p in ("/healthz", "/readyz"): return self.send(200, {"status": "ok"})
         if p == "/v1/engines":
-            return self.send(200, [dict(name="fake", isConfigured=True, voices=["fake"], defaultVoice="fake")])
+            # WireCopy's readiness check (routine runs do it before loading any page) looks
+            # its selected engine up BY NAME — "openai" or "chatterbox" — and needs it
+            # configured, so the fake offers both.
+            return self.send(200, [dict(name=n, isConfigured=True, voices=["fake"], defaultVoice="fake")
+                                   for n in ("openai", "chatterbox", "fake")])
         if p == "/v1/jobs":
             return self.send(200, dict(items=[job_json(j) for j in JOBS.values()], nextCursor=None))
         m = re.fullmatch(r"/v1/jobs/([^/]+)(?:/(events|audio))?", p)
