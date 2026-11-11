@@ -137,7 +137,7 @@ public interface IPageRenderer
     /// then recipes sorted by name) in the terminal, and pushes the matching view state
     /// to the shell's launcher pane. Default no-op for renderers without it.
     /// </summary>
-    void RenderRoutinesHome(IReadOnlyList<ScheduleRecipe> recipes, IReadOnlySet<Guid> runningIds, int selectedIndex, DateTimeOffset now, RenderOptions options)
+    void RenderRoutinesHome(IReadOnlyList<ScheduleRecipe> recipes, IReadOnlySet<Guid> runningIds, int selectedIndex, DateTimeOffset now, RenderOptions options, IReadOnlyDictionary<Guid, string>? alerts = null, string? badge = null)
     {
     }
 

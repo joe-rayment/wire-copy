@@ -647,10 +647,10 @@ public class TerminalPageRenderer : IPageRenderer
     }
 
     /// <inheritdoc />
-    public void RenderRoutinesHome(IReadOnlyList<ScheduleRecipe> recipes, IReadOnlySet<Guid> runningIds, int selectedIndex, DateTimeOffset now, RenderOptions options)
+    public void RenderRoutinesHome(IReadOnlyList<ScheduleRecipe> recipes, IReadOnlySet<Guid> runningIds, int selectedIndex, DateTimeOffset now, RenderOptions options, IReadOnlyDictionary<Guid, string>? alerts = null, string? badge = null)
     {
         LeaveLinkTreeIfShown();
-        var cards = LauncherRenderer.BuildRoutineCards(recipes, runningIds, now);
+        var cards = LauncherRenderer.BuildRoutineCards(recipes, runningIds, now, alerts);
         _helpers.TerminalHeight = options.TerminalHeight;
         _helpers.Clear();
         _helpers.ColumnOffset = options.ContentLeftOffset;
@@ -660,7 +660,7 @@ public class TerminalPageRenderer : IPageRenderer
 
         if (_shellChannel.IsConnected)
         {
-            var state = LauncherRenderer.BuildRoutinesViewState(cards, selectedIndex, options);
+            var state = LauncherRenderer.BuildRoutinesViewState(cards, selectedIndex, options, badge);
             lock (_promptLock)
             {
                 _lastLauncherState = state;

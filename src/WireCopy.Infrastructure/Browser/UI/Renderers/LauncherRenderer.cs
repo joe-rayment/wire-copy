@@ -723,7 +723,8 @@ internal class LauncherRenderer
     internal static List<LauncherSlot> BuildRoutineCards(
         IEnumerable<ScheduleRecipe> recipes,
         IReadOnlySet<Guid> runningIds,
-        DateTimeOffset now)
+        DateTimeOffset now,
+        IReadOnlyDictionary<Guid, string>? alerts = null)
     {
         var slots = new List<LauncherSlot>
         {
@@ -763,6 +764,7 @@ internal class LauncherRenderer
                 Title = r.Name,
                 Hint = hint,
                 Detail = RoutineText.Contents(r) + " · " + RoutineText.LastResult(r, now),
+                Alert = alerts is not null && alerts.TryGetValue(r.Id, out var alertText) ? alertText : null,
                 Disabled = !r.Enabled,
                 Badge = index < 9 ? (index + 1).ToString() : null,
             });
@@ -779,7 +781,8 @@ internal class LauncherRenderer
     internal static LauncherViewState BuildRoutinesViewState(
         IReadOnlyList<LauncherSlot> cards,
         int selectedIndex,
-        RenderOptions options)
+        RenderOptions options,
+        string? badge = null)
     {
         var columns = ShellPaneColumns(options.TerminalWidth);
         var pageSize = columns * PaneRowsPerPage(options);
@@ -814,7 +817,7 @@ internal class LauncherRenderer
             Columns = columns,
             Paging = new LauncherPaging { Offset = offset, Visible = visible, Total = total },
             BookmarkCount = 0,
-            Footer = new LauncherFooter { Badge = options.ScheduledRunBadge, Status = options.StatusMessage },
+            Footer = new LauncherFooter { Badge = badge, Status = options.StatusMessage },
             Tagline = string.Empty,
             Version = string.Empty,
         };
@@ -834,6 +837,7 @@ internal class LauncherRenderer
         var muted = p.GetMutedFg().AnsiFg;
         var dim = p.GetDimFg().AnsiFg;
         var primary = p.PrimaryText.AnsiFg;
+        var error = p.ErrorFg.AnsiFg;
         const int gap = 2;
         var cellWidth = (contentWidth - gap) / 2;
         var textWidth = Math.Max(4, cellWidth - 2);
@@ -895,7 +899,23 @@ internal class LauncherRenderer
             _helpers.WriteLine(Line(c => c.Title, true, true));
             _helpers.WriteLine(Line(c => c.Hint, false, false));
             _helpers.WriteLine(Line(c => c.Detail, false, false));
-            _helpers.WriteLine(string.Empty);
+            if (left.Alert is not null || right?.Alert is not null)
+            {
+                // The alert takes the spacer row (the card grows no taller).
+                var alertRow = new System.Text.StringBuilder(margin);
+                alertRow.Append(Cell(left.Alert, error, rowStart == selectedIndex, false));
+                alertRow.Append(new string(' ', gap));
+                if (right is not null)
+                {
+                    alertRow.Append(Cell(right.Alert, error, rowStart + 1 == selectedIndex, false));
+                }
+
+                _helpers.WriteLine(alertRow.ToString());
+            }
+            else
+            {
+                _helpers.WriteLine(string.Empty);
+            }
         }
     }
 

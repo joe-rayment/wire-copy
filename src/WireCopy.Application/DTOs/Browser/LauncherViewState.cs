@@ -110,6 +110,9 @@ public sealed record LauncherSlot
     /// <summary>Third line on routine cards; null otherwise.</summary>
     public string? Detail { get; init; }
 
+    /// <summary>Fourth line on a routine card whose last run needs attention; null otherwise.</summary>
+    public string? Alert { get; init; }
+
     /// <summary>True when a routine card is dimmed.</summary>
     public bool Disabled { get; init; }
 }

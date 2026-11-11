@@ -2,6 +2,7 @@
 
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Scheduling;
+using WireCopy.Infrastructure.Browser.CommandHandlers;
 
 namespace WireCopy.Infrastructure.Scheduling;
 
@@ -29,10 +30,17 @@ internal static class ScheduledRunBadge
     /// attention item renders specifically (failed vs recovered-ratify); several
     /// collapse to a count.
     /// </summary>
-    public static string? Describe(IReadOnlyList<ScheduledRun> unacknowledgedFinished)
+    public static string? Describe(IReadOnlyList<ScheduledRun> unacknowledgedFinished, bool onRoutinesHome = false)
     {
         ArgumentNullException.ThrowIfNull(unacknowledgedFinished);
-        var attention = unacknowledgedFinished.Where(NeedsAttention).ToList();
+
+        // Newest run per routine decides: older failures of a routine whose latest run is clean
+        // stay quiet, and N failed runs of one routine count once.
+        var attention = unacknowledgedFinished
+            .GroupBy(r => r.RecipeId)
+            .Select(g => g.OrderByDescending(r => r.StartedAtUtc).First())
+            .Where(NeedsAttention)
+            .ToList();
         if (attention.Count == 0)
         {
             return null;
@@ -40,27 +48,21 @@ internal static class ScheduledRunBadge
 
         if (attention.Count > 1)
         {
-            return $"⚠ {attention.Count} routine runs need attention — open :routines";
+            return RoutineText.BadgeSeveral(attention.Count, RoutineText.BadgeSuffix(onRoutinesHome, several: true));
         }
 
         var run = attention[0];
+        var suffix = RoutineText.BadgeSuffix(onRoutinesHome, several: false);
         if (run.Status is ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted)
         {
-            var reason = string.IsNullOrWhiteSpace(run.ErrorMessage) ? string.Empty : $" — {Trim(run.ErrorMessage!)}";
-            return $"⚠ Routine run failed: {run.RecipeName}{reason} — open :routines";
+            return RoutineText.BadgeFailed(run.RecipeName, RoutineRunDiagnosis.Diagnose(run).Short, suffix);
         }
 
-        if (IsRecovered(run))
-        {
-            return $"⚠ {run.RecipeName}: a routine run used a re-derived section — ratify in :routines";
-        }
-
-        // PartialSuccess without a recovery flag (an optional source was degraded).
-        return $"⚠ {run.RecipeName}: routine run published with a degraded source — open :routines";
+        return IsRecovered(run)
+            ? RoutineText.BadgeRecovered(run.RecipeName, suffix)
+            : RoutineText.BadgeDegraded(run.RecipeName, suffix);
     }
 
     private static bool IsRecovered(ScheduledRun run) =>
         run.StepOutcomesJson is { } json && json.Contains("\"Recovered\"", StringComparison.Ordinal);
-
-    private static string Trim(string s) => s.Length <= 60 ? s : s[..57] + "…";
 }

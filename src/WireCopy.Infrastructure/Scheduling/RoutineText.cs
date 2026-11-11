@@ -272,6 +272,28 @@ public static class RoutineText
 
     public static string NarrationReady(string name) => $"Narration is ready. Press r to run {name} again.";
 
+    /// <summary>Fourth line on a Routines-home card whose newest run needs attention (⚠ for a partial success, ✗ otherwise).</summary>
+    public static string CardAlert(string shortReason, bool partial) => $"{(partial ? "⚠" : "✗")} {shortReason} — e for details";
+
+    /// <summary>Where the badge points: the launcher says where to go, the Routines home says what to press.</summary>
+    public static string BadgeSuffix(bool onRoutinesHome, bool several)
+    {
+        if (!onRoutinesHome)
+        {
+            return " — open :routines";
+        }
+
+        return several ? " — press e on each" : " — press e on it";
+    }
+
+    public static string BadgeFailed(string name, string shortReason, string suffix) => $"⚠ {name} failed: {shortReason}{suffix}";
+
+    public static string BadgeRecovered(string name, string suffix) => $"⚠ {name}: a routine run used a re-derived section{suffix}";
+
+    public static string BadgeDegraded(string name, string suffix) => $"⚠ {name}: routine run published with a degraded source{suffix}";
+
+    public static string BadgeSeveral(int count, string suffix) => $"⚠ {count} routines need attention{suffix}";
+
     public static string RunNeedsAttention(string name, string shortReason) => $"{name} failed: {shortReason} — press e for details";
 
     /// <summary>Editor "Last run" row value: glyph + status word + when, plus the short reason when it needs attention.</summary>

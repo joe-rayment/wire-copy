@@ -6,6 +6,7 @@ using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
+using WireCopy.Domain.Enums.Scheduling;
 using WireCopy.Domain.ValueObjects.Scheduling;
 using WireCopy.Infrastructure.Browser.Themes;
 using WireCopy.Infrastructure.Browser.UI.Components;
@@ -43,7 +44,8 @@ internal static class RoutinesHomeHandler
             while (!ct.IsCancellationRequested)
             {
                 sel = Math.Clamp(sel, 0, recipes.Count);
-                ctx.Renderer.RenderRoutinesHome(recipes, running, sel, DateTimeOffset.Now, ctx.GetCurrentRenderOptions());
+                var (alerts, badge) = await LoadAttentionAsync(ctx, recipes).ConfigureAwait(false);
+                ctx.Renderer.RenderRoutinesHome(recipes, running, sel, DateTimeOffset.Now, ctx.GetCurrentRenderOptions(), alerts, badge);
 
                 inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
                 await Task.WhenAny(new Task[] { inputTask }.Concat(runs.Values)).ConfigureAwait(false);
@@ -173,6 +175,36 @@ internal static class RoutinesHomeHandler
 
             await ctx.RenderCurrentPageAsync(ctx.GetCurrentRenderOptions(), CancellationToken.None).ConfigureAwait(false);
         }
+    }
+
+    /// <summary>
+    /// Re-read on every frame (cheap, local store) so it follows creates, deletes, finished runs
+    /// and acknowledgements: per-card alert lines from each routine's newest run, and the header
+    /// badge in Routines-home wording.
+    /// </summary>
+    private static async Task<(Dictionary<Guid, string> Alerts, string? Badge)> LoadAttentionAsync(
+        CommandContext ctx, IReadOnlyList<ScheduleRecipe> recipes)
+    {
+        var alerts = new Dictionary<Guid, string>();
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var repo = scope.ServiceProvider.GetService<IScheduledRunRepository>();
+        if (repo is null)
+        {
+            return (alerts, null);
+        }
+
+        foreach (var recipeId in recipes.Select(r => r.Id))
+        {
+            var newest = (await repo.GetRecentForRecipeAsync(recipeId, 1).ConfigureAwait(false)).FirstOrDefault();
+            if (newest is not null && ScheduledRunBadge.NeedsAttention(newest))
+            {
+                alerts[recipeId] = RoutineText.CardAlert(
+                    RoutineRunDiagnosis.Diagnose(newest).Short, newest.Status == ScheduledRunStatus.PartialSuccess);
+            }
+        }
+
+        var unacked = await repo.GetUnacknowledgedFinishedRunsAsync().ConfigureAwait(false);
+        return (alerts, ScheduledRunBadge.Describe(unacked, onRoutinesHome: true));
     }
 
     private static int Reselect(IReadOnlyList<ScheduleRecipe> recipes, Guid? created, int sel)
