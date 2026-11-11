@@ -32,6 +32,8 @@ internal static class FormField
 
     private const string Reset = "\x1b[0m";
     private const string Dim = "\x1b[2m";
+    private const int MaxTextLines = 6;
+    private const int MinReservedTextLines = 3;
 
     /// <summary>
     /// Returns the number of terminal rows the component will occupy for the
@@ -76,10 +78,40 @@ internal static class FormField
         var hasSubtitle = !string.IsNullOrEmpty(field.Subtitle);
         var topBorderOffset = hasSubtitle ? 2 : 1; // label[+subtitle], then top border
 
+        // workspace-o6sel: help/error text wraps to the screen (not the box).
+        // Text starts 2 columns in and keeps 2 columns spare on the right.
+        var textWidth = Math.Max(10, OverlayViewport.Width - 2 - 2);
+        var helpLineCount = WrapText(field.HelpText, textWidth, MaxTextLines).Count;
+        var reservedLines = Math.Max(helpLineCount, MinReservedTextLines);
+
+        // Move the prompt up when its rows plus one blank row below would run
+        // past the bottom of the screen.
+        var needed = HeightFor(field) - 1 + reservedLines + 1;
+        try
+        {
+            var screenHeight = Console.WindowHeight;
+            if (screenHeight > 0 && startRow + needed > screenHeight)
+            {
+                startRow = Math.Max(1, screenHeight - needed);
+            }
+        }
+        catch (IOException)
+        {
+            // No console to measure (redirected): keep the caller's row.
+        }
+
+        var bandBlanked = false;
+
         while (!ct.IsCancellationRequested)
         {
             // Render the field chrome (label, optional subtitle, borders, help/error)
-            RenderFieldChrome(palette, field, startRow, boxWidth, innerWidth, errorMessage);
+            if (!bandBlanked)
+            {
+                BlankBand(startRow - 1, startRow + HeightFor(field) - 1 + reservedLines);
+                bandBlanked = true;
+            }
+
+            RenderFieldChrome(palette, field, startRow, boxWidth, innerWidth, errorMessage, textWidth, reservedLines);
 
             // Position cursor INSIDE the box for input. workspace-cgnt:
             // col 2 = left border, col 3 = padding space, col 4 = first
@@ -99,7 +131,7 @@ internal static class FormField
                     var handled = field.OnExtraKey(c);
                     if (handled)
                     {
-                        RenderFieldChrome(palette, field, startRow, boxWidth, innerWidth, errorMessage);
+                        RenderFieldChrome(palette, field, startRow, boxWidth, innerWidth, errorMessage, textWidth, reservedLines);
                     }
 
                     return handled;
@@ -165,7 +197,7 @@ internal static class FormField
             // is the row after the bottom border, which depends on whether
             // the field carries a Subtitle (workspace-cgnt).
             var helpRow = startRow + topBorderOffset + 3; // [label, sub?, top, input, bottom, help]
-            RenderValidationMessage(palette, helpRow, boxWidth, null, field.HelpText);
+            RenderValidationMessage(palette, helpRow, textWidth, null, field.HelpText, reservedLines);
             return value;
         }
 
@@ -194,6 +226,67 @@ internal static class FormField
     }
 
     /// <summary>
+    /// Wraps <paramref name="text"/> on word boundaries to <paramref name="width"/>
+    /// columns. A newline starts a new line; words longer than the width are split.
+    /// At most <paramref name="maxLines"/> lines come back; when text is left over,
+    /// the last line ends with an ellipsis.
+    /// </summary>
+    internal static List<string> WrapText(string? text, int width, int maxLines)
+    {
+        var lines = new List<string>();
+        if (string.IsNullOrEmpty(text))
+        {
+            return lines;
+        }
+
+        width = Math.Max(1, width);
+        foreach (var paragraph in text.Replace("\r", string.Empty).Split('\n'))
+        {
+            var current = string.Empty;
+            foreach (var rawWord in paragraph.Split(' ', StringSplitOptions.RemoveEmptyEntries))
+            {
+                var word = rawWord;
+                while (word.Length > width)
+                {
+                    if (current.Length > 0)
+                    {
+                        lines.Add(current);
+                        current = string.Empty;
+                    }
+
+                    lines.Add(word[..width]);
+                    word = word[width..];
+                }
+
+                if (current.Length == 0)
+                {
+                    current = word;
+                }
+                else if (current.Length + 1 + word.Length <= width)
+                {
+                    current = $"{current} {word}";
+                }
+                else
+                {
+                    lines.Add(current);
+                    current = word;
+                }
+            }
+
+            lines.Add(current);
+        }
+
+        if (lines.Count > maxLines)
+        {
+            lines = lines.GetRange(0, maxLines);
+            var last = lines[maxLines - 1];
+            lines[maxLines - 1] = (last.Length >= width ? last[..(width - 1)] : last).TrimEnd() + "…";
+        }
+
+        return lines;
+    }
+
+    /// <summary>
     /// Renders the static parts of the field: label, optional subtitle, border
     /// box, and status line. Subtitle is the workspace-cgnt addition - when
     /// present, it shifts the box and validation row down by one.
@@ -204,7 +297,9 @@ internal static class FormField
         int startRow,
         int boxWidth,
         int innerWidth,
-        string? errorMessage)
+        string? errorMessage,
+        int textWidth,
+        int reservedLines)
     {
         var hasSubtitle = !string.IsNullOrEmpty(field.Subtitle);
         var left = OverlayViewport.Left; // workspace-s621: dock-aware origin
@@ -214,7 +309,8 @@ internal static class FormField
         Console.SetCursorPosition(left, startRow);
         ClearLine(boxWidth + 2);
         Console.SetCursorPosition(left + 2, startRow);
-        var label = field.Label.Length > boxWidth ? field.Label[..boxWidth] : field.Label;
+        var maxLabel = Math.Max(1, OverlayViewport.Width - 4);
+        var label = field.Label.Length > maxLabel ? field.Label[..maxLabel] : field.Label;
         Console.Write($"{palette.PrimaryText.AnsiFg}{label}{Reset}");
 
         var nextRow = startRow + 1;
@@ -259,7 +355,7 @@ internal static class FormField
         nextRow++;
 
         // Validation message or help text
-        RenderValidationMessage(palette, nextRow, boxWidth, errorMessage, field.HelpText);
+        RenderValidationMessage(palette, nextRow, textWidth, errorMessage, field.HelpText, reservedLines);
     }
 
     private static void WriteInputRow(
@@ -296,27 +392,32 @@ internal static class FormField
             $" {palette.HeaderBorderFg.AnsiFg}│{Reset}");
     }
 
+    private static void BlankBand(int firstRow, int lastRow)
+    {
+        for (var row = Math.Max(0, firstRow); row <= lastRow; row++)
+        {
+            Console.SetCursorPosition(OverlayViewport.Left, row);
+            ClearLine(0);
+        }
+    }
+
     private static void RenderValidationMessage(
-        ThemePalette palette, int row, int width, string? errorMessage, string? helpText)
+        ThemePalette palette, int row, int textWidth, string? errorMessage, string? helpText, int reservedLines)
     {
         var left = OverlayViewport.Left;
-        Console.SetCursorPosition(left, row);
-        ClearLine(width + 2);
-        Console.SetCursorPosition(left + 2, row);
+        var isError = errorMessage != null;
+        var lines = WrapText(isError ? "✗ " + errorMessage : helpText, textWidth, MaxTextLines);
 
-        if (errorMessage != null)
+        // Re-blank every row the text can occupy so switching help <-> error
+        // never leaves stale characters behind.
+        BlankBand(row, row + Math.Max(reservedLines, lines.Count));
+
+        var color = isError ? palette.ErrorFg.AnsiFg : palette.SecondaryText.AnsiFg;
+        var style = isError ? string.Empty : Dim;
+        for (var i = 0; i < lines.Count; i++)
         {
-            var truncated = errorMessage.Length > width - 6
-                ? errorMessage[..(width - 6)]
-                : errorMessage;
-            Console.Write($"{palette.ErrorFg.AnsiFg}✗ {truncated}{Reset}");
-        }
-        else if (helpText != null)
-        {
-            var truncated = helpText.Length > width - 6
-                ? helpText[..(width - 6)]
-                : helpText;
-            Console.Write($"{palette.SecondaryText.AnsiFg}{Dim}{truncated}{Reset}");
+            Console.SetCursorPosition(left + 2, row + i);
+            Console.Write($"{color}{style}{lines[i]}{Reset}");
         }
     }
 
