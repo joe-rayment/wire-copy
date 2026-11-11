@@ -166,6 +166,19 @@ public sealed record NarrationProgress
 /// <summary>A chapter audio-engine skipped because narrating it failed.</summary>
 public sealed record NarrationSkippedChapter(int Index, string? Title, string? Error);
 
+/// <summary>Where audio-engine published a narrated episode. <c>Status</c> is pending, published or failed.</summary>
+/// <param name="FeedName">The audio-engine feed name.</param>
+/// <param name="Status">pending, published or failed.</param>
+/// <param name="AudioUrl">The episode's audio URL once published.</param>
+/// <param name="Error">Why publishing failed, when it did.</param>
+public sealed record NarrationPublication(string FeedName, string Status, string? AudioUrl, string? Error);
+
+/// <summary>The audio-engine feed episodes are published to by default.</summary>
+/// <param name="Name">The feed's slug.</param>
+/// <param name="Title">The feed's display title.</param>
+/// <param name="SubscribeUrl">The secret RSS URL for podcast apps.</param>
+public sealed record NarrationFeed(string Name, string Title, string? SubscribeUrl);
+
 /// <summary>The outcome of a narration call.</summary>
 public sealed record NarrationResult
 {
@@ -195,6 +208,9 @@ public sealed record NarrationResult
 
     /// <summary>Gets the audio-engine job id, when a job was created.</summary>
     public string? JobId { get; init; }
+
+    /// <summary>Gets where audio-engine published the episode; null when it has no default feed (narrated, not published).</summary>
+    public NarrationPublication? Publication { get; init; }
 }
 
 /// <summary>One narration engine hosted by audio-engine; <c>IsDefault</c> marks the one it will narrate with.</summary>

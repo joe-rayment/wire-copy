@@ -28,6 +28,10 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private const string NotConfiguredText = "audio-engine has no address set. Set it in Settings -> Podcast narration.";
     private const string UrlSeparator = "/";
 
+    private const string PublicationPending = "pending";
+
+    private static readonly TimeSpan PublicationPoll = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan PublicationTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(10);
 
@@ -247,6 +251,78 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     }
 
     /// <inheritdoc />
+    public async Task<NarrationPublication?> WaitForPublicationAsync(string jobId, CancellationToken ct = default)
+    {
+        ArgumentException.ThrowIfNullOrEmpty(jobId);
+        var s = CurrentSettings();
+        if (!IsReady(s))
+        {
+            return null;
+        }
+
+        using var session = OpenSession(s);
+        var deadline = DateTime.UtcNow + PublicationTimeout;
+        NarrationPublication? last = null;
+        while (true)
+        {
+            try
+            {
+                var job = await session.Client.GetAsync(jobId, ct).ConfigureAwait(false);
+                last = MapPublication(job.Publication);
+            }
+            catch (Exception ex) when (!IsCallerCancel(ex, ct))
+            {
+                _logger.LogWarning(ex, "Could not read publication state of audio-engine job {JobId}", jobId);
+                if (last is null)
+                {
+                    return null;
+                }
+            }
+
+            if (last is null || last.Status != PublicationPending || DateTime.UtcNow >= deadline)
+            {
+                return last;
+            }
+
+            await Task.Delay(PublicationPoll, ct).ConfigureAwait(false);
+        }
+    }
+
+    /// <inheritdoc />
+    public async Task<NarrationFeed?> GetDefaultFeedAsync(CancellationToken ct = default)
+    {
+        var s = CurrentSettings();
+        if (!IsReady(s))
+        {
+            return null;
+        }
+
+        try
+        {
+            using var session = OpenSession(s);
+
+            // The SDK's Feed record lacks IsDefault, so read GET v1/feeds directly.
+            using var request = NewRequest(HttpMethod.Get, "v1/feeds", s.ApiKey);
+            using var response = await session.Http.SendAsync(request, ct).ConfigureAwait(false);
+            if (!response.IsSuccessStatusCode)
+            {
+                var failure = await FailureFromResponseAsync(response, s, ct).ConfigureAwait(false);
+                _logger.LogWarning("Could not read audio-engine's default feed: {Message}", failure.Message);
+                return null;
+            }
+
+            var list = await response.Content.ReadFromJsonAsync<FeedListDto>(Json, ct).ConfigureAwait(false);
+            var def = list?.Items?.FirstOrDefault(f => f.IsDefault);
+            return def is null ? null : new NarrationFeed(def.Name ?? string.Empty, def.Title ?? def.Name ?? string.Empty, def.SubscribeUrl);
+        }
+        catch (Exception ex) when (!IsCallerCancel(ex, ct))
+        {
+            _logger.LogWarning(ex, "Could not read audio-engine's default feed");
+            return null;
+        }
+    }
+
+    /// <inheritdoc />
     public async Task<NarrationResult> NarrateAsync(
         NarrationRequest request,
         IProgress<NarrationProgress>? progress = null,
@@ -305,6 +381,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                     .Select(c => new NarrationSkippedChapter(c.Index, c.Title, c.Error))
                     .ToList() ?? [],
                 JobId = job.Id,
+                Publication = MapPublication(job.Publication),
             };
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
@@ -365,6 +442,9 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             IdempotencyKey = BuildIdempotencyKey(request, engineFingerprint, coverHash),
         };
     }
+
+    private static NarrationPublication? MapPublication(Publication? p) =>
+        p is null ? null : new NarrationPublication(p.Feed, p.Status, p.AudioUrl, p.Error);
 
     private static string BuildIdempotencyKey(NarrationRequest request, string engineFingerprint, string coverHash)
     {
@@ -674,6 +754,10 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private readonly record struct Failure(NarrationErrorKind Kind, string Message);
 
     private sealed record EngineDto(string? Name, bool IsConfigured, bool IsDefault);
+
+    private sealed record FeedDto(string? Name, string? Title, string? SubscribeUrl, bool IsDefault);
+
+    private sealed record FeedListDto(List<FeedDto>? Items);
 
     /// <summary>Reports each audio-engine event to the caller's callback synchronously, on the thread that raised it.</summary>
     private sealed class ProgressSink : IProgress<JobEvent>

@@ -21,6 +21,11 @@ namespace WireCopy.Infrastructure.Podcast;
 /// </summary>
 internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 {
+    private const string PublishedStatus = "published";
+    private const string FailedStatus = "failed";
+    private const string NotPublishedNote = "Saved on this computer. Not published: no default feed is set in audio-engine.";
+    private const string StillPublishingNote = "audio-engine is still publishing this episode. Check its Feeds page.";
+
     /// <summary>
     /// workspace-hzjs (F.3): how often the orchestrator allows the
     /// <see cref="PodcastJobJournal"/> to push a PodcastProgress snapshot
@@ -33,7 +38,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
     private readonly ReadingListContentProvider _contentProvider;
     private readonly IPodcastNarrator _narrator;
-    private readonly IPodcastPublisher _publisher;
     private readonly PodcastConfiguration _podcastConfig;
     private readonly IUserSettingsStore? _settingsStore;
     private readonly IServiceScopeFactory? _scopeFactory;
@@ -53,7 +57,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     public PodcastOrchestrator(
         ReadingListContentProvider contentProvider,
         IPodcastNarrator narrator,
-        IPodcastPublisher publisher,
         IOptions<PodcastConfiguration> podcastConfig,
         ILogger<PodcastOrchestrator> logger,
         IUserSettingsStore? settingsStore = null,
@@ -61,7 +64,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     {
         _contentProvider = contentProvider;
         _narrator = narrator;
-        _publisher = publisher;
         _podcastConfig = podcastConfig.Value;
         _settingsStore = settingsStore;
         _scopeFactory = scopeFactory;
@@ -80,13 +82,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
     }
 
     /// <summary>
-    /// Resolves the local M4B path AND the public feed URL the upcoming
-    /// generation will write to (workspace-zh3u). If no GCS bucket is
-    /// configured, FeedUrl is null and the caller should render a
-    /// local-only footer line. Errors resolving the feed URL (e.g. SA key
-    /// problems) are caught here so the progress screen never crashes on a
-    /// non-critical lookup; the footer falls back to local-only in that
-    /// case.
+    /// Resolves the local M4B path AND the subscribe URL of audio-engine's default feed
+    /// (null when it has none or cannot be reached — the caller renders a local-only line).
+    /// Never throws for an expected failure.
     /// </summary>
     public async Task<PodcastTargets> ResolveTargetsAsync(
         Collection collection,
@@ -95,24 +93,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         ArgumentNullException.ThrowIfNull(collection);
 
         var localPath = GetOutputFilePath(collection.Name);
-
-        var bucketConfigured = !string.IsNullOrWhiteSpace(_settingsStore?.Get("GcsBucketName"));
-        if (!bucketConfigured)
-        {
-            return new PodcastTargets { LocalFilePath = localPath, FeedUrl = null };
-        }
-
-        try
-        {
-            var feedUrl = await _publisher.ResolveFeedUrlAsync(_podcastConfig.Title, cancellationToken)
-                .ConfigureAwait(false);
-            return new PodcastTargets { LocalFilePath = localPath, FeedUrl = feedUrl };
-        }
-        catch (Exception ex) when (ex is not OperationCanceledException)
-        {
-            _logger.LogWarning(ex, "Failed to resolve feed URL for footer; falling back to local-only");
-            return new PodcastTargets { LocalFilePath = localPath, FeedUrl = null };
-        }
+        var feed = await _narrator.GetDefaultFeedAsync(cancellationToken).ConfigureAwait(false);
+        return new PodcastTargets { LocalFilePath = localPath, FeedUrl = feed?.SubscribeUrl };
     }
 
     public async Task<PodcastResult> GeneratePodcastAsync(
@@ -300,32 +282,6 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
 
         return path;
     }
-
-    /// <summary>
-    /// Maps a typed <see cref="FeedPublishFailureClass"/> to the single-line
-    /// remediation copy rendered on the Phase E result screen (workspace-3a2k).
-    /// Targeted enough to be actionable (bucket-public IAM grant, audio-file
-    /// triage) without leaning on the heuristic string-pattern fallback in
-    /// <c>PodcastFailureClassifier</c>.
-    /// </summary>
-    private static string BuildPublishRemediation(FeedPublishFailureClass failureClass) => failureClass switch
-    {
-        FeedPublishFailureClass.BucketNotPublic =>
-            "feed.xml uploaded but the bucket isn't world-readable. Grant allUsers:objectViewer on the bucket "
-            + "(Cloud Console → Buckets → Permissions → Add: allUsers, role Storage Object Viewer), or run "
-            + "`gsutil iam ch allUsers:objectViewer gs://<your-bucket>`.",
-        FeedPublishFailureClass.FeedNotReachable =>
-            "feed.xml uploaded but the public URL is not reachable (non-403 response). Check the bucket name "
-            + "and network connectivity, then retry. If this persists, see logs at ~/.local/share/WireCopy/logs/.",
-        FeedPublishFailureClass.FeedNotParseable =>
-            "feed.xml uploaded but the response body did not parse as XML. Re-run with the same key — this usually "
-            + "indicates an encoding/transfer issue in the just-uploaded blob.",
-        FeedPublishFailureClass.NoAudioFiles =>
-            "Every episode skipped because the local audio file was missing on disk. Check ffmpeg output / "
-            + "temp-dir cleanup and re-run.",
-        _ =>
-            "Check the bucket name + service-account key in Setup, or see logs at ~/.local/share/WireCopy/logs/ for the underlying error.",
-    };
 
     private static int CountWords(string text)
     {
@@ -574,137 +530,74 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             var totalCost = narration.CostUsd;
             var finalAudioPath = narration.OutputPath;
 
-            // Step 6: Publish
-            progress?.Report(new PodcastProgress
-            {
-                Phase = PodcastPhase.Publishing,
-                PercentComplete = 85,
-                Message = "Publishing feed...",
-            });
-
-            var podcastMetadata = new PodcastMetadata
-            {
-                Title = _podcastConfig.Title,
-                Description = _podcastConfig.Description,
-                Author = _podcastConfig.Author,
-                Language = _podcastConfig.Language,
-                ImageUrl = _podcastConfig.ImageUrl ?? string.Empty,
-                Category = _podcastConfig.Category,
-                Explicit = _podcastConfig.Explicit,
-            };
-
-            var episodeSources = new List<EpisodeSource>
-            {
-                new()
-                {
-                    Title = $"{collection.Name} ({DateTime.UtcNow:yyyy-MM-dd})",
-                    Description = $"Articles from the '{collection.Name}' reading list.",
-                    LocalAudioFilePath = finalAudioPath,
-                    Duration = narration.Duration,
-
-                    // Chapter marks live inside the m4b audio-engine built; the feed
-                    // entry carries none of its own.
-                },
-            };
-
-            // workspace-74zy: forward publish progress through to PodcastProgress
-            // so the consumer can show "N of M episodes uploaded" + bytes/total
-            // for the in-flight episode instead of holding the bar at 85% for
-            // the full duration of a multi-MB upload.
-            var publishPhaseStopwatch = System.Diagnostics.Stopwatch.StartNew();
-            IProgress<PublishProgress>? publishProgress = null;
-            if (progress is not null)
-            {
-                var outerProgress = progress;
-                var stopwatch = publishPhaseStopwatch;
-                publishProgress = new SyncProgress<PublishProgress>(p =>
-                {
-                    var per = p.TotalEpisodes > 0
-                        ? (double)p.UploadedEpisodes / p.TotalEpisodes
-                        : 0;
-                    var inflight = p.UploadedBytesTotal > 0
-                        ? (double)p.UploadedBytes / p.UploadedBytesTotal
-                        : 0;
-                    var fraction = p.TotalEpisodes > 0
-                        ? Math.Clamp(per + (inflight / p.TotalEpisodes), 0, 1)
-                        : 0;
-                    outerProgress.Report(new PodcastProgress
-                    {
-                        Phase = PodcastPhase.Publishing,
-                        PercentComplete = 85 + (int)(fraction * 14),
-                        UploadedEpisodes = p.UploadedEpisodes,
-                        UploadedEpisodesTotal = p.TotalEpisodes,
-                        UploadedBytes = p.UploadedBytes,
-                        UploadedBytesTotal = p.UploadedBytesTotal,
-                        Message = p.Message,
-                        PhaseElapsed = stopwatch.Elapsed,
-                    });
-                });
-            }
-
-            var publishResult = await _publisher.PublishFeedAsync(
-                podcastMetadata,
-                episodeSources,
-                publishProgress,
-                cancellationToken).ConfigureAwait(false);
-
-            progress?.Report(new PodcastProgress
-            {
-                Phase = PodcastPhase.Publishing,
-                PercentComplete = 100,
-                Message = publishResult.Success ? "Done!" : "Published locally only.",
-            });
-
-            if (!publishResult.Success)
-            {
-                _logger.LogWarning(
-                    "Feed publishing failed: {Error}. M4B saved locally at {Path}",
-                    publishResult.ErrorMessage,
-                    finalAudioPath);
-
-                // workspace-3a2k: when the user configured a GCS bucket, a
-                // publish failure is a TOTAL failure — not a "local-only
-                // success". Otherwise the user sees "✓ Podcast Ready!" and
-                // only finds the broken subscription URL when their podcast
-                // app silently fails to add the feed. Carry the publisher's
-                // typed FailureClass through so the result screen can render
-                // the correct bucket-public remediation.
-                var hadBucketConfigured = !string.IsNullOrWhiteSpace(_settingsStore?.Get("GcsBucketName"));
-                if (hadBucketConfigured)
-                {
-                    var failureDetail = new PodcastFailureDetail(
-                        Step: "Publishing",
-                        FailureClass: publishResult.FailureClass,
-                        RawMessage: publishResult.ErrorMessage ?? "Publish failed",
-                        RemediationCopy: BuildPublishRemediation(publishResult.FailureClass));
-
-                    return PodcastResult.Failure(
-                        publishResult.ErrorMessage ?? "Publish failed",
-                        detail: failureDetail,
-                        localFilePath: finalAudioPath,
-                        failedArticleDetails: allFailures);
-                }
-
-                return PodcastResult.Successful(
-                    feedUrl: null,
+            // Step 6: audio-engine publishes the episode itself (Feed = "@default"); wait for its verdict.
+            PodcastResult Saved(string? feedUrl, string? feedTitle, string? episodeUrl, string? note) =>
+                PodcastResult.Successful(
+                    feedUrl: feedUrl,
                     localFilePath: finalAudioPath,
                     totalDuration: narration.Duration,
                     articlesProcessed: articlesProcessed,
                     articlesFailed: allFailures.Count,
                     fileSizeBytes: narration.Bytes,
                     totalCost: totalCost,
+                    failedArticleDetails: allFailures,
+                    feedTitle: feedTitle,
+                    episodeUrl: episodeUrl,
+                    publicationNote: note);
+
+            var publication = narration.Publication;
+            if (publication is null || string.IsNullOrEmpty(narration.JobId))
+            {
+                progress?.Report(new PodcastProgress
+                {
+                    Phase = PodcastPhase.Publishing,
+                    PercentComplete = 100,
+                    Message = "Done!",
+                });
+                return Saved(null, null, null, NotPublishedNote);
+            }
+
+            progress?.Report(new PodcastProgress
+            {
+                Phase = PodcastPhase.Publishing,
+                PercentComplete = 90,
+                Message = $"Publishing to {publication.FeedName} in audio-engine…",
+            });
+
+            var final = await _narrator.WaitForPublicationAsync(narration.JobId, cancellationToken).ConfigureAwait(false)
+                ?? publication;
+
+            progress?.Report(new PodcastProgress
+            {
+                Phase = PodcastPhase.Publishing,
+                PercentComplete = 100,
+                Message = final.Status == PublishedStatus ? "Done!" : "Saved locally only.",
+            });
+
+            if (final.Status == PublishedStatus)
+            {
+                var feed = await _narrator.GetDefaultFeedAsync(cancellationToken).ConfigureAwait(false);
+                return Saved(feed?.SubscribeUrl, feed?.Title ?? final.FeedName, final.AudioUrl, null);
+            }
+
+            if (final.Status == FailedStatus)
+            {
+                var reason = $"audio-engine couldn't publish the episode: {final.Error ?? "unknown error"}";
+                _logger.LogWarning("{Reason}. M4B saved locally at {Path}", reason, finalAudioPath);
+
+                // A failed publish is a total failure, not a silent local-only success; the local file is kept.
+                return PodcastResult.Failure(
+                    reason,
+                    new PodcastFailureDetail(
+                        Step: "Publishing",
+                        FailureClass: FeedPublishFailureClass.Generic,
+                        RawMessage: reason,
+                        RemediationCopy: "Open audio-engine's Feeds page to see why, fix it there, then run this again."),
+                    localFilePath: finalAudioPath,
                     failedArticleDetails: allFailures);
             }
 
-            return PodcastResult.Successful(
-                feedUrl: publishResult.FeedUrl,
-                localFilePath: finalAudioPath,
-                totalDuration: narration.Duration,
-                articlesProcessed: articlesProcessed,
-                articlesFailed: allFailures.Count,
-                fileSizeBytes: narration.Bytes,
-                totalCost: totalCost,
-                failedArticleDetails: allFailures);
+            return Saved(null, null, null, StillPublishingNote);
         }
         catch (OperationCanceledException)
         {

@@ -20,6 +20,21 @@ public record PodcastResult
     public string? FeedUrl { get; init; }
 
     /// <summary>
+    /// Gets the title of the audio-engine feed the episode was published to; null when not published.
+    /// </summary>
+    public string? FeedTitle { get; init; }
+
+    /// <summary>
+    /// Gets the episode's audio URL in audio-engine's feed; null when not published.
+    /// </summary>
+    public string? EpisodeUrl { get; init; }
+
+    /// <summary>
+    /// Gets a one-line publishing note for the result screen (not published, still publishing); null when published normally.
+    /// </summary>
+    public string? PublicationNote { get; init; }
+
+    /// <summary>
     /// Gets the local M4B file path, if assembly succeeded.
     /// </summary>
     public string? LocalFilePath { get; init; }
@@ -93,10 +108,16 @@ public record PodcastResult
         long fileSizeBytes,
         int articlesCached = 0,
         decimal totalCost = 0m,
-        IReadOnlyList<ArticleFailure>? failedArticleDetails = null) => new()
+        IReadOnlyList<ArticleFailure>? failedArticleDetails = null,
+        string? feedTitle = null,
+        string? episodeUrl = null,
+        string? publicationNote = null) => new()
     {
         Success = true,
         FeedUrl = feedUrl,
+        FeedTitle = feedTitle,
+        EpisodeUrl = episodeUrl,
+        PublicationNote = publicationNote,
         LocalFilePath = localFilePath,
         TotalDuration = totalDuration,
         ArticlesProcessed = articlesProcessed,

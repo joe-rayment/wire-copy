@@ -34,4 +34,15 @@ public interface IPodcastNarrator
     /// <param name="ct">Cancellation token; cancelling also asks audio-engine to cancel the job.</param>
     /// <returns>The result; never throws for an expected failure (only for cancellation).</returns>
     Task<NarrationResult> NarrateAsync(NarrationRequest request, IProgress<NarrationProgress>? progress = null, CancellationToken ct = default);
+
+    /// <summary>Polls the job every 2 s while its publication is pending; gives up after 10 minutes.</summary>
+    /// <param name="jobId">The audio-engine job id.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The last publication state (still pending on timeout); null when there is none or audio-engine can't be asked.</returns>
+    Task<NarrationPublication?> WaitForPublicationAsync(string jobId, CancellationToken ct = default);
+
+    /// <summary>Asks audio-engine which feed is its default.</summary>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>The default feed; null when none is set or audio-engine is unreachable.</returns>
+    Task<NarrationFeed?> GetDefaultFeedAsync(CancellationToken ct = default);
 }
