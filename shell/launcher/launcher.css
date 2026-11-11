@@ -447,8 +447,19 @@ html[data-screen="routines"] #footer-right .count { display: none; }
 /* Fourth line: why the last run needs attention. Red token follows the theme variant;
    one nowrap ellipsized line like the detail above it, so the cell never resizes. */
 .card .detail:has(+ .alert) { margin-bottom: 0; }
-.card .alert { margin-top: 3px; color: var(--tr-red); }
-.card.selected .alert { color: var(--tr-red); }
+.card .alert {
+  margin-top: 3px;
+  margin-bottom: 0;
+  color: var(--tr-red);
+  line-height: 1.3;
+  white-space: normal;
+  text-overflow: clip;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  overflow: hidden;
+}
+.card.selected .alert { color: var(--tr-white); font-weight: 700; }
 .card.routine .card-title { color: var(--tr-routine); }
 .card.routine.selected .card-title { color: var(--tr-white); }
 .card.routine .card-rail { background: var(--tr-routine); box-shadow: 0 0 10px var(--tr-routine); }
