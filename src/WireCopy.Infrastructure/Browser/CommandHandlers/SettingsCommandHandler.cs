@@ -80,6 +80,10 @@ internal static class SettingsCommandHandler
         AudioEngineProgram,  // workspace-08e4u: folder or executable WireCopy starts when nothing answers
         AudioEngineKey,
 
+        // workspace-fqc5b / workspace-wfykm: read-only rows showing what audio-engine will do; Enter opens it.
+        Narration,
+        Publishing,
+
         // workspace-m7aml.3: install guide for the browser extension.
         BrowserExtension,
     }
@@ -130,6 +134,8 @@ internal static class SettingsCommandHandler
         // after a row that can change it — render reads the cached value, never the network.
         NarratorStatus? narratorStatus = null;
         var narratorStatusFresh = false;
+        NarrationFeed? defaultFeed = null;
+        string? paintedFeedText = null;
 
         // workspace-08e4u: the status words last painted on the Audio engine row, so the 3 s
         // refresh repaints "starting…" → "ready ✓" / "not running" even when the probe looks the same.
@@ -151,6 +157,7 @@ internal static class SettingsCommandHandler
             if (!narratorStatusFresh)
             {
                 narratorStatus = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
+                defaultFeed = narratorStatus?.Reachable == true ? await ProbeDefaultFeedAsync(scope, ct).ConfigureAwait(false) : null;
                 narratorStatusFresh = true;
 
                 // workspace-08e4u: nothing answers at a local URL — start audio-engine for the user
@@ -323,6 +330,51 @@ internal static class SettingsCommandHandler
                 hasAudioEngineKey ? "Change" : "Set",
                 helperText: "Only needed when audio-engine was started with an API key");
 
+            var engineAnswered = narratorStatus?.Reachable == true;
+            var narrationValue = "audio-engine isn't running";
+            if (narratorStatus is null)
+            {
+                narrationValue = "checking…";
+            }
+            else if (engineAnswered)
+            {
+                var engineName = string.IsNullOrWhiteSpace(narratorStatus.EngineName) ? "audio-engine's engine" : narratorStatus.EngineName;
+                narrationValue = $"{engineName} (chosen in audio-engine)";
+            }
+
+            paintedFeedText = DescribePublishing(narratorStatus, defaultFeed);
+
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.Narration,
+                engineAnswered ? "●" : "○",
+                engineAnswered ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Narration",
+                narrationValue,
+                engineAnswered ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Open",
+                helperText: "Engine and voice are chosen in audio-engine. Enter opens audio-engine.");
+
+            var publishing = defaultFeed is not null;
+            RenderRow(
+                helpers,
+                palette,
+                width,
+                rows,
+                selectedIndex,
+                SetupRow.Publishing,
+                publishing ? "●" : "○",
+                publishing ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Publishing",
+                paintedFeedText,
+                publishing ? palette.PromptFg.AnsiFg : palette.SecondaryText.AnsiFg,
+                "Open",
+                helperText: "Podcast feeds are set up in audio-engine: Settings, Podcast feeds, Default feed. Enter opens audio-engine.");
+
             // ---- Podcast output ----
             helpers.WriteLine();
             helpers.WriteLine($"  {palette.SecondaryText.AnsiFg}Podcast — output{Reset}");
@@ -482,9 +534,17 @@ internal static class SettingsCommandHandler
                 }
 
                 var probed = await ProbeNarratorAsync(scope, ct).ConfigureAwait(false);
-                if (probed is not null && DescribeNarratorStatus(probed, launcher.IsStarting(probed.Url)) != paintedNarratorText)
+                if (probed is null)
+                {
+                    continue;
+                }
+
+                var probedFeed = probed.Reachable ? await ProbeDefaultFeedAsync(scope, ct).ConfigureAwait(false) : null;
+                if (DescribeNarratorStatus(probed, launcher.IsStarting(probed.Url)) != paintedNarratorText
+                    || DescribePublishing(probed, probedFeed) != paintedFeedText)
                 {
                     narratorStatus = probed;
+                    defaultFeed = probedFeed;
                     statusChanged = true;
                     break;
                 }
@@ -601,6 +661,11 @@ internal static class SettingsCommandHandler
                 await HandleSetAudioEngineKeyAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
 
+            case SetupRow.Narration:
+            case SetupRow.Publishing:
+                OpenAudioEngine(ctx);
+                return;
+
             case SetupRow.BrowserExtension:
                 await BrowserExtensionCard.RunAsync(ctx, options, ct).ConfigureAwait(false);
                 return;
@@ -621,6 +686,8 @@ internal static class SettingsCommandHandler
             SetupRow.AudioEngine,
             SetupRow.AudioEngineProgram,
             SetupRow.AudioEngineKey,
+            SetupRow.Narration,
+            SetupRow.Publishing,
         };
         rowList.AddRange(new[]
         {
@@ -687,6 +754,91 @@ internal static class SettingsCommandHandler
         }
 
         return null;
+    }
+
+    /// <summary>The Publishing row's value for the last probes.</summary>
+    /// <param name="status">The last status probe; null while none has completed.</param>
+    /// <param name="feed">audio-engine's default feed, or null.</param>
+    /// <returns>The words the row shows.</returns>
+    private static string DescribePublishing(NarratorStatus? status, NarrationFeed? feed)
+    {
+        if (status is null)
+        {
+            return "checking…";
+        }
+
+        if (!status.Reachable)
+        {
+            return "audio-engine isn't running";
+        }
+
+        if (feed is null)
+        {
+            return "not published (no default feed in audio-engine)";
+        }
+
+        var title = string.IsNullOrWhiteSpace(feed.Title) ? feed.Name : feed.Title;
+        return $"to {title}";
+    }
+
+    /// <summary>One bounded audio-engine default-feed probe; null when there is none or it times out.</summary>
+    private static async Task<NarrationFeed?> ProbeDefaultFeedAsync(IServiceScope scope, CancellationToken ct)
+    {
+        try
+        {
+            var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(NarratorProbeTimeout);
+            return await narrator.GetDefaultFeedAsync(cts.Token).ConfigureAwait(false);
+        }
+        catch (Exception)
+        {
+            // Broad by design: a feed probe must never abort the Setup screen.
+            return null;
+        }
+    }
+
+    /// <summary>Enter on the Narration / Publishing rows: opens audio-engine's web UI in the default browser.</summary>
+    private static void OpenAudioEngine(CommandContext ctx)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        var url = settingsStore.Get(KeyAudioEngineUrl) ?? AudioEngineUrlFromEnv() ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
+        if (OpenExternal(url, ctx.Logger))
+        {
+            ctx.NavigationService.SetStatusMessage($"Opened audio-engine at {url}");
+        }
+        else
+        {
+            ctx.NavigationService.SetStatusMessage($"Couldn't open a browser. audio-engine is at {url}", StatusSeverity.Error);
+        }
+    }
+
+    private static bool OpenExternal(string url, ILogger logger)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+                return true;
+            }
+
+            var psi = new System.Diagnostics.ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add(url);
+            System.Diagnostics.Process.Start(psi)?.Dispose();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogInformation(ex, "No browser available to open {Url}", url);
+            return false;
+        }
     }
 
     /// <summary>
