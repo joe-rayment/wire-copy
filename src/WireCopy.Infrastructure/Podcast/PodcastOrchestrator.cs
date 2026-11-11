@@ -130,7 +130,7 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
         if (!_narrator.IsConfigured)
         {
             return PodcastResult.Failure(
-                "audio-engine isn't set up: set its address and API key in Settings -> Podcast narration.");
+                "audio-engine has no address set. Set it in Settings -> Podcast narration.");
         }
 
         // workspace-hzjs (F.3): persist a Running PodcastJob row so generation

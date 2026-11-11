@@ -116,7 +116,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             return baseStatus with
             {
                 ErrorKind = NarrationErrorKind.NotConfigured,
-                Message = NotConfiguredMessage(s),
+                Message = NotConfiguredMessage(),
             };
         }
 
@@ -155,17 +155,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
 
             baseStatus = baseStatus with { Reachable = true };
 
-            // 2. Is there a key to authenticate with?
-            if (string.IsNullOrEmpty(s.ApiKey))
-            {
-                return baseStatus with
-                {
-                    ErrorKind = NarrationErrorKind.NotConfigured,
-                    Message = NotConfiguredMessage(s),
-                };
-            }
-
-            // 3. Does audio-engine accept the key, and can it run the selected engine?
+            // 2. Does audio-engine accept the key, and can it run the selected engine?
             List<EngineDto> dtos;
             try
             {
@@ -233,7 +223,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         var s = CurrentSettings();
         if (!IsReady(s))
         {
-            return new NarrationEstimate { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage(s) };
+            return new NarrationEstimate { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage() };
         }
 
         Session? session = null;
@@ -278,7 +268,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         var s = CurrentSettings();
         if (!IsReady(s))
         {
-            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage(s) };
+            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage() };
         }
 
         Session? session = null;
@@ -357,7 +347,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         var s = CurrentSettings();
         if (!IsReady(s))
         {
-            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage(s) };
+            return new NarrationResult { ErrorKind = NarrationErrorKind.NotConfigured, ErrorMessage = NotConfiguredMessage() };
         }
 
         Session? session = null;
@@ -507,7 +497,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         }
     }
 
-    private static bool IsReady(AudioEngineSettings s) => !string.IsNullOrEmpty(s.Url) && !string.IsNullOrEmpty(s.ApiKey);
+    private static bool IsReady(AudioEngineSettings s) => !string.IsNullOrEmpty(s.Url);
 
     private static bool IsCallerCancel(Exception ex, CancellationToken ct) => ex is OperationCanceledException && ct.IsCancellationRequested;
 
@@ -567,10 +557,8 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private static string UnreachableMessage(string? url) =>
         $"audio-engine isn't running at {url}. Start it (audio-engine README: Run natively) or change its address in Settings.";
 
-    private static string NotConfiguredMessage(AudioEngineSettings s) =>
-        string.IsNullOrEmpty(s.Url)
-            ? "audio-engine has no address set. Set it in Settings -> Podcast narration."
-            : "audio-engine has no API key set. Set it in Settings -> Podcast narration.";
+    private static string NotConfiguredMessage() =>
+        "audio-engine has no address set. Set it in Settings -> Podcast narration.";
 
     private static string EngineNotConfiguredMessage(AudioEngineSettings s) =>
         s.IsChatterbox || s.Engine != AudioEngineSettings.EngineOpenAi
@@ -615,7 +603,11 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     {
         if (status is 401 or 403)
         {
-            return new Failure(NarrationErrorKind.Unauthorized, UnauthorizedText);
+            return new Failure(
+                NarrationErrorKind.Unauthorized,
+                string.IsNullOrEmpty(s.ApiKey)
+                    ? $"audio-engine at {s.Url} wants an API key. Set it in Settings -> Podcast narration."
+                    : UnauthorizedText);
         }
 
         if (MentionsNotConfigured(problemType) || MentionsNotConfigured(title) || MentionsNotConfigured(detail))

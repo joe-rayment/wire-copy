@@ -11,7 +11,7 @@ public enum NarrationErrorKind
     /// <summary>No error.</summary>
     None,
 
-    /// <summary>The audio-engine URL or API key has not been set.</summary>
+    /// <summary>The audio-engine URL has not been set.</summary>
     NotConfigured,
 
     /// <summary>audio-engine could not be reached (not running, wrong address).</summary>

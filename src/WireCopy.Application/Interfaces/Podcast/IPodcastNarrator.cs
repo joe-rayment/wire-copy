@@ -12,7 +12,7 @@ namespace WireCopy.Application.Interfaces.Podcast;
 public interface IPodcastNarrator
 {
     /// <summary>
-    /// Gets a value indicating whether an audio-engine URL and API key are both present.
+    /// Gets a value indicating whether an audio-engine URL is present (the API key is optional).
     /// Cheap: reads settings only, never touches the network.
     /// </summary>
     bool IsConfigured { get; }
