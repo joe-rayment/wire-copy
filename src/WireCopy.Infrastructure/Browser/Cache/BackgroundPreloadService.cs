@@ -486,17 +486,6 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         SignalQueueChanged();
     }
 
-    private static string FirstLine(string? message, int max)
-    {
-        var line = (message ?? string.Empty).Split('\n', 2)[0].Trim();
-        if (line.Length == 0)
-        {
-            return "unknown error";
-        }
-
-        return line.Length <= max ? line : line[..max];
-    }
-
     /// <inheritdoc />
     public async Task<Application.DTOs.Scheduling.RenderedLoad> LoadRenderedHtmlAsync(
         string url, CancellationToken cancellationToken = default)
@@ -708,6 +697,17 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
     }
 
 #pragma warning disable SA1202 // helper kept adjacent to its sole caller GetProgress (workspace-7xw0).
+    private static string FirstLine(string? message, int max)
+    {
+        var line = (message ?? string.Empty).Split('\n', 2)[0].Trim();
+        if (line.Length == 0)
+        {
+            return "unknown error";
+        }
+
+        return line.Length <= max ? line : line[..max];
+    }
+
     /// <summary>
     /// Appends an entry to the bounded history ring (workspace-7xw0). Called
     /// from the preload worker as URLs complete. Capped at

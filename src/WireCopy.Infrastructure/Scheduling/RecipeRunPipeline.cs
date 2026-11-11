@@ -226,12 +226,21 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             // not a transient error — give the user an actionable, human diagnostic
             // (surfaced by B11) instead of producing a silent empty episode. We never
             // attempt unattended re-auth; the user refreshes by browsing the site once.
-            var diagnostic = load.Outcome == LoadOutcome.Blocked
-                ? $"{HostOf(step.SourceUrl)}: appears logged-out or paywalled — open it in WireCopy and sign in to refresh your session. " +
-                  "The routine run skipped this step rather than publish an empty episode."
-                : string.IsNullOrWhiteSpace(load.FailureReason)
-                    ? $"Background load failed ({load.Outcome}) for {step.SourceUrl}."
-                    : $"Couldn't load {HostOf(step.SourceUrl)}: {load.FailureReason}";
+            string diagnostic;
+            if (load.Outcome == LoadOutcome.Blocked)
+            {
+                diagnostic = $"{HostOf(step.SourceUrl)}: appears logged-out or paywalled — open it in WireCopy and sign in to refresh your session. " +
+                    "The routine run skipped this step rather than publish an empty episode.";
+            }
+            else if (string.IsNullOrWhiteSpace(load.FailureReason))
+            {
+                diagnostic = $"Background load failed ({load.Outcome}) for {step.SourceUrl}.";
+            }
+            else
+            {
+                diagnostic = $"Couldn't load {HostOf(step.SourceUrl)}: {load.FailureReason}";
+            }
+
             return (load.Outcome.ToString(), 0, diagnostic);
         }
 
