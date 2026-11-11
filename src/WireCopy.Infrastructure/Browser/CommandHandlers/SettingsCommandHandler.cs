@@ -724,6 +724,40 @@ internal static class SettingsCommandHandler
         };
     }
 
+    /// <summary>The audio-engine address: the saved setting, else the environment, else the configured default.</summary>
+    internal static string ResolveAudioEngineUrl(IServiceScope scope)
+    {
+        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
+        return settingsStore.Get(KeyAudioEngineUrl) ?? AudioEngineUrlFromEnv() ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
+    }
+
+    internal static bool OpenExternal(string url, ILogger logger)
+    {
+        try
+        {
+            if (OperatingSystem.IsWindows())
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
+                return true;
+            }
+
+            var psi = new System.Diagnostics.ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open")
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+            };
+            psi.ArgumentList.Add(url);
+            System.Diagnostics.Process.Start(psi)?.Dispose();
+            return true;
+        }
+        catch (Exception ex)
+        {
+            logger.LogInformation(ex, "No browser available to open {Url}", url);
+            return false;
+        }
+    }
+
     /// <summary>
     /// The audio-engine URL supplied by <c>AUDIO_ENGINE_URL</c>, or null when unset — the
     /// row shows the URL narration actually talks to (mirrors AudioEngineSettings.Resolve).
@@ -802,8 +836,7 @@ internal static class SettingsCommandHandler
     private static void OpenAudioEngine(CommandContext ctx)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
-        var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
-        var url = settingsStore.Get(KeyAudioEngineUrl) ?? AudioEngineUrlFromEnv() ?? ResolveTtsDefault(scope, c => c.Url, "http://127.0.0.1:8080");
+        var url = ResolveAudioEngineUrl(scope);
         if (OpenExternal(url, ctx.Logger))
         {
             ctx.NavigationService.SetStatusMessage($"Opened audio-engine at {url}");
@@ -811,33 +844,6 @@ internal static class SettingsCommandHandler
         else
         {
             ctx.NavigationService.SetStatusMessage($"Couldn't open a browser. audio-engine is at {url}", StatusSeverity.Error);
-        }
-    }
-
-    private static bool OpenExternal(string url, ILogger logger)
-    {
-        try
-        {
-            if (OperatingSystem.IsWindows())
-            {
-                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo(url) { UseShellExecute = true })?.Dispose();
-                return true;
-            }
-
-            var psi = new System.Diagnostics.ProcessStartInfo(OperatingSystem.IsMacOS() ? "open" : "xdg-open")
-            {
-                UseShellExecute = false,
-                RedirectStandardOutput = true,
-                RedirectStandardError = true,
-            };
-            psi.ArgumentList.Add(url);
-            System.Diagnostics.Process.Start(psi)?.Dispose();
-            return true;
-        }
-        catch (Exception ex)
-        {
-            logger.LogInformation(ex, "No browser available to open {Url}", url);
-            return false;
         }
     }
 

@@ -15,6 +15,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 internal static class RoutineRunDiagnosis
 {
     private static readonly RunFix None = new(RunFixKind.None, string.Empty);
+    private static readonly RunFix OpenEngineSettings = new(RunFixKind.OpenEngineSettings, "Open audio-engine's Settings");
     private static readonly RunFix Again = new(RunFixKind.RunAgain, "Run again");
 
     /// <summary>Known failure messages and the fixed whole phrase shown for each; first hit wins.</summary>
@@ -63,7 +64,16 @@ internal static class RoutineRunDiagnosis
         if (run.ErrorClass is "NarrationNotReady" or "GenerationFailed")
         {
             var c = PodcastFailureClassifier.Classify(run.ErrorMessage, Array.Empty<WireCopy.Application.DTOs.Podcast.ArticleFailure>());
-            var fix = c.RelevantSetupRow is { } row ? new RunFix(RunFixKind.SetupRow, "Fix it: " + RowName(row), row) : Again;
+            var fix = Again;
+            if (c.RelevantSetupRow is { } row)
+            {
+                fix = new RunFix(RunFixKind.SetupRow, "Fix it: " + RowName(row), row);
+            }
+            else if (run.ErrorMessage?.Contains("Finish setting it up in audio-engine", StringComparison.OrdinalIgnoreCase) == true)
+            {
+                fix = OpenEngineSettings;
+            }
+
             return Make("✗ Failed", c.Reason, c.Step, TrimRetry(c.Fix), fix, attention);
         }
 

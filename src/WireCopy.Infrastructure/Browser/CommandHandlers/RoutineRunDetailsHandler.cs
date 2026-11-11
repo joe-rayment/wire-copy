@@ -206,7 +206,7 @@ internal static class RoutineRunDetailsHandler
             return list;
         }
 
-        if (!neverRan && diagnosis is { Fix.Kind: RunFixKind.SetupRow or RunFixKind.OpenSite })
+        if (!neverRan && diagnosis is { Fix.Kind: RunFixKind.SetupRow or RunFixKind.OpenSite or RunFixKind.OpenEngineSettings })
         {
             list.Add(ActionKind.Fix);
         }
@@ -222,6 +222,15 @@ internal static class RoutineRunDetailsHandler
 
     private static async Task<string> FixAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ScheduledRun run, RunFix fix, Action<string> paint, CancellationToken ct)
     {
+        if (fix.Kind == RunFixKind.OpenEngineSettings)
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var url = SettingsCommandHandler.ResolveAudioEngineUrl(scope);
+            return SettingsCommandHandler.OpenExternal(url, ctx.Logger)
+                ? $"Opened audio-engine at {url} — run again when it's set up."
+                : $"Couldn't open a browser. audio-engine is at {url}";
+        }
+
         if (fix.Kind == RunFixKind.OpenSite && fix.SiteUrl is not null)
         {
             await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, fix.SiteUrl, null), ct).ConfigureAwait(false);

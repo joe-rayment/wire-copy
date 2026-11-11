@@ -8,4 +8,5 @@ internal enum RunFixKind
     SetupRow,
     OpenSite,
     RunAgain,
+    OpenEngineSettings,
 }
