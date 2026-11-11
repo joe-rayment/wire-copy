@@ -11,7 +11,7 @@
 //   2. enforcement loop: renderer-internal focus() emits no event — cheap poll restores
 //   3. forwarding: keys that still land on a page are re-sent to the terminal, never lost
 // 'browser' mode is an explicit user gesture (click into the pane); Esc returns to reader.
-const { app, BaseWindow, WebContentsView, ipcMain, Menu, screen, session, webContents } = require('electron')
+const { app, BaseWindow, WebContentsView, dialog, ipcMain, Menu, screen, session, webContents } = require('electron')
 const { buildAppMenuTemplate } = require('./menu')
 const path = require('path')
 const os = require('os')
@@ -820,6 +820,34 @@ function requestDockToggle () {
   state.ptyProc.write('|')
 }
 
+// Native open dialog for the .NET side (pickPath request). One at a time; focus returns to
+// whichever pane owns the keyboard in the current mode, so the next keypress lands there.
+let pickPathOpen = false
+async function pickPath (p) {
+  if (pickPathOpen) return { canceled: true, path: null, busy: true }
+  pickPathOpen = true
+  try {
+    const kind = p.kind === 'file' || p.kind === 'either' ? p.kind : 'folder'
+    const properties = kind === 'file' ? ['openFile']
+      : kind === 'either' && process.platform === 'darwin' ? ['openFile', 'openDirectory']
+        : ['openDirectory']
+    properties.push('dontAddToRecent')
+    const opts = { properties }
+    for (const k of ['title', 'message', 'buttonLabel']) if (typeof p[k] === 'string') opts[k] = p[k]
+    if (typeof p.defaultPath === 'string' && p.defaultPath) opts.defaultPath = p.defaultPath
+    const r = await dialog.showOpenDialog(state.win, opts)
+    return { canceled: !!r.canceled || !r.filePaths.length, path: r.canceled || !r.filePaths.length ? null : r.filePaths[0] }
+  } catch (err) {
+    return { canceled: true, path: null, error: String(err) }
+  } finally {
+    pickPathOpen = false
+    try {
+      if (state.mode === 'browser') state.pageView.webContents.focus()
+      else focusTerm()
+    } catch {}
+  }
+}
+
 function setMode (m) {
   if (state.mode === m) return
   console.error(`[shell] mode → ${m}`)
@@ -1274,7 +1302,8 @@ app.whenReady().then(() => {
     socketPath,
     log: msg => console.error('[shell] ' + msg),
     handlers: {
-      hello: () => ({ cdpEndpoint: `http://127.0.0.1:${CDP_PORT}` }),
+      hello: () => ({ cdpEndpoint: `http://127.0.0.1:${CDP_PORT}`, caps: { pickPath: true } }),
+      pickPath: p => pickPath(p || {}),
       setPane: p => { setPaneVisible(!!p.visible); return { visible: state.revealed } },
       // Deterministic settle signal (workspace-tj1z.3): the TUI rendered a frame at
       // these dims. Only the CURRENT pty size counts — an ack for the pre-snap size

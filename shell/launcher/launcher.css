@@ -447,6 +447,11 @@ html[data-screen="routines"] #footer-right .count { display: none; }
 /* Fourth line: why the last run needs attention. Red token follows the theme variant;
    one nowrap ellipsized line like the detail above it, so the cell never resizes. */
 .card .detail:has(+ .alert) { margin-bottom: 0; }
+/* The card is a max-height flex column with overflow:hidden, so its text lines (min-height 0
+   under overflow:hidden) were SHRUNK to fit, slicing the alert and the hint's descenders.
+   Lines keep their natural height; the 16px gaps under hint/detail give way to the alert. */
+.card .card-url { flex: none; }
+.card:has(.alert) .card-url { margin-bottom: 0; }
 .card .alert {
   margin-top: 3px;
   margin-bottom: 0;
