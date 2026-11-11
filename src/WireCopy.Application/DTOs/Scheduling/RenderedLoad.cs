@@ -23,4 +23,7 @@ public sealed record RenderedLoad
     public string? Html { get; init; }
 
     public string FinalUrl { get; init; } = string.Empty;
+
+    /// <summary>Short human reason when <see cref="Outcome"/> is not Ok (null when Ok).</summary>
+    public string? FailureReason { get; init; }
 }

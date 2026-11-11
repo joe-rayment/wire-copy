@@ -41,7 +41,7 @@ internal sealed class UnattendedSectionLoadAdapter : IUnattendedSectionLoader
         var load = await _preloadService.LoadRenderedHtmlAsync(sourceUrl, cancellationToken).ConfigureAwait(false);
         if (load.Outcome != LoadOutcome.Ok || string.IsNullOrEmpty(load.Html))
         {
-            return new UnattendedSectionLoad { Outcome = load.Outcome };
+            return new UnattendedSectionLoad { Outcome = load.Outcome, FailureReason = load.FailureReason };
         }
 
         var finalUrl = string.IsNullOrEmpty(load.FinalUrl) ? sourceUrl : load.FinalUrl;

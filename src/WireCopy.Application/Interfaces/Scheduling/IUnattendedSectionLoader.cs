@@ -32,4 +32,7 @@ public sealed record UnattendedSectionLoad
     /// follow the same redirect the content did.
     /// </summary>
     public string? FinalUrl { get; init; }
+
+    /// <summary>Short human reason when the load was not Ok.</summary>
+    public string? FailureReason { get; init; }
 }

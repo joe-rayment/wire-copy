@@ -486,6 +486,17 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         SignalQueueChanged();
     }
 
+    private static string FirstLine(string? message, int max)
+    {
+        var line = (message ?? string.Empty).Split('\n', 2)[0].Trim();
+        if (line.Length == 0)
+        {
+            return "unknown error";
+        }
+
+        return line.Length <= max ? line : line[..max];
+    }
+
     /// <inheritdoc />
     public async Task<Application.DTOs.Scheduling.RenderedLoad> LoadRenderedHtmlAsync(
         string url, CancellationToken cancellationToken = default)
@@ -496,6 +507,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             {
                 Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
                 FinalUrl = url,
+                FailureReason = "the browser isn't available",
             };
         }
 
@@ -515,6 +527,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
                 {
                     Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
                     FinalUrl = url,
+                    FailureReason = "the browser isn't available",
                 };
             }
 
@@ -566,13 +579,17 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             var html = await page.ContentAsync().ConfigureAwait(false);
             var finalUrl = page.Url;
 
-            if (HumanActionDetector.Detect(html, finalUrl, statusCode: 0) != null || PageLoader.IsBotChallengePage(html))
+            var humanAction = HumanActionDetector.Detect(html, finalUrl, statusCode: 0);
+            if (humanAction != null || PageLoader.IsBotChallengePage(html))
             {
                 return new Application.DTOs.Scheduling.RenderedLoad
                 {
                     Outcome = Application.DTOs.Scheduling.LoadOutcome.Blocked,
                     Html = html,
                     FinalUrl = finalUrl,
+                    FailureReason = humanAction != null
+                        ? $"blocked ({humanAction.Variant})"
+                        : "blocked (bot challenge)",
                 };
             }
 
@@ -589,6 +606,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             {
                 Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
                 FinalUrl = url,
+                FailureReason = "cancelled",
             };
         }
         catch (Exception ex)
@@ -598,6 +616,7 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
             {
                 Outcome = Application.DTOs.Scheduling.LoadOutcome.LoadFailed,
                 FinalUrl = url,
+                FailureReason = FirstLine(ex.Message, 160),
             };
         }
         finally

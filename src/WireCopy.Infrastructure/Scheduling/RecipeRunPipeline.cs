@@ -229,7 +229,9 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             var diagnostic = load.Outcome == LoadOutcome.Blocked
                 ? $"{HostOf(step.SourceUrl)}: appears logged-out or paywalled — open it in WireCopy and sign in to refresh your session. " +
                   "The routine run skipped this step rather than publish an empty episode."
-                : $"Background load failed ({load.Outcome}) for {step.SourceUrl}.";
+                : string.IsNullOrWhiteSpace(load.FailureReason)
+                    ? $"Background load failed ({load.Outcome}) for {step.SourceUrl}."
+                    : $"Couldn't load {HostOf(step.SourceUrl)}: {load.FailureReason}";
             return (load.Outcome.ToString(), 0, diagnostic);
         }
 
