@@ -274,6 +274,26 @@ public static class RoutineText
 
     public static string RunNeedsAttention(string name, string shortReason) => $"{name} failed: {shortReason} — press e for details";
 
+    /// <summary>Editor "Last run" row value: glyph + status word + when, plus the short reason when it needs attention.</summary>
+    public static string LastRunValue(ScheduledRun? run, string? shortReason, DateTimeOffset nowLocal)
+    {
+        if (run is null)
+        {
+            return "never run";
+        }
+
+        var word = run.Status switch
+        {
+            ScheduledRunStatus.Completed => "✓",
+            ScheduledRunStatus.PartialSuccess => "⚠ partial",
+            ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted => "✗ failed",
+            ScheduledRunStatus.Skipped => "skipped",
+            _ => "running",
+        };
+        var text = $"{word} {When(run.StartedAtUtc, nowLocal)}";
+        return string.IsNullOrEmpty(shortReason) ? text : $"{text} — {shortReason}";
+    }
+
     public static string DetailsEyebrow(string name) => $"ROUTINE · {name} · LAST RUN";
 
     /// <summary>Local "today 19:16" for a UTC start time.</summary>

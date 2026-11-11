@@ -9,6 +9,7 @@ internal enum RoutineRowKind
     Frequency,
     Podcast,
     Enabled,
+    LastRun,
     ContentsHeading,
     Site,
     Section,

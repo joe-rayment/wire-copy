@@ -14,7 +14,7 @@ internal static class RoutineEditorScreen
     private const string Reset = "\x1b[0m";
 
     /// <summary>Builds every row, top to bottom. Sites = distinct Domain + ConfigUrlPattern in first-appearance order.</summary>
-    public static List<RoutineRow> BuildRows(ScheduleRecipe recipe, DateTimeOffset now)
+    public static List<RoutineRow> BuildRows(ScheduleRecipe recipe, DateTimeOffset now, ScheduledRun? lastRun = null)
     {
         var rows = new List<RoutineRow>
         {
@@ -22,6 +22,7 @@ internal static class RoutineEditorScreen
             new(RoutineRowKind.Frequency, "Frequency", RoutineText.Frequency(recipe.Cadence) + " · " + RoutineText.NextRun(recipe.Cadence, now)),
             new(RoutineRowKind.Podcast, "Podcast", recipe.OutputCollectionName),
             new(RoutineRowKind.Enabled, "Enabled", recipe.Enabled ? "on" : "off"),
+            new(RoutineRowKind.LastRun, RoutineText.LastRunRow, LastRunValue(lastRun, now)),
             new(RoutineRowKind.ContentsHeading, "Contents"),
         };
 
@@ -176,12 +177,18 @@ internal static class RoutineEditorScreen
         helpers.WriteLine($"{new string(' ', 6 + labelCol)}{color}{edit.Error ?? edit.Hint}{Reset}");
     }
 
+    private static string LastRunValue(ScheduledRun? run, DateTimeOffset now)
+    {
+        var d = run is null ? null : RoutineRunDiagnosis.Diagnose(run);
+        return RoutineText.LastRunValue(run, d is { NeedsAttention: true } ? d.Short : null, now);
+    }
+
     private static void WriteRow(RenderHelpers helpers, ThemePalette palette, int width, RoutineRow row, bool selected)
     {
         switch (row.Kind)
         {
-            case RoutineRowKind.Name or RoutineRowKind.Frequency or RoutineRowKind.Podcast or RoutineRowKind.Enabled:
-                var action = row.Kind == RoutineRowKind.Enabled ? "toggle" : "edit";
+            case RoutineRowKind.Name or RoutineRowKind.Frequency or RoutineRowKind.Podcast or RoutineRowKind.Enabled or RoutineRowKind.LastRun:
+                var action = row.Kind switch { RoutineRowKind.Enabled => "toggle", RoutineRowKind.LastRun => RoutineText.LastRunAction, _ => "edit" };
                 var muted = palette.GetMutedFg().AnsiFg;
                 var (main, _) = SettingsRowRenderer.Build(palette, width, selected, false, "•", muted, row.Label, row.Value, palette.PrimaryText.AnsiFg, action);
                 helpers.WriteLine(main);

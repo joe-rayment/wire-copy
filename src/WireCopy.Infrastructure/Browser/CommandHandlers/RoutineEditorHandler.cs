@@ -50,7 +50,8 @@ internal static class RoutineEditorHandler
                 continue;
             }
 
-            var rows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now);
+            var lastRun = await LoadLastRunAsync(ctx, routineId).ConfigureAwait(false);
+            var rows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now, lastRun);
             selectedRow = RestoreSelection(rows, selectedKind, selectedSite, selectedStep, selectedRow);
 
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
@@ -66,7 +67,7 @@ internal static class RoutineEditorHandler
             }
             else if (command.RawKeyChar == 'r')
             {
-                await RunNowAsync(ctx, recipe).ConfigureAwait(false);
+                await RunNowAsync(ctx, options, recipe, ct).ConfigureAwait(false);
             }
             else if (command.Type is CommandType.GoBack or CommandType.Quit)
             {
@@ -111,6 +112,9 @@ internal static class RoutineEditorHandler
         {
             case RoutineRowKind.Name:
                 await EditNameAsync(ctx, options, recipe, ghostDefault: false, ct).ConfigureAwait(false);
+                break;
+            case RoutineRowKind.LastRun:
+                await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
                 break;
             case RoutineRowKind.Podcast:
                 await EditPodcastAsync(ctx, options, recipe, ct).ConfigureAwait(false);
@@ -262,7 +266,14 @@ internal static class RoutineEditorHandler
         await SaveAsync(ctx, recipe).ConfigureAwait(false);
     }
 
-    private static async Task RunNowAsync(CommandContext ctx, ScheduleRecipe recipe)
+    private static async Task<ScheduledRun?> LoadLastRunAsync(CommandContext ctx, Guid recipeId)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        var runs = await scope.ServiceProvider.GetRequiredService<IScheduledRunRepository>().GetRecentForRecipeAsync(recipeId, 1).ConfigureAwait(false);
+        return runs.FirstOrDefault();
+    }
+
+    private static async Task RunNowAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
         ctx.NavigationService.SetStatusMessage(RoutineText.Running(recipe.Name), TimeSpan.FromMinutes(10));
         RunNowResult result;
@@ -274,6 +285,12 @@ internal static class RoutineEditorHandler
         if (result.Outcome == RunNowOutcome.Busy)
         {
             ctx.NavigationService.SetStatusMessage(RoutineText.Busy, TimeSpan.FromSeconds(6));
+            return;
+        }
+
+        if (result.Run is { } finished && RoutineRunDiagnosis.Diagnose(finished).NeedsAttention)
+        {
+            await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
             return;
         }
 
@@ -335,7 +352,7 @@ internal static class RoutineEditorHandler
         var offset = 0;
         while (!ct.IsCancellationRequested)
         {
-            var rows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now);
+            var rows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now, await LoadLastRunAsync(ctx, recipe.Id).ConfigureAwait(false));
             var selected = Math.Max(0, rows.FindIndex(r => r.Kind == kind));
             ctx.Renderer.LeaveHtmlPanes();
             var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
