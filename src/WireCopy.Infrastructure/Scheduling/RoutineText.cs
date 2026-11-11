@@ -37,7 +37,25 @@ public static class RoutineText
     public const string PodcastEmpty = "Podcast name can't be empty";
     public const string TimeInvalid = "Enter a time like 07:00";
     public const string DefaultRoutineName = "New routine";
-    public const string HomeFooter = "[Enter]:open  [n]:new  [r]:run now  [Space]:on/off  [d]:delete  [Esc]:back";
+    public const string HomeFooter = "[Enter]:open  [n]:new  [r]:run now  [e]:last run  [Space]:on/off  [d]:delete  [Esc]:back";
+    public const string FixedRunAgainFormat = "Saved. Press r to run {0} again.";
+    public const string RunNowRow = "Run now";
+    public const string RunAgainRow = "Run again";
+    public const string OpenLogRow = "Open the full app log";
+    public const string DetailsRunning = "running…";
+    public const string NeverRanYet = "This routine hasn't run yet.";
+    public const string NoLogKept = "No log was kept for this run.";
+    public const string WhatHappened = "What happened";
+    public const string AtStep = "At step";
+    public const string HowToFix = "How to fix";
+    public const string SectionsHeading = "Sections";
+    public const string LogHeading = "Log";
+    public const string EarlierRunsHeading = "Earlier runs";
+    public const string DetailsFooter = "Enter select · r run again · l full log · ↑/↓ move · PgUp/PgDn scroll · Esc back";
+    public const string LastRunRow = "Last run";
+    public const string LastRunAction = "details";
+    public const string NeverRunValue = "never run";
+
     public const string EditorFooter = "Enter edit · x remove · r run now · Esc back";
     public const string NewRoutineTitle = "+ New routine";
     public const string NewRoutineHint = "Enter to create";
@@ -249,6 +267,24 @@ public static class RoutineText
     public static string RemoveConfirm(string label) => $"Remove {label}? y / n";
 
     public static string Eyebrow(string name) => $"ROUTINE · {name}";
+
+    public static string FixedRunAgain(string name) => string.Format(CultureInfo.InvariantCulture, FixedRunAgainFormat, name);
+
+    public static string NarrationReady(string name) => $"Narration is ready. Press r to run {name} again.";
+
+    public static string RunNeedsAttention(string name, string shortReason) => $"{name} failed: {shortReason} — press e for details";
+
+    public static string DetailsEyebrow(string name) => $"ROUTINE · {name} · LAST RUN";
+
+    /// <summary>Local "today 19:16" for a UTC start time.</summary>
+    public static string When(DateTime startedAtUtc, DateTimeOffset nowLocal)
+    {
+        var local = DateTime.SpecifyKind(startedAtUtc, DateTimeKind.Utc).ToLocalTime();
+        return DayWord(local, nowLocal.DateTime);
+    }
+
+    public static string Took(TimeSpan d) =>
+        d.TotalSeconds < 60 ? $"{Math.Max(0, (int)d.TotalSeconds)}s" : $"{(int)d.TotalMinutes}m {d.Seconds:00}s";
 
     private static string Slots(IEnumerable<int> positions) => string.Join(", ", positions.Select(p => $"#{p}"));
 

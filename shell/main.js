@@ -65,6 +65,37 @@ function logDir () {
   return dir
 }
 
+// Page-load noise. Electron core prints a process warning —
+//   (node:PID) electron: Failed to load URL: <url> with error: ERR_…
+// — for EVERY frame navigation that fails, in every webContents: the page pane, the
+// prefetch pages and the background pages a routine run loads. On a news site nearly
+// all of them are third-party ad / user-sync iframes whose hosts reset or time out.
+// They are not app errors and never decide a routine's outcome (a routine step fails
+// only when its OWN page fails to load, and that reason is recorded on the run). Keep
+// them out of the terminal that launched the app; they go to logs/page-load-failures.log.
+const PAGE_FAIL_PREFIX = 'Failed to load URL: '
+const PAGE_FAIL_LOG_MAX = 1024 * 1024
+let pageFailWrites = 0
+function logPageLoadFailure (text) {
+  try {
+    const file = path.join(logDir(), 'page-load-failures.log')
+    if (pageFailWrites++ % 200 === 0 && fs.existsSync(file) && fs.statSync(file).size > PAGE_FAIL_LOG_MAX) {
+      fs.renameSync(file, file + '.1')
+    }
+    fs.appendFileSync(file, `${new Date().toISOString()} ${text}\n`)
+  } catch { /* a log that cannot be written must never take the shell down */ }
+}
+const emitProcessWarning = process.emitWarning
+process.emitWarning = function (warning, ...rest) {
+  const type = typeof rest[0] === 'string' ? rest[0] : rest[0] && rest[0].type
+  const text = typeof warning === 'string' ? warning : warning && warning.message
+  if (type === 'electron' && typeof text === 'string' && text.startsWith(PAGE_FAIL_PREFIX)) {
+    logPageLoadFailure(text)
+    return
+  }
+  return emitProcessWarning.call(process, warning, ...rest)
+}
+
 app.commandLine.appendSwitch('remote-debugging-port', CDP_PORT)
 // NOTE (Linux): sandbox flags cannot be set here — Electron initializes the zygote/sandbox
 // BEFORE this script runs. Containers without a setuid sandbox must pass --no-sandbox
