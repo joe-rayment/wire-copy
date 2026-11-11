@@ -4,7 +4,7 @@ namespace WireCopy.Infrastructure.Podcast.AudioEngine;
 
 /// <summary>
 /// Starts a local audio-engine when nothing answers at its URL (workspace-08e4u). Finds the program
-/// (Settings → Audio engine program, <c>AUDIO_ENGINE_HOME</c>, then <c>~/audio-engine</c>), spawns it
+/// (Settings → Audio engine program, <c>AUDIO_ENGINE_HOME</c>, the remembered location, <c>~/audio-engine</c>, folders near the app, then a bounded search of the home folder), spawns it
 /// detached with its output in <c>logs/audio-engine.log</c>, and waits for <c>/healthz</c>.
 /// </summary>
 public interface IAudioEngineLauncher
@@ -37,4 +37,16 @@ public interface IAudioEngineLauncher
 
     /// <summary>Forgets finished attempts so the next automatic start tries again (after a settings change).</summary>
     void ResetAttempts();
+
+    /// <summary>
+    /// Remembers where a running local audio-engine lives (best effort, once per URL per process, in the
+    /// background; never throws), so it can be found again after a restart.
+    /// </summary>
+    /// <param name="url">The audio-engine base address that just answered.</param>
+    void NoteRunning(string url);
+
+    /// <summary>Checks whether a path (file, folder, or a folder near it) holds audio-engine.</summary>
+    /// <param name="path">The path as typed or pasted.</param>
+    /// <returns>The program found; null when nothing there is an audio-engine.</returns>
+    AudioEngineProgram? Probe(string path);
 }

@@ -5,4 +5,8 @@ namespace WireCopy.Infrastructure.Podcast.AudioEngine;
 /// <summary>Outcome of one start attempt.</summary>
 /// <param name="Ready">True when audio-engine answered <c>/healthz</c>.</param>
 /// <param name="Message">The user-facing failure (starts with "audio-engine"); null when ready.</param>
-public sealed record AudioEngineStartResult(bool Ready, string? Message);
+public sealed record AudioEngineStartResult(bool Ready, string? Message)
+{
+    /// <summary>Gets the display path of the program that was started; null when nothing was started.</summary>
+    public string? StartedFrom { get; init; }
+}

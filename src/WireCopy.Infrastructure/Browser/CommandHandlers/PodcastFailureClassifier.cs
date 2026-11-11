@@ -244,7 +244,7 @@ internal static class PodcastFailureClassifier
             return new PodcastFailureClassification(
                 Step: Step,
                 Reason: error,
-                Fix: "Set the audio-engine folder in Settings → Audio engine program, or start it yourself, then press p again",
+                Fix: "Choose the folder audio-engine is in (Settings → Audio engine program). No copy on this computer? Get it from github.com/joe-rayment/audio-engine, then press p again",
                 RelevantSetupRow: SettingsCommandHandler.SetupRow.AudioEngineProgram);
         }
 

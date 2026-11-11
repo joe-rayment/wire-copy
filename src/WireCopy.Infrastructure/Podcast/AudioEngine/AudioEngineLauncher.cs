@@ -14,11 +14,17 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <summary>Environment variable naming the audio-engine folder (published or source checkout).</summary>
     internal const string HomeEnvVar = "AUDIO_ENGINE_HOME";
 
+    /// <summary>Settings key remembering the last folder (or executable) audio-engine was seen at; never shown in Settings.</summary>
+    internal const string KeyLastKnown = "AudioEngineLastKnown";
+
     /// <summary>The published server executable name without the Windows extension.</summary>
     private const string ServerName = "AudioEngine.Server";
 
     /// <summary>The project path passed to <c>dotnet run</c> in a source checkout.</summary>
     private const string SourceProject = "src/AudioEngine.Server";
+
+    /// <summary>URLs <see cref="NoteRunning"/> has already looked at in this process.</summary>
+    private static readonly System.Collections.Concurrent.ConcurrentDictionary<string, byte> NotedUrls = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>How long <c>/healthz</c> may take to answer after the spawn.</summary>
     private static readonly TimeSpan HealthTimeout = TimeSpan.FromSeconds(90);
@@ -81,7 +87,49 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
             Home,
             File.Exists,
             Directory.Exists,
-            OperatingSystem.IsWindows());
+            OperatingSystem.IsWindows(),
+            _store.Get(KeyLastKnown),
+            NearAppRoots(),
+            AudioEngineSearch.ListDirectories,
+            OperatingSystem.IsMacOS() ? AudioEngineSearch.SpotlightCandidates : null);
+
+    /// <inheritdoc/>
+    public AudioEngineProgram? Probe(string path)
+    {
+        if (string.IsNullOrWhiteSpace(path))
+        {
+            return null;
+        }
+
+        var home = Home;
+        var normalized = AudioEnginePathInput.Normalize(path, home, p => File.Exists(p) || Directory.Exists(p));
+        return ProbePath(normalized, home, File.Exists, Directory.Exists, OperatingSystem.IsWindows());
+    }
+
+    /// <inheritdoc/>
+    public void NoteRunning(string url)
+    {
+        if (!IsLocal(url) || !NotedUrls.TryAdd(url, 0))
+        {
+            return;
+        }
+
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var folder = AudioEngineSearch.RunningEngineFolder(p => ProbeFolderQuiet(p));
+                if (folder is not null)
+                {
+                    SaveLastKnown(folder);
+                }
+            }
+            catch (Exception ex)
+            {
+                _logger.LogDebug(ex, "Could not note where audio-engine is running");
+            }
+        });
+    }
 
     /// <inheritdoc/>
     public bool BeginStart(string url)
@@ -145,10 +193,11 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     }
 
     /// <summary>
-    /// Pure discovery: the <c>AudioEngineProgram</c> setting (a file is the published executable, a folder
-    /// is probed), then <c>AUDIO_ENGINE_HOME</c>, then <c>&lt;home&gt;/audio-engine</c>. A folder holding
-    /// <c>AudioEngine.Server</c> is a published build; one holding <c>dotnet</c> and
-    /// <c>src/AudioEngine.Server</c> is a source checkout run with <c>dotnet run</c>.
+    /// Pure discovery, first hit wins: the <c>AudioEngineProgram</c> setting (a file is the executable, a
+    /// folder is probed), <c>AUDIO_ENGINE_HOME</c>, the remembered location, <c>&lt;home&gt;/audio-engine</c>,
+    /// <c>audio-engine</c> beside the app or working folder, a bounded walk of the home folder, and last any
+    /// extra candidates (macOS Spotlight). A folder holding <c>AudioEngine.Server</c> is a published build;
+    /// one holding <c>dotnet</c> and <c>src/AudioEngine.Server</c> is a source checkout run with <c>dotnet run</c>.
     /// </summary>
     /// <param name="programSetting">The saved "Audio engine program" setting; null or blank when none.</param>
     /// <param name="getEnv">Reads an environment variable.</param>
@@ -156,61 +205,30 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <param name="fileExists">Whether a path is an existing file.</param>
     /// <param name="dirExists">Whether a path is an existing folder.</param>
     /// <param name="isWindows">True to look for <c>.exe</c> names.</param>
-    /// <returns>The program (null when none) and every candidate examined.</returns>
+    /// <param name="rememberedLocation">The remembered folder or executable; null when none.</param>
+    /// <param name="nearAppRoots">Folders whose ancestors are checked for an <c>audio-engine</c> child; null for none.</param>
+    /// <param name="listDirs">Lists the subfolders of a folder for the home walk; null skips the walk.</param>
+    /// <param name="extraCandidates">Late candidate executables (e.g. Spotlight results); null for none.</param>
+    /// <returns>The program (null when none) and the first six candidates examined.</returns>
     internal static AudioEngineDiscovery Discover(
         string? programSetting,
         Func<string, string?> getEnv,
         string home,
         Func<string, bool> fileExists,
         Func<string, bool> dirExists,
-        bool isWindows)
+        bool isWindows,
+        string? rememberedLocation = null,
+        IEnumerable<string>? nearAppRoots = null,
+        Func<string, IEnumerable<string>>? listDirs = null,
+        Func<IEnumerable<string>>? extraCandidates = null)
     {
         ArgumentNullException.ThrowIfNull(getEnv);
         ArgumentNullException.ThrowIfNull(fileExists);
         ArgumentNullException.ThrowIfNull(dirExists);
         var lookedIn = new List<string>();
-
-        // (a) The explicit setting: a file is the published executable, a folder is probed below.
-        var setting = programSetting?.Trim();
-        if (!string.IsNullOrEmpty(setting))
-        {
-            var path = ExpandHome(setting, home);
-            if (fileExists(path))
-            {
-                lookedIn.Add(Shorten(path, home));
-                var folder = Path.GetDirectoryName(path) ?? path;
-                return new AudioEngineDiscovery(new AudioEngineProgram(path, [], folder, Shorten(path, home)), lookedIn);
-            }
-
-            if (dirExists(path))
-            {
-                var program = ProbeFolder(path, home, fileExists, dirExists, isWindows, lookedIn);
-                if (program is not null)
-                {
-                    return new AudioEngineDiscovery(program, lookedIn);
-                }
-            }
-            else
-            {
-                lookedIn.Add(Shorten(path, home));
-            }
-        }
-
-        // (b) AUDIO_ENGINE_HOME.
-        var envHome = getEnv(HomeEnvVar)?.Trim();
-        if (!string.IsNullOrEmpty(envHome))
-        {
-            var program = ProbeFolder(ExpandHome(envHome, home), home, fileExists, dirExists, isWindows, lookedIn);
-            if (program is not null)
-            {
-                return new AudioEngineDiscovery(program, lookedIn);
-            }
-        }
-
-        // (c) ~/audio-engine.
-        var defaultFolder = Path.Combine(home, "audio-engine");
-        var found = ProbeFolder(defaultFolder, home, fileExists, dirExists, isWindows, lookedIn);
-        return new AudioEngineDiscovery(found, lookedIn);
+        var program = DiscoverCore(
+            programSetting, getEnv, home, fileExists, dirExists, isWindows, rememberedLocation, nearAppRoots, listDirs, extraCandidates, lookedIn);
+        return new AudioEngineDiscovery(program, lookedIn.Distinct(StringComparer.Ordinal).Take(6).ToList());
     }
 
     /// <summary>Expands a leading <c>~</c> to the home folder and makes the path absolute.</summary>
@@ -256,6 +274,254 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
 
         return path;
     }
+
+    /// <summary>The ordered search behind <see cref="Discover()"/>.</summary>
+    /// <param name="programSetting">The saved setting.</param>
+    /// <param name="getEnv">Reads an environment variable.</param>
+    /// <param name="home">The user's home folder.</param>
+    /// <param name="fileExists">Whether a path is a file.</param>
+    /// <param name="dirExists">Whether a path is a folder.</param>
+    /// <param name="isWindows">True to look for <c>.exe</c> names.</param>
+    /// <param name="remembered">The remembered location.</param>
+    /// <param name="nearAppRoots">Start folders for the ancestor check.</param>
+    /// <param name="listDirs">Subfolder lister for the home walk.</param>
+    /// <param name="extraCandidates">Late candidate executables.</param>
+    /// <param name="lookedIn">Receives every place examined.</param>
+    /// <returns>The program found, or null.</returns>
+    private static AudioEngineProgram? DiscoverCore(
+        string? programSetting,
+        Func<string, string?> getEnv,
+        string home,
+        Func<string, bool> fileExists,
+        Func<string, bool> dirExists,
+        bool isWindows,
+        string? remembered,
+        IEnumerable<string>? nearAppRoots,
+        Func<string, IEnumerable<string>>? listDirs,
+        Func<IEnumerable<string>>? extraCandidates,
+        List<string> lookedIn)
+    {
+        bool Exists(string p) => fileExists(p) || dirExists(p);
+
+        // (a) The explicit setting: a file is the executable, a folder is probed.
+        var setting = programSetting?.Trim();
+        if (!string.IsNullOrEmpty(setting))
+        {
+            var path = AudioEnginePathInput.Normalize(setting, home, Exists);
+            if (fileExists(path))
+            {
+                lookedIn.Add(Shorten(path, home));
+                var folder = Path.GetDirectoryName(path) ?? path;
+                return new AudioEngineProgram(path, [], folder, Shorten(path, home));
+            }
+
+            if (dirExists(path))
+            {
+                var found = ProbeFolder(path, home, fileExists, dirExists, isWindows, lookedIn);
+                if (found is not null)
+                {
+                    return found;
+                }
+            }
+            else
+            {
+                lookedIn.Add(Shorten(path, home));
+            }
+        }
+
+        // (b) AUDIO_ENGINE_HOME.
+        var envHome = getEnv(HomeEnvVar)?.Trim();
+        if (!string.IsNullOrEmpty(envHome))
+        {
+            var found = ProbeFolder(AudioEnginePathInput.Normalize(envHome, home, Exists), home, fileExists, dirExists, isWindows, lookedIn);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        // (c) The remembered location.
+        if (!string.IsNullOrWhiteSpace(remembered))
+        {
+            var path = AudioEnginePathInput.Normalize(remembered, home, Exists);
+            var found = ProbePath(path, home, fileExists, dirExists, isWindows, lookedIn);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        // (d) ~/audio-engine.
+        var defaultFolder = Path.Combine(home, "audio-engine");
+        var atHome = ProbeFolder(defaultFolder, home, fileExists, dirExists, isWindows, lookedIn);
+        if (atHome is not null)
+        {
+            return atHome;
+        }
+
+        // (e) audio-engine beside the app or the working folder.
+        foreach (var candidate in AncestorFolders(nearAppRoots, 8).Select(a => Path.Combine(a, "audio-engine")).Distinct(StringComparer.Ordinal))
+        {
+            if (candidate.Equals(defaultFolder, StringComparison.Ordinal))
+            {
+                continue;
+            }
+
+            var found = ProbeFolder(candidate, home, fileExists, dirExists, isWindows, lookedIn);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        // (f) A bounded walk of the home folder.
+        if (listDirs is not null && !string.IsNullOrEmpty(home))
+        {
+            lookedIn.Add("folders under ~");
+            var found = AudioEngineSearch.WalkFor(
+                home,
+                listDirs,
+                folder => ProbeFolder(folder, home, fileExists, dirExists, isWindows, new List<string>()),
+                AudioEngineSearch.WalkBudget,
+                AudioEngineSearch.WalkMaxListings);
+            if (found is not null)
+            {
+                return found;
+            }
+        }
+
+        // (g) Extra candidates (macOS Spotlight): the first of up to five ancestors that probes OK.
+        if (extraCandidates is not null)
+        {
+            lookedIn.Add("Spotlight");
+            foreach (var hit in extraCandidates())
+            {
+                var folder = Path.GetDirectoryName(hit);
+                for (var level = 0; level < 5 && !string.IsNullOrEmpty(folder); level++)
+                {
+                    var found = ProbeFolder(folder, home, fileExists, dirExists, isWindows, new List<string>());
+                    if (found is not null)
+                    {
+                        return found;
+                    }
+
+                    folder = Path.GetDirectoryName(folder);
+                }
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>Each start folder and its ancestors, nearest first, never the filesystem root.</summary>
+    /// <param name="starts">The start folders; null for none.</param>
+    /// <param name="maxLevels">Folders taken per start, the start included.</param>
+    /// <returns>Distinct folders.</returns>
+    private static IEnumerable<string> AncestorFolders(IEnumerable<string>? starts, int maxLevels)
+    {
+        var seen = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var start in starts ?? [])
+        {
+            var folder = string.IsNullOrWhiteSpace(start) ? null : start.TrimEnd('/', '\\');
+            for (var level = 0; level < maxLevels && !string.IsNullOrEmpty(folder); level++)
+            {
+                var parent = Path.GetDirectoryName(folder);
+                if (parent is null)
+                {
+                    break; // folder is the filesystem root
+                }
+
+                if (seen.Add(folder))
+                {
+                    yield return folder;
+                }
+
+                folder = parent;
+            }
+        }
+    }
+
+    /// <summary>The app's own folder and the working folder, where a bundled or sibling audio-engine may sit.</summary>
+    /// <returns>The start folders.</returns>
+    private static IEnumerable<string> NearAppRoots()
+    {
+        var roots = new List<string>();
+        try
+        {
+            roots.Add(AppContext.BaseDirectory);
+            roots.Add(Directory.GetCurrentDirectory());
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            // Use whatever was gathered.
+        }
+
+        return roots;
+    }
+
+    /// <summary>A file named like the server is the program; a folder is probed, then its <c>audio-engine</c> child and ancestors.</summary>
+    /// <param name="path">An absolute, normalized path.</param>
+    /// <param name="home">The user's home folder (for display).</param>
+    /// <param name="fileExists">Whether a path is a file.</param>
+    /// <param name="dirExists">Whether a path is a folder.</param>
+    /// <param name="isWindows">True to look for <c>.exe</c> names.</param>
+    /// <param name="lookedIn">Receives folders examined; null for none.</param>
+    /// <returns>The program, or null.</returns>
+    private static AudioEngineProgram? ProbePath(
+        string path,
+        string home,
+        Func<string, bool> fileExists,
+        Func<string, bool> dirExists,
+        bool isWindows,
+        List<string>? lookedIn = null)
+    {
+        lookedIn ??= [];
+        if (string.IsNullOrEmpty(path))
+        {
+            return null;
+        }
+
+        if (fileExists(path))
+        {
+            var name = Path.GetFileNameWithoutExtension(path);
+            return name.Equals(ServerName, StringComparison.OrdinalIgnoreCase)
+                ? new AudioEngineProgram(path, [], Path.GetDirectoryName(path) ?? path, Shorten(path, home))
+                : null;
+        }
+
+        if (!dirExists(path))
+        {
+            lookedIn.Add(Shorten(path, home));
+            return null;
+        }
+
+        var direct = ProbeFolder(path, home, fileExists, dirExists, isWindows, lookedIn)
+            ?? ProbeFolder(Path.Combine(path, "audio-engine"), home, fileExists, dirExists, isWindows, lookedIn);
+        if (direct is not null)
+        {
+            return direct;
+        }
+
+        var folder = Path.GetDirectoryName(path);
+        for (var level = 0; level < 4 && !string.IsNullOrEmpty(folder); level++)
+        {
+            var found = ProbeFolder(folder, home, fileExists, dirExists, isWindows, lookedIn);
+            if (found is not null)
+            {
+                return found;
+            }
+
+            folder = Path.GetDirectoryName(folder);
+        }
+
+        return null;
+    }
+
+    /// <summary>Probes a folder against the real file system without recording where it looked.</summary>
+    /// <param name="folder">The folder.</param>
+    /// <returns>The program, or null.</returns>
+    private static AudioEngineProgram? ProbeFolderQuiet(string folder)
+        => ProbeFolder(folder, Home, File.Exists, Directory.Exists, OperatingSystem.IsWindows(), []);
 
     /// <summary>Looks for a published build, then a source checkout, in one folder.</summary>
     /// <param name="folder">The folder to probe.</param>
@@ -331,6 +597,43 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         }
     }
 
+    /// <summary>Remembers a program's location, but only a place that probes OK.</summary>
+    /// <param name="program">The program just started.</param>
+    private void Remember(AudioEngineProgram program)
+    {
+        try
+        {
+            string? candidate = null;
+            if (ProbeFolderQuiet(program.WorkingDirectory) is not null)
+            {
+                candidate = program.WorkingDirectory;
+            }
+            else if (program.Arguments.Count == 0 && ProbePath(program.Executable, Home, File.Exists, Directory.Exists, OperatingSystem.IsWindows()) is not null)
+            {
+                candidate = program.Executable;
+            }
+
+            if (candidate is not null)
+            {
+                SaveLastKnown(candidate);
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Could not remember where audio-engine was started from");
+        }
+    }
+
+    /// <summary>Writes the breadcrumb when it changed.</summary>
+    /// <param name="location">A folder or executable that probed OK.</param>
+    private void SaveLastKnown(string location)
+    {
+        if (!string.Equals(_store.Get(KeyLastKnown), location, StringComparison.Ordinal))
+        {
+            _store.Set(KeyLastKnown, location);
+        }
+    }
+
     /// <summary>Finds, spawns and waits for audio-engine at <paramref name="url"/>.</summary>
     /// <param name="url">The audio-engine base address.</param>
     /// <returns>The outcome with a user-facing message on failure.</returns>
@@ -340,10 +643,17 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         var discovery = Discover();
         if (discovery.Program is null)
         {
+            _logger.LogInformation("audio-engine was not found; looked in: {Places}", string.Join(", ", discovery.LookedIn));
+            var places = string.Join(", ", discovery.LookedIn.Take(2));
+            var more = discovery.LookedIn.Count - 2;
+            if (more > 0)
+            {
+                places += $" and {more} other place{(more == 1 ? string.Empty : "s")}";
+            }
+
             var message =
-                $"audio-engine isn't running at {url} and WireCopy couldn't find it to start it (looked in "
-                + string.Join(", ", discovery.LookedIn)
-                + "). Set its folder in Settings → Audio engine program, or start it yourself.";
+                $"audio-engine isn't running at {url} and WireCopy couldn't find it on this computer to start it (looked in {places}). "
+                + "audio-engine is the separate program that reads articles aloud.";
             _logger.LogWarning("{Message}", message);
             return new AudioEngineStartResult(false, message);
         }
@@ -378,13 +688,14 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
             var healthy = await WaitForAsync(client, baseUrl + "/healthz", HealthTimeout, process).ConfigureAwait(false);
             if (healthy is not null)
             {
-                return healthy;
+                return healthy with { StartedFrom = discovery.Program.Display };
             }
 
             // Non-fatal grace: /readyz is best effort — the first request just waits a little longer.
             await WaitForAsync(client, baseUrl + "/readyz", ReadyGrace, process: null).ConfigureAwait(false);
             _logger.LogInformation("audio-engine is up at {Url}", url);
-            return new AudioEngineStartResult(true, null);
+            Remember(discovery.Program);
+            return new AudioEngineStartResult(true, null) { StartedFrom = discovery.Program.Display };
         }
     }
 

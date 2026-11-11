@@ -37,6 +37,11 @@ internal static class NarratorPreflight
         IPodcastNarrator narrator, IAudioEngineLauncher? launcher, CancellationToken ct)
     {
         var status = await CheckAsync(narrator, ct).ConfigureAwait(false);
+        if (status.Ready && launcher != null && AudioEngineLauncher.IsLocal(status.Url))
+        {
+            launcher.NoteRunning(status.Url);
+        }
+
         if (!status.Ready
             && status.ErrorKind == NarrationErrorKind.Unreachable
             && launcher != null
@@ -46,6 +51,10 @@ internal static class NarratorPreflight
             if (start.Ready)
             {
                 status = await CheckAsync(narrator, ct).ConfigureAwait(false);
+                if (status.Ready)
+                {
+                    launcher.NoteRunning(status.Url);
+                }
             }
             else if (!string.IsNullOrWhiteSpace(start.Message))
             {
