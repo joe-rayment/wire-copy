@@ -1152,7 +1152,7 @@ internal static class PodcastProgressScreens
         var (glyph, glyphColor, headline) = shape switch
         {
             CompletionShape.FullSuccess => ("✓", p.GetSuccessFg().AnsiFg, string.IsNullOrWhiteSpace(result.FeedTitle) ? "Published" : $"Published to {result.FeedTitle}"),
-            CompletionShape.LocalOnlySuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated (local-only — no RSS publish)"),
+            CompletionShape.LocalOnlySuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast saved on this computer"),
             CompletionShape.PartialFailure => ("⚠", p.GetWarningFg().AnsiFg, $"Podcast generated with {result.ArticlesFailed} article failure{(result.ArticlesFailed == 1 ? string.Empty : "s")}"),
             _ => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated"),
         };

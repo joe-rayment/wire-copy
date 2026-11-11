@@ -9,7 +9,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// the bead's documented shapes:
 /// <list type="bullet">
 ///   <item><see cref="FullSuccess"/> — Shape A: ✓ "Podcast generated and published".</item>
-///   <item><see cref="LocalOnlySuccess"/> — Shape B: ✓ "...local-only — no RSS publish".</item>
+///   <item><see cref="LocalOnlySuccess"/> — Shape B: ✓ "Podcast saved on this computer".</item>
 ///   <item><see cref="PartialFailure"/> — Shape C: ⚠ "...with N article failures".</item>
 /// </list>
 /// </summary>

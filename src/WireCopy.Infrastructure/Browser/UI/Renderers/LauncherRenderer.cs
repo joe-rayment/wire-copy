@@ -116,7 +116,7 @@ internal class LauncherRenderer
 
     // The setup-hint copy, shared between the masthead render (SetupHintBoxLine)
     // and the exported view-model (workspace-0jxo) so both read the same string.
-    private const string SetupHintLabel = "→ Optional: add API keys for podcasts & AI layout";
+    private const string SetupHintLabel = "→ Optional: add an API key for AI layout";
     private const string SetupHintSuffix = " · press c";
 
     // The launcher tagline (Launcher.dc.html) — shared between BuildHeaderLines

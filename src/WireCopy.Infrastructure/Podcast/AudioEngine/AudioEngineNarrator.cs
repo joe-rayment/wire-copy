@@ -220,7 +220,8 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         try
         {
             session = OpenSession(s);
-            var fingerprint = await EngineFingerprintAsync(session.Client, ct).ConfigureAwait(false);
+            var fingerprint = await EngineFingerprintAsync(session.Client, ct).ConfigureAwait(false)
+                + DefaultFeedScope(await GetDefaultFeedAsync(ct).ConfigureAwait(false));
             var estimate = await session.Client.EstimateAsync(BuildJobRequest(request, fingerprint), ct).ConfigureAwait(false);
             return new NarrationEstimate
             {
@@ -342,7 +343,8 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             session = OpenSession(s);
             var client = session.Client;
 
-            var fingerprint = await EngineFingerprintAsync(client, ct).ConfigureAwait(false);
+            var fingerprint = await EngineFingerprintAsync(client, ct).ConfigureAwait(false)
+                + DefaultFeedScope(await GetDefaultFeedAsync(ct).ConfigureAwait(false));
             var created = await client.SubmitAsync(BuildJobRequest(request, fingerprint), ct).ConfigureAwait(false);
             jobId = created.Id;
 
@@ -547,6 +549,10 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         var engines = await client.ListEnginesAsync(ct).ConfigureAwait(false);
         return engines.FirstOrDefault(e => e.IsDefault)?.SettingsFingerprint ?? string.Empty;
     }
+
+    // Part of the idempotency key: a re-run after the default feed changed (or was first set) must be a new
+    // job, or audio-engine replays the earlier job and its episode is never published to the new feed.
+    private static string DefaultFeedScope(NarrationFeed? feed) => "|feed:" + (feed?.Name ?? string.Empty);
 
     private static Uri BuildBaseAddress(string? url)
     {
