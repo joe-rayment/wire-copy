@@ -52,7 +52,7 @@ internal static class RoutineRunDiagnosis
         var attention = ScheduledRunBadge.NeedsAttention(run);
         if (run.Status == ScheduledRunStatus.Completed)
         {
-            return Make(string.IsNullOrWhiteSpace(run.TargetFeedUrl) ? "✓ Done — saved on this computer" : "✓ Published", string.Empty, null, null, None, attention);
+            return Make(string.IsNullOrWhiteSpace(run.TargetFeedUrl) ? "✓ Done — saved on this computer" : "✓ Published", run.ErrorMessage ?? string.Empty, null, null, None, attention);
         }
 
         if (run.Status == ScheduledRunStatus.Skipped && run.ErrorClass == "NothingToCollect")

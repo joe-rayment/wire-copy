@@ -1151,7 +1151,7 @@ internal static class PodcastProgressScreens
         // full success from partial failure.
         var (glyph, glyphColor, headline) = shape switch
         {
-            CompletionShape.FullSuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated and published"),
+            CompletionShape.FullSuccess => ("✓", p.GetSuccessFg().AnsiFg, string.IsNullOrWhiteSpace(result.FeedTitle) ? "Published" : $"Published to {result.FeedTitle}"),
             CompletionShape.LocalOnlySuccess => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated (local-only — no RSS publish)"),
             CompletionShape.PartialFailure => ("⚠", p.GetWarningFg().AnsiFg, $"Podcast generated with {result.ArticlesFailed} article failure{(result.ArticlesFailed == 1 ? string.Empty : "s")}"),
             _ => ("✓", p.GetSuccessFg().AnsiFg, "Podcast generated"),
@@ -1239,7 +1239,11 @@ internal static class PodcastProgressScreens
 
             case CompletionShape.LocalOnlySuccess:
                 lines.Add($"  {p.SecondaryText.AnsiFg}Listen with VLC, Apple Books, or any M4B-aware player.{Reset}");
-                lines.Add($"  {p.SecondaryText.AnsiFg}Configure a GCS bucket in Setup to enable RSS publishing.{Reset}");
+                if (!string.IsNullOrWhiteSpace(result.PublicationNote))
+                {
+                    lines.Add($"  {p.SecondaryText.AnsiFg}{result.PublicationNote}{Reset}");
+                }
+
                 break;
 
             case CompletionShape.PartialFailure:
@@ -1696,7 +1700,7 @@ internal static class PodcastProgressScreens
                 $"  {p.SecondaryText.AnsiFg}{LocalLabel.PadRight(labelWidth)}{Reset}  " +
                 $"{p.PrimaryText.AnsiFg}{localDisplay}{Reset}");
             helpers.WriteLine(
-                $"  {p.SecondaryText.AnsiFg}(no GCS bucket configured — generating locally only){Reset}");
+                $"  {p.SecondaryText.AnsiFg}(audio-engine has no default feed — the episode will be saved on this computer only){Reset}");
         }
 
         helpers.WriteLine();

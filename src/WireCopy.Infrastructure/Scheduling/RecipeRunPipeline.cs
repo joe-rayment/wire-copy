@@ -49,8 +49,6 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private readonly IScheduleStore _scheduleStore;
     private readonly ILogger<RecipeRunPipeline> _logger;
     private readonly ISemanticSectionRecovery? _semanticRecovery;
-    private readonly IOptions<GcsConfiguration>? _gcsOptions;
-    private readonly IUserSettingsStore? _settingsStore;
     private readonly IHierarchyConfigStore? _configStore;
     private readonly IPodcastNarrator? _narrator;
     private readonly IAudioEngineLauncher? _launcher;
@@ -66,8 +64,6 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         IScheduleStore scheduleStore,
         ILogger<RecipeRunPipeline> logger,
         ISemanticSectionRecovery? semanticRecovery = null,
-        IOptions<GcsConfiguration>? gcsOptions = null,
-        IUserSettingsStore? settingsStore = null,
         IHierarchyConfigStore? configStore = null,
         IPodcastNarrator? narrator = null,
         IAudioEngineLauncher? launcher = null,
@@ -82,8 +78,6 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         _scheduleStore = scheduleStore;
         _logger = logger;
         _semanticRecovery = semanticRecovery;
-        _gcsOptions = gcsOptions;
-        _settingsStore = settingsStore;
         _configStore = configStore;
         _narrator = narrator;
         _launcher = launcher;
@@ -223,37 +217,12 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private static string HostOf(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
 
-    /// <summary>
-    /// workspace-frpl.17 (B13): the manual flow bridges the user's GcsBucketName setting
-    /// into the (config-bound) GcsConfiguration before publishing (PodcastCommandHandler);
-    /// the scheduler/run-now path must do the SAME or scheduled runs publish to a null
-    /// bucket. Idempotent + best-effort; the manual path already does this when active.
-    /// </summary>
     // Warnings and worse always; Information only from the scheduler and podcast code, so the drill-down
     // is not buried in unrelated prefetch chatter from the same seconds.
     private static bool KeepInRunLog(LogRecord r) =>
         r.Level >= LogSeverity.Warning ||
         (r.SourceContext?.StartsWith("WireCopy.Infrastructure.Scheduling", StringComparison.Ordinal) ?? false) ||
         (r.SourceContext?.StartsWith("WireCopy.Infrastructure.Podcast", StringComparison.Ordinal) ?? false);
-
-    private void BridgeGcsBucketFromSettings()
-    {
-        if (_gcsOptions?.Value is not { } gcs || _settingsStore is null)
-        {
-            return;
-        }
-
-        if (!string.IsNullOrWhiteSpace(gcs.BucketName))
-        {
-            return;
-        }
-
-        var savedBucket = _settingsStore.Get("GcsBucketName");
-        if (!string.IsNullOrWhiteSpace(savedBucket) && GcsConfiguration.IsValidBucketName(savedBucket))
-        {
-            gcs.BucketName = savedBucket;
-        }
-    }
 
     /// <summary>
     /// Loads + resolves one step, appending its (deduped) items to <paramref name="assembled"/>.
@@ -357,8 +326,6 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         var collection = Collection.Create($"{recipe.OutputCollectionName} {occurrenceToken}");
         collection.AddItemsAtEnd(assembled);
 
-        BridgeGcsBucketFromSettings();
-
         _logger.LogInformation("Generating podcast from {Count} articles", assembled.Count);
         var targets = await _orchestrator.ResolveTargetsAsync(collection, cancellationToken).ConfigureAwait(false);
 
@@ -409,8 +376,9 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             scheduledStatus,
             itemCount: assembled.Count,
             targetLocalPath: result.LocalFilePath ?? targets.LocalFilePath,
-            targetFeedUrl: result.FeedUrl ?? targets.FeedUrl,
-            stepOutcomesJson: outcomesJson);
+            targetFeedUrl: result.FeedUrl,
+            stepOutcomesJson: outcomesJson,
+            errorMessage: result.FeedUrl is null ? result.PublicationNote : null);
         await PersistAsync(recipe, run, runStatus).ConfigureAwait(false);
     }
 
