@@ -23,7 +23,7 @@ A quiet, keyboard-driven reader for the web — one screen, no ads, no popovers,
   <img src="docs/assets/wire-copy-june11.gif" alt="WireCopy in action — browsing a site's link tree and reading in the terminal." width="640" />
 </p>
 
-For the technically curious: a .NET 10 terminal browser with Helix-style keybindings (`j`/`k`/`h`/`l`/`gg`/`G`), a distraction-free reader view, and a pipeline that turns saved articles into M4B audiobooks with chapter markers and an optional GCS-hosted RSS feed.
+For the technically curious: a .NET 10 terminal browser with Helix-style keybindings (`j`/`k`/`h`/`l`/`gg`/`G`), a distraction-free reader view, and a pipeline that turns saved articles into M4B audiobooks with chapter markers and an optional podcast feed published through audio-engine.
 
 > **Note:** When browsing websites with this tool, respect each site's robots.txt and Terms of Service. WireCopy is for educational and personal use.
 
@@ -71,20 +71,13 @@ Saved layouts are durable (CSS-selector / URL-pattern based, never tied to speci
 
 ## Audio / Podcast Mode
 
-Generate narrated M4B files from your saved articles. Narration runs through one of two engines, switchable any time in Settings (`c` → **Narration engine**):
+Generate narrated M4B files from your saved articles. Narration and podcast publishing are done by [audio-engine](https://github.com/joe-rayment/audio-engine), a separate local service; Wire Copy only sends it the text. Set it up there, once:
 
-- **OpenAI (cloud)** — best quality, per-request style instructions, a few cents per hour of audio. Needs an OpenAI API key (the same key also powers the AI site setup and article extraction).
-- **Chatterbox (local)** — free, private, offline. Runs on your machine via [`uv`](https://docs.astral.sh/uv/); the first generation downloads the model weights (one-time, a few GB). No API key.
+1. **Start audio-engine** — in its checkout run `./run` (serves http://127.0.0.1:8080, no API key needed). Wire Copy also looks for a checkout itself (`~/audio-engine`, `AUDIO_ENGINE_HOME`, or a search of your home folder) and starts it when needed.
+2. **Pick the narration engine and voice** in audio-engine's **Settings** (Chatterbox, local and free, is the default; OpenAI is the cloud option). Wire Copy has no narration engine, voice or sample settings.
+3. **(Optional) publish as a podcast:** create a feed in audio-engine's **Feeds** tab, pick it as the **Default feed**, and use **Test publishing** to check the bucket setup (see audio-engine's "Private podcast feeds"). Subscribe in your podcast app with the feed's link.
 
-### Local narration (Chatterbox)
-
-Chatterbox (Resemble AI's open-source MIT model) synthesizes audio entirely on your machine — nothing leaves it and there's no per-run cost.
-
-- **Prerequisite:** install `uv` — `curl -LsSf https://astral.sh/uv/install.sh | sh`. Wire Copy launches the worker with `uv run` and manages the Python environment for you; nothing else to install.
-- **Voice cloning:** drop a ~10-second clean, single-speaker clip into `voices/` (gitignored) and pick it in Settings → **Voice sample**. Without a sample, Chatterbox uses its built-in voice.
-- **Tone:** Chatterbox takes **no** text style instructions — the tone comes from your voice sample plus the **Expressiveness** knob (0 = flat, 0.5 = natural, 1 = dramatic). The separate "TTS instructions" setting applies to **OpenAI only**.
-- **Test it:** Settings → **Local engine** row → Enter runs a "Test narration" that generates a short clip through the active engine and plays it, so you can hear the voice before committing to a full run.
-- Output carries Resemble's inaudible [Perth](https://github.com/resemble-ai/perth) watermark.
+Every podcast is sent with the default feed. If audio-engine has one, the episode is published and Wire Copy shows **Published** with the subscribe link; if not, it is saved on this computer only ("Saved on this computer. Not published: no default feed is set in audio-engine.").
 
 Press `p` on a reading list. While generating:
 
@@ -106,11 +99,11 @@ cd src/WireCopy.API
 ../../dotnet user-secrets set "OpenAiTts:ApiKey" "sk-..."
 ```
 
-Cloud publishing of podcast feeds via Google Cloud Storage is optional. To enable it, set `Gcs:BucketName` and either `Gcs:ServiceAccountKeyPath` (path to a JSON service-account key) or grant default credentials. Without a bucket, episodes are generated locally only.
+In Setup, Wire Copy keeps exactly three audio-engine settings: its URL (`AudioEngineUrl`), the optional API key (`AudioEngineApiKey`, asked only if audio-engine answers 401), and the program or folder used to launch it (`AudioEngineProgram`).
 
 ### Cost management
 
-OpenAI calls enforce per-session budget limits configured in `appsettings.json` (`OpenAiTts:MaxBudgetUsd`) and a monthly token cap for the analyzer (`OpenAiHierarchy:MonthlyTokenBudget`). A cost gate asks before unusually expensive runs. Generated audio and AI layouts are cached on disk to avoid regeneration when re-running with the same content.
+Narration cost is handled by audio-engine. Wire Copy enforces a monthly token cap for the analyzer (`OpenAiHierarchy:MonthlyTokenBudget`). A cost gate asks before unusually expensive podcast runs, using audio-engine's estimate. AI layouts are cached on disk to avoid regeneration.
 
 ## Keybindings
 
@@ -195,15 +188,11 @@ WireCopy ships with four color themes, all built on ANSI 256 colors:
 
 Configuration is loaded from `appsettings.json` and can be overridden with environment variables, `dotnet user-secrets`, or a local `secrets.json` (gitignored — see [`secrets.json.example`](secrets.json.example)).
 
-**Runtime overrides.** The in-app Setup screen (`c` on the launcher) and the `:set <key> <value>` command write to `~/.local/share/WireCopy/settings.json`, which takes precedence over `appsettings.json` for the keys it covers (API keys, GCS bucket, voice, etc.).
+**Runtime overrides.** The in-app Setup screen (`c` on the launcher) and the `:set <key> <value>` command write to `~/.local/share/WireCopy/settings.json`, which takes precedence over `appsettings.json` for the keys it covers (API keys, audio-engine URL, etc.).
 
 | Setting | Description | Default |
 |---------|-------------|---------|
-| `OpenAiTts:ApiKey` | OpenAI API key (shared by TTS and the analyzer) | (required for audio + AI setup) |
-| `OpenAiTts:Model` | TTS model — only the `gpt-4o-mini-tts` family honours `Instructions`; legacy `tts-1` / `tts-1-hd` still work but ignore it | `gpt-4o-mini-tts` |
-| `OpenAiTts:Voice` | TTS voice (`alloy`, `ash`, `ballad`, `coral`, `echo`, `fable`, `onyx`, `nova`, `sage`, `shimmer`) | `coral` |
-| `OpenAiTts:Instructions` | Style instruction sent to `gpt-4o-mini-tts` (empty = none) | `Speak like a playful but knowing news anchor` |
-| `OpenAiTts:MaxBudgetUsd` | Max TTS spend per session | `1.00` |
+| `OpenAiTts:ApiKey` | OpenAI API key — used for AI page layout and article extraction (podcast narration is configured in audio-engine) | (required for AI setup) |
 | `OpenAiHierarchy:JudgeModel` | Model for the AI-layout **judge** (returns link indices only; selectors are derived in code) | `gpt-5-nano` |
 | `OpenAiHierarchy:VerifyModel` | Model for the optional vision lead-tiebreak | `gpt-5-nano` |
 | `OpenAiHierarchy:ArticleModel` | Model for article extraction (HTML→JSON, strict schema + self-test; stays on the API) | `gpt-5-nano` |
@@ -219,8 +208,9 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `Browser:DockSide` / `Browser:DockWidthPx` | Which edge the sidecar docks to, and how wide (iPhone-SE width) | `Right` / `390` |
 | `Browser:TileTerminalWithSidecar` | macOS side-by-side: docking also resizes the terminal to the other half; dismiss restores it. Needs Accessibility permission | `false` |
 | `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
-| `Gcs:BucketName` | GCS bucket for podcast feed publishing | (unset → local-only mode) |
-| `Gcs:ServiceAccountKeyPath` | Path to GCS service-account JSON key | (unset → default credentials) |
+| `AudioEngineUrl` | audio-engine address | `http://127.0.0.1:8080` |
+| `AudioEngineApiKey` | audio-engine API key (only if it answers 401) | (unset) |
+| `AudioEngineProgram` | Program or folder used to launch audio-engine | (auto-detected) |
 
 ## Authentication for paywalled sites
 
@@ -237,7 +227,7 @@ src/
 │   ├── Browser/                # Patchright automation, link extraction, reader view
 │   │   ├── UI/                 # Terminal renderer, input handler
 │   │   └── Cache/              # Page cache + background prefetch
-│   ├── Podcast/                # OpenAI TTS, FFmpeg, M4B chapter markers, GCS publishing
+│   ├── Podcast/                # audio-engine client, FFmpeg, M4B chapter markers
 │   ├── Scheduling/             # Recurring podcast recipes, durable section resolution
 │   └── Configuration/          # Options classes and validators
 └── WireCopy.API/             # Console application entry point
@@ -295,12 +285,11 @@ Please use [GitHub Issues](../../issues) to report bugs or request features.
 - **.NET 10.0** with C# 14
 - **[Patchright](https://github.com/Kaliiiiiiiiii-Vinyzu/patchright-dotnet)** — patched Playwright for .NET (CDP-leak patched, ARM64-native)
 - **HtmlAgilityPack** for HTML parsing and content extraction
-- **OpenAI .NET SDK** — TTS, AI site setup, and article extraction (`gpt-5-mini`)
+- **OpenAI .NET SDK** — AI site setup, and article extraction (`gpt-5-mini`)
 - **FFMpegCore** for audio processing (requires `ffmpeg` on PATH)
 - **z440.atl.core** (ATL.NET) for M4B chapter markers
 - **Entity Framework Core 10** + **SQLite** for local persistence
 - **ASP.NET DataProtection** for cookie / credential encryption at rest
-- **Google.Cloud.Storage** for optional podcast feed publishing
 - **Custom ANSI terminal renderer** (`Browser/UI/`) for the reader UI, hosted in an **Electron** desktop shell (`shell/`, xterm.js)
 - **Serilog** for structured logging
 

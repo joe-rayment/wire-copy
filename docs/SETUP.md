@@ -42,12 +42,12 @@ The first `./dotnet` call (made by `./run`) downloads the .NET 10 SDK. Subsequen
 
 ## Credentials
 
-Two API keys unlock podcast generation. Both are optional — WireCopy runs as a browser without them.
+Both keys are optional — WireCopy runs as a browser without them. Podcast narration and publishing are configured in audio-engine, not here (see below).
 
-| Setting              | Purpose                       |
-|----------------------|-------------------------------|
-| `OpenAiTts:ApiKey`   | Text-to-speech for podcasts   |
-| `Anthropic:ApiKey`   | Page-structure analysis       |
+| Setting              | Purpose                                              |
+|----------------------|------------------------------------------------------|
+| `OpenAiTts:ApiKey`   | OpenAI key for AI page layout and article extraction |
+| `Anthropic:ApiKey`   | Page-structure analysis                              |
 
 You can provide them in any of three ways. They're checked in this order — later sources override earlier ones:
 
@@ -66,22 +66,15 @@ You can provide them in any of three ways. They're checked in this order — lat
    ```
 4. A local `secrets.json` (gitignored — see [`secrets.json.example`](../secrets.json.example)).
 
-Optional: a Google Cloud Storage service account JSON for publishing podcast feeds. See [docs/data-storage.md](data-storage.md).
+## Podcasts: set up audio-engine
 
-## Local narration (Chatterbox) — no API key
+Narration and podcast publishing are done by [audio-engine](https://github.com/joe-rayment/audio-engine), a separate local service. Configure them there:
 
-Podcast narration can run entirely on your machine with the open-source **Chatterbox** engine instead of OpenAI TTS. No key, no per-run cost, nothing leaves the machine.
+1. **Start it:** in its checkout run `./run` (serves http://127.0.0.1:8080, no API key; data in `~/audio-engine-data`; needs `ffmpeg` and `uv`). Wire Copy also finds a checkout itself (`~/audio-engine`, `AUDIO_ENGINE_HOME`, or a search of your home folder) and starts it.
+2. **Narration:** in audio-engine's **Settings** pick the engine (Chatterbox, local and free, is the default; or OpenAI) and the voice. The first Chatterbox run downloads model weights (a few GB).
+3. **Publishing (optional):** follow audio-engine's "Private podcast feeds" to set up the bucket, create a feed in its **Feeds** tab, pick it as the **Default feed**, and click **Test publishing**. Subscribe in a podcast app with the feed's link.
 
-1. **Install `uv`** (the only prerequisite):
-   ```bash
-   curl -LsSf https://astral.sh/uv/install.sh | sh
-   ```
-   Wire Copy runs the narration worker with `uv run` and manages the Python environment itself.
-2. **Switch engines:** press `c` on the launcher → **Narration engine** → pick **Chatterbox (local)**.
-3. **(Optional) clone a voice:** drop a ~10-second clean, single-speaker clip (wav/mp3/flac/m4a/ogg) into `voices/` (gitignored), then Settings → **Voice sample** → type the filename. Without a sample, Chatterbox uses its built-in voice. Tone is set by the sample plus the **Expressiveness** knob — Chatterbox takes no text style instructions (those apply to OpenAI only).
-4. **Test it:** Settings → **Local engine** row → Enter. The first run downloads the model weights (one-time, a few GB); after that it generates a short clip and plays it so you can hear the voice.
-
-Then press `p` on a reading list as usual — generation is local and free.
+Wire Copy keeps three settings for it (`c` on the launcher): the URL (`AudioEngineUrl`), the optional API key (`AudioEngineApiKey`, asked only if audio-engine answers 401), and the program or folder used to launch it (`AudioEngineProgram`). Then press `p` on a reading list. With a Default feed the episode is published and you get the subscribe link; without one it is saved on this computer only.
 
 ## Site logins (paywalled content)
 
@@ -104,11 +97,7 @@ Audio generation will fail at the assembly step. Install via your package manage
 
 ### Audio costs
 
-Both `OpenAiTts` and `Anthropic` configurations have a `MaxBudgetUsd` per session in `appsettings.json`. The defaults (`$1.00` and `$0.10` respectively) are conservative; bump them if you're generating long podcasts. Generated audio is cached on disk by content + engine + voice/sample + model so re-runs are free. (The **Chatterbox** local engine is always `$0.00` — its cost is time, not money.)
-
-### Local narration fails with "'NoneType' object is not callable"
-
-Chatterbox's Perth watermarker imports `pkg_resources`, which `setuptools` 81+ removed. Wire Copy pins `setuptools<81` in the worker's `uv` launch line (`Chatterbox:UvArgs` in `appsettings.json`) to avoid this — if you've overridden `UvArgs`, keep the `--with "setuptools<81"` fragment.
+Narration cost and caching are handled by audio-engine; Wire Copy shows its estimate before an expensive run. The `Anthropic` configuration has a `MaxBudgetUsd` per session in `appsettings.json`.
 
 ## Security notes
 
