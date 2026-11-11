@@ -134,10 +134,12 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                 using var readyResponse = await session.Http.SendAsync(ready, cts.Token).ConfigureAwait(false);
                 if (!readyResponse.IsSuccessStatusCode)
                 {
+                    var notReady = await NotReadyMessageAsync(readyResponse, url, cts.Token).ConfigureAwait(false);
                     return baseStatus with
                     {
-                        ErrorKind = NarrationErrorKind.Unreachable,
-                        Message = UnreachableMessage(url),
+                        ErrorKind = NarrationErrorKind.Transient,
+                        Reachable = true,
+                        Message = notReady,
                     };
                 }
             }
@@ -508,6 +510,59 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private static bool IsReady(AudioEngineSettings s) => !string.IsNullOrEmpty(s.Url) && !string.IsNullOrEmpty(s.ApiKey);
 
     private static bool IsCallerCancel(Exception ex, CancellationToken ct) => ex is OperationCanceledException && ct.IsCancellationRequested;
+
+    // The engine answered /readyz but said no: name the failing checks instead of claiming it is down.
+    private static async Task<string> NotReadyMessageAsync(HttpResponseMessage response, string? url, CancellationToken ct)
+    {
+        var prefix = $"audio-engine is running at {url} but isn't ready";
+        var fallback = $"{prefix} (HTTP {(int)response.StatusCode})";
+        try
+        {
+            var buffer = new byte[2048];
+            using var stream = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
+            var read = 0;
+            while (read < buffer.Length)
+            {
+                var n = await stream.ReadAsync(buffer.AsMemory(read), ct).ConfigureAwait(false);
+                if (n == 0)
+                {
+                    break;
+                }
+
+                read += n;
+            }
+
+            using var doc = JsonDocument.Parse(buffer.AsMemory(0, read));
+            if (doc.RootElement.ValueKind != JsonValueKind.Object ||
+                !doc.RootElement.TryGetProperty("checks", out var checks) ||
+                checks.ValueKind != JsonValueKind.Object)
+            {
+                return fallback;
+            }
+
+            var failing = new List<string>();
+            foreach (var check in checks.EnumerateObject())
+            {
+                var value = check.Value.ValueKind == JsonValueKind.String ? check.Value.GetString() : check.Value.ToString();
+                if (!string.Equals(value, "ok", StringComparison.OrdinalIgnoreCase))
+                {
+                    failing.Add($"{check.Name} — {value}");
+                }
+            }
+
+            if (failing.Count == 0)
+            {
+                return fallback;
+            }
+
+            var message = $"{prefix}: {string.Join("; ", failing)}";
+            return message.Length > 220 ? message[..219] + "…" : message;
+        }
+        catch (Exception ex) when (!ct.IsCancellationRequested || ex is not OperationCanceledException)
+        {
+            return fallback;
+        }
+    }
 
     private static string UnreachableMessage(string? url) =>
         $"audio-engine isn't running at {url}. Start it (audio-engine README: Run natively) or change its address in Settings.";

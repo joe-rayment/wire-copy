@@ -309,7 +309,7 @@ internal static class RoutineRunDetailsHandler
             foreach (var line in log)
             {
                 var lineColor = LogColor(palette, line, dim);
-                body.Add($"    {lineColor}{RenderHelpers.TruncateText(line, width - 6)}{Reset}");
+                AddWrapped(body, line, lineColor, width);
             }
 
             if (runs.Count > 1)
@@ -320,12 +320,15 @@ internal static class RoutineRunDetailsHandler
                 {
                     var d = RoutineRunDiagnosis.Diagnose(older);
                     var text = $"{d.Headline} · {RoutineText.When(older.StartedAtUtc, now)}" + (d.Short.Length > 0 ? " · " + d.Short : string.Empty);
-                    body.Add($"    {HeadlineColor(palette, d.Headline)}{RenderHelpers.TruncateText(text, width - 6)}{Reset}");
+                    AddWrapped(body, text, HeadlineColor(palette, d.Headline), width);
                 }
             }
         }
 
-        var budget = Math.Max(3, terminalHeight - 3 - 3);
+        var statusLines = status is null
+            ? new List<string>()
+            : RenderHelpers.WrapText(status, Math.Max(10, width - 4)).ToList();
+        var budget = Math.Max(3, terminalHeight - 3 - 3 - Math.Max(0, statusLines.Count - 1));
         var maxOffset = Math.Max(0, body.Count - budget);
         if (follow)
         {
@@ -346,7 +349,16 @@ internal static class RoutineRunDetailsHandler
         }
 
         helpers.WriteLine();
-        helpers.WriteLine(status is null ? string.Empty : $"  {palette.GetWarningFg().AnsiFg}{RenderHelpers.TruncateText(status, width - 4)}{Reset}");
+        if (statusLines.Count == 0)
+        {
+            helpers.WriteLine(string.Empty);
+        }
+
+        foreach (var statusLine in statusLines)
+        {
+            helpers.WriteLine($"  {palette.GetWarningFg().AnsiFg}{statusLine}{Reset}");
+        }
+
         helpers.WriteLine($"  {dim}{RenderHelpers.TruncateText(RoutineText.DetailsFooter, width - 4)}{Reset}");
         helpers.ClearRemainingLines();
         return offset;
@@ -365,6 +377,17 @@ internal static class RoutineRunDetailsHandler
         }
 
         return headline.StartsWith('✓') ? palette.GetSuccessFg().AnsiFg : palette.GetDimFg().AnsiFg;
+    }
+
+    // The drill-down never cuts anything: wrap to the width, continuation lines indented 4 more.
+    private static void AddWrapped(List<string> body, string text, string color, int width)
+    {
+        var first = true;
+        foreach (var part in RenderHelpers.WrapText(text, Math.Max(10, width - 10)))
+        {
+            body.Add($"{(first ? "    " : "        ")}{color}{part}{Reset}");
+            first = false;
+        }
     }
 
     private static string LogColor(ThemePalette palette, string line, string dim)

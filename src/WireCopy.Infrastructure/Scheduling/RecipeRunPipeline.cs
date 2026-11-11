@@ -109,7 +109,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 return;
             }
 
-            _logger.LogInformation("Routine run {Recipe} ({Occurrence}) started with {Steps} section(s)", recipe.Name, run.OccurrenceKey, recipe.Steps.Count);
+            _logger.LogInformation("Routine run {Recipe:l} ({Occurrence:l}) started with {Steps} section(s)", recipe.Name, run.OccurrenceKey, recipe.Steps.Count);
 
             // workspace-b6cmm: fail fast (and self-start a local audio-engine) before any page load.
             if (_narrator != null)
@@ -118,7 +118,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 if (!narration.Ready)
                 {
                     var message = string.IsNullOrWhiteSpace(narration.Message) ? "audio-engine isn't ready." : narration.Message;
-                    _logger.LogInformation("Narration preflight: not ready - {Message}", message);
+                    _logger.LogInformation("Narration preflight: not ready - {Message:l}", message);
                     run.Finish(
                         ScheduledRunStatus.Failed,
                         itemCount: 0,
@@ -139,11 +139,11 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             {
                 cancellationToken.ThrowIfCancellationRequested();
                 var before = assembled.Count;
-                _logger.LogInformation("Loading {Url}", step.SourceUrl);
+                _logger.LogInformation("Loading {Url:l}", step.SourceUrl);
                 var (status, matchCount, diagnostic) =
                     await ResolveStepAsync(step, assembled, seen, cancellationToken).ConfigureAwait(false);
                 _logger.LogInformation(
-                    "{Section}: {Status}, {Count} stories{Diagnostic}",
+                    "{Section:l}: {Status:l}, {Count} stories{Diagnostic:l}",
                     step.SectionName,
                     status,
                     assembled.Count - before,
@@ -229,6 +229,13 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     /// the scheduler/run-now path must do the SAME or scheduled runs publish to a null
     /// bucket. Idempotent + best-effort; the manual path already does this when active.
     /// </summary>
+    // Warnings and worse always; Information only from the scheduler and podcast code, so the drill-down
+    // is not buried in unrelated prefetch chatter from the same seconds.
+    private static bool KeepInRunLog(LogRecord r) =>
+        r.Level >= LogSeverity.Warning ||
+        (r.SourceContext?.StartsWith("WireCopy.Infrastructure.Scheduling", StringComparison.Ordinal) ?? false) ||
+        (r.SourceContext?.StartsWith("WireCopy.Infrastructure.Podcast", StringComparison.Ordinal) ?? false);
+
     private void BridgeGcsBucketFromSettings()
     {
         if (_gcsOptions?.Value is not { } gcs || _settingsStore is null)
@@ -437,7 +444,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private async Task PersistAsync(ScheduleRecipe recipe, ScheduledRun run, RunStatus cacheStatus)
     {
         _logger.LogInformation(
-            "Routine run finished: {Status}{Error}",
+            "Routine run finished: {Status:l}{Error:l}",
             run.Status,
             string.IsNullOrEmpty(run.ErrorMessage) ? string.Empty : " - " + run.ErrorMessage);
         WriteRunLog(run);
@@ -470,7 +477,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         try
         {
             var since = new DateTimeOffset(DateTime.SpecifyKind(run.StartedAtUtc, DateTimeKind.Utc));
-            RoutineRunLog.Write(run.Id, _logBuffer.Snapshot().Where(r => r.Timestamp >= since));
+            RoutineRunLog.Write(run.Id, _logBuffer.Snapshot().Where(r => r.Timestamp >= since && KeepInRunLog(r)));
         }
         catch (Exception ex)
         {

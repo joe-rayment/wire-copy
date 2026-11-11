@@ -104,7 +104,9 @@ internal static class RoutineRunDiagnosis
     private static RunDiagnosis Make(string headline, string what, string? step, string? how, RunFix fix, bool attention)
     {
         var oneLine = what.Replace('\r', ' ').Replace('\n', ' ');
-        var shortText = oneLine.Length > 60 ? oneLine[..59] + "…" : oneLine;
+        var cut = oneLine.IndexOf(". ", StringComparison.Ordinal);
+        var firstSentence = cut >= 0 ? oneLine[..cut] : oneLine.TrimEnd('.');
+        var shortText = firstSentence.Length > 60 ? firstSentence[..59] + "…" : firstSentence;
         return new RunDiagnosis(headline, shortText, what, step, how, fix, attention);
     }
 

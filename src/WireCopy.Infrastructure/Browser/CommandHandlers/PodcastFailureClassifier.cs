@@ -227,6 +227,16 @@ internal static class PodcastFailureClassifier
     {
         const string Step = "Audio engine";
 
+        if (error.Contains("isn't ready", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: error.Contains("ffmpeg", StringComparison.OrdinalIgnoreCase)
+                    ? "Install ffmpeg where audio-engine can find it (macOS: brew install ffmpeg), restart audio-engine, then press p again"
+                    : "Check audio-engine's own logs for the failing check, then press p again");
+        }
+
         // workspace-08e4u: the launcher's own messages — checked before the generic "isn't
         // running" rule, whose "start it yourself" remediation is wrong once we tried to.
         if (error.Contains("couldn't find it", StringComparison.OrdinalIgnoreCase))
@@ -234,7 +244,8 @@ internal static class PodcastFailureClassifier
             return new PodcastFailureClassification(
                 Step: Step,
                 Reason: error,
-                Fix: "Set the audio-engine folder in Settings → Audio engine program, or start it yourself, then press p again");
+                Fix: "Set the audio-engine folder in Settings → Audio engine program, or start it yourself, then press p again",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.AudioEngineProgram);
         }
 
         if (error.Contains("didn't start within", StringComparison.OrdinalIgnoreCase) ||
@@ -251,7 +262,8 @@ internal static class PodcastFailureClassifier
             return new PodcastFailureClassification(
                 Step: Step,
                 Reason: error,
-                Fix: "Start audio-engine (see the audio-engine README: Run natively), or change its address in Settings, then press p again");
+                Fix: "Start audio-engine (see the audio-engine README: Run natively), or change its address in Settings, then press p again",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.AudioEngine);
         }
 
         // audio-engine's own OpenAI key lives in audio-engine, not in WireCopy — checked before the
@@ -264,12 +276,22 @@ internal static class PodcastFailureClassifier
                 Fix: "Open audio-engine's settings page and add the OpenAI key there, then press p again");
         }
 
+        if (error.Contains("no address", StringComparison.OrdinalIgnoreCase))
+        {
+            return new PodcastFailureClassification(
+                Step: Step,
+                Reason: error,
+                Fix: "Set the audio-engine address in Settings -> Podcast narration, then press p again",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.AudioEngine);
+        }
+
         if (error.Contains("API key", StringComparison.OrdinalIgnoreCase))
         {
             return new PodcastFailureClassification(
                 Step: Step,
                 Reason: error,
-                Fix: "Set the audio-engine API key in Settings -> Podcast narration, then press p again");
+                Fix: "Set the audio-engine API key in Settings -> Podcast narration, then press p again",
+                RelevantSetupRow: SettingsCommandHandler.SetupRow.AudioEngineKey);
         }
 
         if (error.Contains("would cost", StringComparison.OrdinalIgnoreCase))
