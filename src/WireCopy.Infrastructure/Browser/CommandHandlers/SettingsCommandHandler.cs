@@ -16,6 +16,7 @@ using WireCopy.Infrastructure.Browser.UI.Renderers;
 using WireCopy.Infrastructure.Configuration;
 using WireCopy.Infrastructure.Podcast;
 using WireCopy.Infrastructure.Podcast.AudioEngine;
+using WireCopy.Infrastructure.Scheduling;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
@@ -2697,8 +2698,9 @@ internal static class SettingsCommandHandler
     /// </summary>
     /// <param name="ctx">The command context.</param>
     /// <param name="ct">Cancellation.</param>
+    /// <param name="setStatus">Called with the status text just before the native dialog opens and with null when the typed prompt is shown; null for none.</param>
     /// <returns>How the prompt ended, plus the error text when it was <see cref="AudioEngineLocationOutcome.NotAnEngine"/>.</returns>
-    internal static async Task<(AudioEngineLocationOutcome Outcome, string? Message)> PromptAudioEngineLocationAsync(CommandContext ctx, CancellationToken ct)
+    internal static async Task<(AudioEngineLocationOutcome Outcome, string? Message)> PromptAudioEngineLocationAsync(CommandContext ctx, CancellationToken ct, Action<string?>? setStatus = null)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         var settingsStore = scope.ServiceProvider.GetRequiredService<IUserSettingsStore>();
@@ -2722,6 +2724,7 @@ internal static class SettingsCommandHandler
                 start = Path.GetDirectoryName(currentPath) ?? home;
             }
 
+            setStatus?.Invoke(RoutineText.ChooseAudioEngineFolder);
             var picked = await shell.PickPathAsync(
                 new ShellPickRequest(
                     "Choose the audio-engine folder",
@@ -2744,6 +2747,7 @@ internal static class SettingsCommandHandler
             }
         }
 
+        setStatus?.Invoke(null);
         var field = new FormFieldConfig
         {
             Label = "Where is audio-engine on this computer?",

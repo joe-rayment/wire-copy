@@ -239,7 +239,7 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <param name="nearAppRoots">Folders whose ancestors are checked for an <c>audio-engine</c> child; null for none.</param>
     /// <param name="listDirs">Lists the subfolders of a folder for the home walk; null skips the walk.</param>
     /// <param name="extraCandidates">Late candidate executables (e.g. Spotlight results); null for none.</param>
-    /// <returns>The program (null when none) and the first six candidates examined.</returns>
+    /// <returns>The program (null when none) and the places a person would recognise, in search order.</returns>
     internal static AudioEngineDiscovery Discover(
         string? programSetting,
         Func<string, string?> getEnv,
@@ -258,7 +258,7 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         var lookedIn = new List<string>();
         var program = DiscoverCore(
             programSetting, getEnv, home, fileExists, dirExists, isWindows, rememberedLocation, nearAppRoots, listDirs, extraCandidates, lookedIn);
-        return new AudioEngineDiscovery(program, lookedIn.Distinct(StringComparer.Ordinal).Take(6).ToList());
+        return new AudioEngineDiscovery(program, lookedIn.Distinct(StringComparer.Ordinal).ToList());
     }
 
     /// <summary>Expands a leading <c>~</c> to the home folder and makes the path absolute.</summary>
@@ -374,7 +374,8 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         if (!string.IsNullOrWhiteSpace(remembered))
         {
             var path = AudioEnginePathInput.Normalize(remembered, home, Exists);
-            var found = ProbePath(path, home, fileExists, dirExists, isWindows, lookedIn);
+            lookedIn.Add(Shorten(path, home));
+            var found = ProbePath(path, home, fileExists, dirExists, isWindows, new List<string>());
             if (found is not null)
             {
                 return found;
@@ -390,6 +391,7 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         }
 
         // (e) audio-engine beside the app or the working folder.
+        var nearApp = false;
         foreach (var candidate in AncestorFolders(nearAppRoots, 8).Select(a => Path.Combine(a, "audio-engine")).Distinct(StringComparer.Ordinal))
         {
             if (candidate.Equals(defaultFolder, StringComparison.Ordinal))
@@ -397,11 +399,17 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
                 continue;
             }
 
-            var found = ProbeFolder(candidate, home, fileExists, dirExists, isWindows, lookedIn);
+            nearApp = true;
+            var found = ProbeFolder(candidate, home, fileExists, dirExists, isWindows, new List<string>());
             if (found is not null)
             {
                 return found;
             }
+        }
+
+        if (nearApp)
+        {
+            lookedIn.Add("next to WireCopy");
         }
 
         // (f) A bounded walk of the home folder.
@@ -679,12 +687,9 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         if (discovery.Program is null)
         {
             _logger.LogInformation("audio-engine was not found; looked in: {Places}", string.Join(", ", discovery.LookedIn));
-            var places = string.Join(", ", discovery.LookedIn.Take(2));
-            var more = discovery.LookedIn.Count - 2;
-            if (more > 0)
-            {
-                places += $" and {more} other place{(more == 1 ? string.Empty : "s")}";
-            }
+            var places = discovery.LookedIn.Count <= 1
+                ? string.Join(string.Empty, discovery.LookedIn)
+                : string.Join(", ", discovery.LookedIn.Take(discovery.LookedIn.Count - 1)) + " and " + discovery.LookedIn[^1];
 
             var message =
                 $"audio-engine isn't running at {url} and WireCopy couldn't find it on this computer to start it (looked in {places}). "

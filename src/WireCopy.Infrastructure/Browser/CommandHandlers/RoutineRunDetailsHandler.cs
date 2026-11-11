@@ -246,7 +246,7 @@ internal static class RoutineRunDetailsHandler
             var reason = PodcastFailureClassifier.Classify(status.Message, Array.Empty<WireCopy.Application.DTOs.Podcast.ArticleFailure>()).RelevantSetupRow;
             if (reason == SettingsCommandHandler.SetupRow.AudioEngineProgram)
             {
-                var (outcome, message) = await SettingsCommandHandler.PromptAudioEngineLocationAsync(ctx, ct).ConfigureAwait(false);
+                var (outcome, message) = await SettingsCommandHandler.PromptAudioEngineLocationAsync(ctx, ct, s => paint(s ?? string.Empty)).ConfigureAwait(false);
                 if (outcome == SettingsCommandHandler.AudioEngineLocationOutcome.Cancelled)
                 {
                     return RoutineText.NothingChosen;
@@ -264,7 +264,7 @@ internal static class RoutineRunDetailsHandler
             }
             else
             {
-                return string.IsNullOrWhiteSpace(status.Message) ? RoutineText.FixedRunAgain(recipe.Name) : status.Message;
+                return NotReadyStatus(ctx, recipe, status);
             }
         }
         else
@@ -291,7 +291,7 @@ internal static class RoutineRunDetailsHandler
             var next = PodcastFailureClassifier.Classify(check.Message, Array.Empty<WireCopy.Application.DTOs.Podcast.ArticleFailure>()).RelevantSetupRow;
             if (next is not { } row || hop >= MaxFixHops || !handled.Add(row))
             {
-                return string.IsNullOrWhiteSpace(check.Message) ? RoutineText.FixedRunAgain(recipe.Name) : check.Message;
+                return NotReadyStatus(ctx, recipe, check);
             }
 
             await SettingsCommandHandler.DispatchRowAsync(ctx, options, row, ct).ConfigureAwait(false);
@@ -308,6 +308,24 @@ internal static class RoutineRunDetailsHandler
         var narrator = scope.ServiceProvider.GetRequiredService<IPodcastNarrator>();
         var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
         return await NarratorPreflight.EnsureReadyAsync(narrator, launcher, ct).ConfigureAwait(false);
+    }
+
+    /// <summary>The closing status when narration is still not ready: says so when the engine itself is up now.</summary>
+    private static string NotReadyStatus(CommandContext ctx, ScheduleRecipe recipe, WireCopy.Application.DTOs.Podcast.NarratorStatus status)
+    {
+        if (string.IsNullOrWhiteSpace(status.Message))
+        {
+            return RoutineText.FixedRunAgain(recipe.Name);
+        }
+
+        if (status.Reachable && !status.Ready)
+        {
+            using var scope = ctx.ScopeFactory.CreateScope();
+            var launcher = scope.ServiceProvider.GetRequiredService<IAudioEngineLauncher>();
+            return RoutineText.AudioEngineRunningButNotReady(launcher.Discover().Program?.Display, status.Message);
+        }
+
+        return status.Message;
     }
 
     private static string AudioEngineRunning(CommandContext ctx, ScheduleRecipe recipe)

@@ -102,6 +102,9 @@ internal static class FormField
 
         var bandBlanked = false;
 
+        // Text the input box starts with: the field's initial value, then whatever was typed before a rejected Enter.
+        var seed = field.InitialValue;
+
         while (!ct.IsCancellationRequested)
         {
             // Render the field chrome (label, optional subtitle, borders, help/error)
@@ -153,7 +156,7 @@ internal static class FormField
                     isSecret: field.IsSecret,
                     row: inputRow,
                     col: inputCol,
-                    initialInput: field.InitialValue,
+                    initialInput: seed,
                     interceptKey: interceptKey,
                     clearWidth: innerWidth).ConfigureAwait(false);
             }
@@ -165,7 +168,7 @@ internal static class FormField
                     isSecret: field.IsSecret,
                     row: inputRow,
                     col: inputCol,
-                    initialInput: field.InitialValue,
+                    initialInput: seed,
                     interceptKey: interceptKey).ConfigureAwait(false);
             }
 
@@ -188,7 +191,8 @@ internal static class FormField
                 errorMessage = field.Validate(value);
                 if (errorMessage != null)
                 {
-                    // Validation failed — re-render with error and retry
+                    // Validation failed — re-render with the error and retry, keeping what was typed.
+                    seed = value;
                     continue;
                 }
             }

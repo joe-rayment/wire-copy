@@ -43,6 +43,9 @@ public static class RoutineText
     /// <summary>Status while the fix row looks for audio-engine.</summary>
     public const string LookingForAudioEngine = "Looking for audio-engine…";
 
+    /// <summary>Status while the native folder window for choosing the audio-engine folder is open.</summary>
+    public const string ChooseAudioEngineFolder = "Choose the audio-engine folder in the window that just opened…";
+
     /// <summary>Status while the fix row starts audio-engine (a first start can take a minute or more).</summary>
     public const string StartingAudioEngine = "Starting audio-engine…";
 
@@ -286,6 +289,13 @@ public static class RoutineText
     /// <summary>Fix result once audio-engine answers; <paramref name="startedFrom"/> may be null when unknown.</summary>
     public static string AudioEngineRunning(string name, string? startedFrom)
         => $"audio-engine is running{(string.IsNullOrWhiteSpace(startedFrom) ? string.Empty : $" (started from {startedFrom})")}. Press r to run {name} again.";
+
+    /// <summary>Fix result when audio-engine now answers but narration still needs something else.</summary>
+    /// <param name="startedFrom">Where it was started from; null or blank when unknown.</param>
+    /// <param name="stillNeeded">The remaining problem, as the preflight worded it.</param>
+    /// <returns>The status line.</returns>
+    public static string AudioEngineRunningButNotReady(string? startedFrom, string stillNeeded)
+        => $"audio-engine is running now{(string.IsNullOrWhiteSpace(startedFrom) ? string.Empty : $" (started from {startedFrom})")}. Still needed: {stillNeeded}";
 
     /// <summary>Fourth line on a Routines-home card whose newest run needs attention (⚠ for a partial success, ✗ otherwise).</summary>
     public static string CardAlert(string shortReason, bool partial) => $"{(partial ? "⚠" : "✗")} {shortReason} — e for details";
