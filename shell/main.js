@@ -11,7 +11,7 @@
 //   2. enforcement loop: renderer-internal focus() emits no event — cheap poll restores
 //   3. forwarding: keys that still land on a page are re-sent to the terminal, never lost
 // 'browser' mode is an explicit user gesture (click into the pane); Esc returns to reader.
-const { app, BaseWindow, WebContentsView, ipcMain, Menu, screen, session } = require('electron')
+const { app, BaseWindow, WebContentsView, ipcMain, Menu, screen, session, webContents } = require('electron')
 const { buildAppMenuTemplate } = require('./menu')
 const path = require('path')
 const os = require('os')
@@ -90,7 +90,8 @@ process.emitWarning = function (warning, ...rest) {
   const type = typeof rest[0] === 'string' ? rest[0] : rest[0] && rest[0].type
   const text = typeof warning === 'string' ? warning : warning && warning.message
   if (type === 'electron' && typeof text === 'string' && text.startsWith(PAGE_FAIL_PREFIX)) {
-    logPageLoadFailure(text)
+    // Our own onBeforeRequest cancel of a background-page iframe (workspace-grgrs): not a failure.
+    if (!text.includes('ERR_BLOCKED_BY_CLIENT')) logPageLoadFailure(text)
     return
   }
   return emitProcessWarning.call(process, warning, ...rest)
@@ -834,6 +835,45 @@ function setMode (m) {
   if (!state.termView.webContents.isDestroyed()) state.termView.webContents.send('wc:mode', m)
 }
 
+// workspace-grgrs: ad / user-sync iframes in fetch, prefetch and routine pages are never
+// seen by anyone and the .NET side reads only the main document, so cross-site subframes
+// requested by a hidden tagged page are cancelled. Bot-challenge frames are always allowed:
+// managed challenges solve themselves through them. The visible pane and popups are untouched.
+const TWO_LEVEL_SUFFIXES = new Set([
+  'co.uk', 'com.au', 'co.jp', 'co.nz', 'com.br', 'co.in', 'org.uk', 'ac.uk', 'gov.uk',
+  'com.mx', 'co.za', 'com.sg', 'com.hk', 'com.tr', 'com.cn', 'ne.jp', 'or.jp'
+])
+function siteOf (hostname) {
+  const host = String(hostname || '').toLowerCase().replace(/\.$/, '')
+  if (!host.includes('.') || host.includes(':') || /^\d+(\.\d+){3}$/.test(host)) return host
+  const labels = host.split('.')
+  const last2 = labels.slice(-2).join('.')
+  return TWO_LEVEL_SUFFIXES.has(last2) && labels.length >= 3 ? labels.slice(-3).join('.') : last2
+}
+function isChallengeFrame (u) {
+  const h = u.hostname.toLowerCase()
+  const under = d => h === d || h.endsWith('.' + d)
+  if (h === 'challenges.cloudflare.com' || h === 'www.recaptcha.net') return true
+  if (h === 'www.google.com' && u.pathname.startsWith('/recaptcha')) return true
+  return ['hcaptcha.com', 'captcha-delivery.com', 'arkoselabs.com', 'px-cdn.net', 'perimeterx.net'].some(under)
+}
+function shouldBlockBackgroundFrame ({ url, topUrl }) {
+  try {
+    const f = new URL(url)
+    const t = new URL(topUrl)
+    if (!/^https?:$/.test(f.protocol) || !/^https?:$/.test(t.protocol)) return false
+    if (isChallengeFrame(f)) return false
+    return siteOf(f.hostname) !== siteOf(t.hostname)
+  } catch { return false }
+}
+// Hidden tagged pages only: state.pages also holds the visible pane under 'lens'.
+function isBackgroundPage (wc) {
+  for (const view of state.pages.values()) {
+    if (view !== state.pageView && view.webContents === wc) return true
+  }
+  return false
+}
+
 // Hidden, tagged pages the .NET side adopts over CDP (fetch/prefetch). They are real
 // members of a headful browser window — sized like tabs, just not visible. Never headless.
 function createTaggedPage (tag) {
@@ -1048,6 +1088,18 @@ app.whenReady().then(() => {
 
   const wcSession = session.fromPartition('persist:wirecopy')
   wcSession.setUserAgent(CHROME_UA)
+  wcSession.webRequest.onBeforeRequest((details, callback) => {
+    try {
+      if (details.resourceType === 'subFrame') {
+        const wc = details.webContents || (details.webContentsId != null ? webContents.fromId(details.webContentsId) : null)
+        if (wc && isBackgroundPage(wc)) {
+          const topUrl = (wc.mainFrame && wc.mainFrame.url) || wc.getURL()
+          if (shouldBlockBackgroundFrame({ url: details.url, topUrl })) return callback({ cancel: true })
+        }
+      }
+    } catch { /* never break a request */ }
+    callback({})
+  })
   // Cert-error parity (workspace-83tf): terminal mode launches its browser with
   // Playwright IgnoreHTTPSErrors=true, so cert-invalid sites/subresources (field log:
   // net_error -201 CERT_DATE_INVALID) load where the shell's strict partition failed.
