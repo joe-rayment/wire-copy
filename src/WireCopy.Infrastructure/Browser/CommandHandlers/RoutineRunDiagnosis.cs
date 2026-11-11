@@ -17,6 +17,17 @@ internal static class RoutineRunDiagnosis
     private static readonly RunFix None = new(RunFixKind.None, string.Empty);
     private static readonly RunFix Again = new(RunFixKind.RunAgain, "Run again");
 
+    /// <summary>Known failure messages and the fixed whole phrase shown for each; first hit wins.</summary>
+    private static readonly (string Match, string Phrase)[] KnownShorts =
+    {
+        ("couldn't find it", "can't find audio-engine to start it"),
+        ("wants an API key", "audio-engine wants an API key"),
+        ("rejected the API key", "audio-engine rejected the API key"),
+        ("has no OpenAI key", "audio-engine has no OpenAI key"),
+        ("isn't set up", "audio-engine isn't set up"),
+        ("isn't running at", "audio-engine isn't running"),
+    };
+
     internal static IReadOnlyList<RunStepOutcome> Steps(ScheduledRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
@@ -106,8 +117,32 @@ internal static class RoutineRunDiagnosis
         var oneLine = what.Replace('\r', ' ').Replace('\n', ' ');
         var cut = oneLine.IndexOf(". ", StringComparison.Ordinal);
         var firstSentence = cut >= 0 ? oneLine[..cut] : oneLine.TrimEnd('.');
-        var shortText = firstSentence.Length > 60 ? firstSentence[..59] + "…" : firstSentence;
+        var shortText = ShortPhrase(oneLine, firstSentence);
         return new RunDiagnosis(headline, shortText, what, step, how, fix, attention);
+    }
+
+    /// <summary>
+    /// Builds the one-line summary: a fixed phrase for known failures, else the
+    /// first sentence, cut at a word boundary (never mid-word) when over 60 characters.
+    /// </summary>
+    private static string ShortPhrase(string message, string firstSentence)
+    {
+        foreach (var (match, phrase) in KnownShorts)
+        {
+            if (message.Contains(match, StringComparison.OrdinalIgnoreCase))
+            {
+                return phrase;
+            }
+        }
+
+        if (firstSentence.Length <= 60)
+        {
+            return firstSentence;
+        }
+
+        var space = firstSentence.LastIndexOf(' ', 59);
+        var head = space > 0 ? firstSentence[..space] : firstSentence[..59];
+        return head.TrimEnd(',', ':', ';', '(', '—', '-', ' ') + "…";
     }
 
     private static string TrimRetry(string fix)
