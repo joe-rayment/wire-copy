@@ -69,6 +69,9 @@ internal static class PodcastCommandHandler
             return;
         }
 
+        // Captured before the run ends (the manager may clear it): r on the result screen re-runs this list.
+        var runListId = jobManager.Collection?.Id;
+        var runListName = jobManager.Collection?.Name;
         var result = await PodcastProgressScreens.ShowProgressScreenAttachedAsync(
             ctx, options, jobManager, ct).ConfigureAwait(false);
 
@@ -83,7 +86,7 @@ internal static class PodcastCommandHandler
 
         if (!result.Success)
         {
-            await PodcastProgressScreens.ShowErrorScreenAsync(
+            var retryFailed = await PodcastProgressScreens.ShowErrorScreenAsync(
                 ctx,
                 options,
                 result.ErrorMessage ?? "Unknown error",
@@ -91,12 +94,21 @@ internal static class PodcastCommandHandler
                 result.FailureDetail,
                 ct).ConfigureAwait(false);
             await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            if (retryFailed)
+            {
+                await RetryRestoredRunAsync(ctx, Equals(ctx.NavigationService.ActiveCollection?.Id, runListId), runListName, ct).ConfigureAwait(false);
+            }
+
             return;
         }
 
-        await PodcastProgressScreens.ShowCompletionScreenAsync(ctx, options, result, ct)
+        var action = await PodcastProgressScreens.ShowCompletionScreenAsync(ctx, options, result, ct)
             .ConfigureAwait(false);
         await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+        if (action == CompletionScreenAction.Retry)
+        {
+            await RetryRestoredRunAsync(ctx, Equals(ctx.NavigationService.ActiveCollection?.Id, runListId), runListName, ct).ConfigureAwait(false);
+        }
     }
 
     /// <summary>
@@ -211,14 +223,16 @@ internal static class PodcastCommandHandler
 
             if (!status.Ready)
             {
-                await PodcastProgressScreens.ShowErrorScreenAsync(
+                // workspace-4nb14: r here re-runs the whole attempt (pre-flight included), so a fix made
+                // in audio-engine while this screen was up is picked up; any other key goes back.
+                var retryAfterFix = await PodcastProgressScreens.ShowErrorScreenAsync(
                     ctx,
                     options,
                     string.IsNullOrWhiteSpace(status.Message) ? "audio-engine isn't ready." : status.Message,
                     [],
                     ct).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
-                return false;
+                return retryAfterFix;
             }
 
             // workspace-reym: deleted the standalone "Analyzing Articles"
@@ -400,6 +414,20 @@ internal static class PodcastCommandHandler
             $"{p.HeaderBorderFg.AnsiFg}│ {p.HeaderTitleFg.AnsiFg}" +
             $"{displayTitle.PadRight(width - 4)}{p.HeaderBorderFg.AnsiFg} │{Reset}");
         helpers.WriteLine($"{p.HeaderBorderFg.AnsiFg}╰{new string('─', width - 2)}╯{Reset}");
+    }
+
+    // workspace-4nb14: r on a re-attached run's result screen. HandleGeneratePodcast works on the list on
+    // screen, so it only re-runs when that is still the run's list; otherwise say where to press p.
+    private static async Task RetryRestoredRunAsync(CommandContext ctx, bool sameList, string? listName, CancellationToken ct)
+    {
+        if (sameList)
+        {
+            await HandleGeneratePodcast(ctx, ctx.GetCurrentRenderOptions(), ct).ConfigureAwait(false);
+            return;
+        }
+
+        ctx.NavigationService.SetStatusMessage($"Open {listName ?? "the reading list"} and press p to run it again.");
+        await ctx.RenderCurrentPageAsync(ctx.GetCurrentRenderOptions(), ct).ConfigureAwait(false);
     }
 
     internal sealed class ArticleStatus
