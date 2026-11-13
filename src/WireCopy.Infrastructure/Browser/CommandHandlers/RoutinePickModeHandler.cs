@@ -194,6 +194,22 @@ internal static class RoutinePickModeHandler
                     options = ctx.GetCurrentRenderOptions();
                     await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                     break;
+                case CommandType.ShowHelp:
+                    await TileHelp.ShowAsync(
+                        ctx,
+                        $"Routines › {session.RoutineName} › Pick",
+                        [
+                            ("SPACE", "Pick or unpick the section or story"),
+                            ("ENTER", "On a section's name: open it"),
+                            ("↑ ↓", "Move"),
+                            ("← →", "Close or open a section"),
+                            ("CTRL+U / CTRL+D", "Page up or down"),
+                            ("GG / G", "Jump to the top or bottom"),
+                            ("ESC", "Done picking"),
+                        ],
+                        ct).ConfigureAwait(false);
+                    await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+                    break;
                 case CommandType.ToggleSelection:
                     await ToggleAsync(ctx, options, session, ct).ConfigureAwait(false);
                     break;

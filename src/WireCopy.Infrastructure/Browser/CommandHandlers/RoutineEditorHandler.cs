@@ -46,6 +46,26 @@ internal static class RoutineEditorHandler
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
             firstHint = null;
             var tile = TileGrid.ItemAt(screen, selected);
+            if (command.Type == CommandType.ShowHelp)
+            {
+                await TileHelp.ShowAsync(
+                    ctx,
+                    $"Routines › {recipe.Name}",
+                    [
+                        ("ENTER", "Open or change what is lit"),
+                        ("1-9", "Jump to a tile"),
+                        ("A", "Add a site"),
+                        ("D", "Remove the lit site"),
+                        ("J / K", "Move the lit site later / earlier"),
+                        ("R", "Run now"),
+                        ("SPACE", "Turn the routine on or off"),
+                        ("↑", "To the bar, then type a site's address"),
+                        ("ESC", "Back to Routines"),
+                    ],
+                    ct).ConfigureAwait(false);
+                continue;
+            }
+
             if (selected == TileGrid.Bar && IsBarTypingKey(command, out var seed))
             {
                 barError = await AddSiteFromBarAsync(ctx, options, recipe, seed, ct).ConfigureAwait(false);
@@ -67,7 +87,7 @@ internal static class RoutineEditorHandler
 
                 await SaveAsync(ctx, recipe).ConfigureAwait(false);
             }
-            else if (command.RawKeyChar is 'x' or 'd' && tile is not null && tile.Id.StartsWith("site:", StringComparison.Ordinal))
+            else if (command.RawKeyChar == 'd' && tile is not null && tile.Id.StartsWith("site:", StringComparison.Ordinal))
             {
                 await RemoveAsync(ctx, screen, recipe, tile, ct).ConfigureAwait(false);
             }

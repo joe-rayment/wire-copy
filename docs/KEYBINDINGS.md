@@ -100,36 +100,62 @@ The launcher's bottom-right cell is split: the READING LIST half and the ROUTINE
 
 ## Routines home (`:routines`, or the ROUTINES half of the launcher)
 
-Amber "routine mode"; the first card is `+ New routine`, then one card per routine sorted by name.
+Amber "routine mode"; one tile per routine sorted by name. `?` lists these keys in the pane.
 
 | Key | Action |
 |-----|--------|
-| Arrows / `h` `j` `k` `l` | Move between cards |
-| `Enter` | Open the routine's editor; on `+ New routine`, create a routine (asks for a name) |
-| `n` | New routine |
+| `Enter` | Open the routine |
+| `1`-`9` | Jump to a routine |
+| `n` | Name a new routine |
 | `r` | Run the selected routine now |
-| `Space` | Switch the selected routine on / off |
-| `d` | Delete the selected routine (`y` / `n` to confirm) |
-| `Esc` | Back to where you came from |
+| `Space` | Turn it on or off |
+| `d` | Delete it (`y` / `n` to confirm) |
+| `e` | See its last run (listed under `?` only) |
+| Arrows / `h` `j` `k` `l` | Move |
+| `Esc` | Back to the launcher |
 
-## Routine editor (Enter on a routine in the Routines home)
+## Routine page (Enter on a routine in the Routines home)
 
 | Key | Action |
 |-----|--------|
-| `↑` / `↓` | Move between rows (name, frequency, sites, steps) |
-| `Enter` | Edit the selected row (rename, change frequency, add a site, open a site in pick mode) |
-| `x` | Remove the selected site / step |
-| `r` | Run this routine now |
-| `Esc` | Back to the Routines home |
+| `Enter` | Open or change what is lit |
+| `1`-`9` | Jump to a tile |
+| `a` | Add a site |
+| `d` | Remove the lit site (`x` is reserved for cancelling a run) |
+| `J` / `K` | Move the lit site later / earlier |
+| `r` | Run now |
+| `Space` | Turn the routine on or off |
+| `↑` | To the bar, then type a site's address |
+| `Esc` | Back to Routines |
+
+## Schedule (SCHEDULE tile on the routine page)
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Choose a preset or flip a day |
+| `Space` | Flip a day |
+| `t` | Type the time |
+| `Esc` | Done |
+
+## Add a site (`a` on the routine page)
+
+| Key | Action |
+|-----|--------|
+| `Enter` | Pick the lit site |
+| `1`-`9` | Jump to a site |
+| `o` | Type an address |
+| `Esc` | Back |
 
 ## Pick mode (choosing a routine's sections and positions)
 
-Opened from the editor, or from `g s` on a link list. The list looks like the normal article list, but a routine follows **sections and positions, not specific links**.
+Opened from the routine page, or from `g s` on a link list. The list looks like the normal article list, but a routine follows **sections and positions, not specific links**. `?` lists these keys in the pane.
 
 | Key | Action |
 |-----|--------|
 | `Space` | On a section header: add / remove the whole section · on a story: add / remove that story's **position** (e.g. #1, #3). The one key — "top 3" is Space on stories 1, 2, 3 |
-| `Enter` | On a story: does nothing (it never opens the article) |
+| `Enter` | On a section's name: open it · on a story: does nothing (it never opens the article) |
+| Arrows / `h` `l` | Move · close or open a section |
+| `Ctrl+U` / `Ctrl+D`, `gg` / `G` | Page up / down · top / bottom |
 | `Esc` | Save and go back (from `g s` you return to the same list position in normal colours) |
 
 ---

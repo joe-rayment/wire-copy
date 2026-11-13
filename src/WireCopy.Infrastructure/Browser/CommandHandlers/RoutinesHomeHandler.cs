@@ -87,6 +87,26 @@ internal static class RoutinesHomeHandler
                 var key = command.RawKeyChar;
                 var current = sel == TileGrid.Bar ? null : recipes.FirstOrDefault(r => selId == "routine:" + r.Id);
 
+                if (command.Type == CommandType.ShowHelp)
+                {
+                    await TileHelp.ShowAsync(
+                        ctx,
+                        "Routines",
+                        [
+                            ("ENTER", "Open the routine"),
+                            ("1-9", "Jump to a routine"),
+                            ("N", "Name a new routine"),
+                            ("R", "Run it now"),
+                            ("SPACE", "Turn it on or off"),
+                            ("D", "Delete it"),
+                            ("E", "See its last run"),
+                            ("← ↑ ↓ →", "Move"),
+                            ("ESC", "Back to the launcher"),
+                        ],
+                        ct).ConfigureAwait(false);
+                    continue;
+                }
+
                 if (sel == TileGrid.Bar && RoutineEditorHandler.IsBarTypingKey(command, out var seed))
                 {
                     var made = await CreateAsync(ctx, options, store, recipes, seed, ct).ConfigureAwait(false);

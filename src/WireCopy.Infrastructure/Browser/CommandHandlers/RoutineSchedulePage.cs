@@ -113,6 +113,21 @@ internal static class RoutineSchedulePage
                 return;
             }
 
+            if (command.Type == CommandType.ShowHelp)
+            {
+                await TileHelp.ShowAsync(
+                    ctx,
+                    $"Routines › {recipe.Name} › Schedule",
+                    [
+                        ("ENTER", "Choose a preset or flip a day"),
+                        ("SPACE", "Flip a day"),
+                        ("T", "Type the time"),
+                        ("ESC", "Done"),
+                    ],
+                    ct).ConfigureAwait(false);
+                continue;
+            }
+
             if (command.Type == CommandType.TerminalResized)
             {
                 columns = ColumnsFor(ctx);

@@ -31,6 +31,21 @@ internal static class RoutineSitePicker
                 continue;
             }
 
+            if (command.Type == CommandType.ShowHelp)
+            {
+                await TileHelp.ShowAsync(
+                    ctx,
+                    $"Routines › {routineName} › Add a site",
+                    [
+                        ("ENTER", "Pick the lit site"),
+                        ("1-9", "Jump to a site"),
+                        ("O", "Type an address"),
+                        ("ESC", "Back"),
+                    ],
+                    ct).ConfigureAwait(false);
+                continue;
+            }
+
             var onTile = sel != TileGrid.Bar;
             var seed = string.Empty;
             var typing = command.Type is CommandType.GoToUrl or CommandType.OpenInBrowser
