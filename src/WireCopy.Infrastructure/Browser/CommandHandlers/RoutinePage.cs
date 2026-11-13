@@ -41,7 +41,7 @@ internal static class RoutinePage
             {
                 Legend = "Output",
                 Top = new Tile { Id = "podcast", Title = "PODCAST", Hint = $"{recipe.OutputCollectionName} · episodes go to this feed" },
-                Bottom = new Tile { Id = "lastRun", Title = "LAST RUN", Hint = RoutineEditorScreen.LastRunValue(lastRun, now) },
+                Bottom = new Tile { Id = "lastRun", Title = "LAST RUN", Hint = LastRunValue(lastRun, now) },
             },
         };
         cells.AddRange(sites.Skip(2).Select(t => new TileCell { Tile = t }));
@@ -73,6 +73,25 @@ internal static class RoutinePage
         };
     }
 
+    /// <summary>host[:port] plus the path when it is not "/".</summary>
+    internal static string SiteLabel(string sourceUrl)
+    {
+        if (!Uri.TryCreate(sourceUrl, UriKind.Absolute, out var uri))
+        {
+            return sourceUrl;
+        }
+
+        var label = uri.IsDefaultPort ? uri.Host : $"{uri.Host}:{uri.Port}";
+        var path = uri.AbsolutePath;
+        return path is "/" or "" ? label : label + path;
+    }
+
+    internal static string LastRunValue(ScheduledRun? run, DateTimeOffset now)
+    {
+        var d = run is null ? null : RoutineRunDiagnosis.Diagnose(run);
+        return RoutineText.LastRunValue(run, d is { NeedsAttention: true } ? d.Short : null, now);
+    }
+
     private static Tile SiteTile(List<RecipeStep> steps, IReadOnlyList<Bookmark> bookmarks)
     {
         var url = steps[0].SourceUrl;
@@ -84,7 +103,7 @@ internal static class RoutinePage
         {
             Id = "site:" + url,
             Title = (bookmark?.Name ?? host).ToUpperInvariant(),
-            Hint = RoutineEditorScreen.SiteLabel(url),
+            Hint = SiteLabel(url),
             Detail = string.Join(" · ", steps.Select(s => $"{s.SectionName} ({RoutineText.Take(s)})")),
         };
     }

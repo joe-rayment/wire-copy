@@ -104,7 +104,8 @@ internal static class TileScreenRenderer
             Footer = new LauncherFooter { Badge = screen.Badge, Status = screen.Status },
             BarHidden = screen.BarPlaceholder == null,
             BarPlaceholder = screen.BarPlaceholder,
-            UrlTyping = screen.BarTyping,
+            UrlTyping = screen.BarTyping
+                ?? (screen.Selected < 0 && screen.BarPlaceholder != null ? new LauncherUrlTyping { Buffer = string.Empty, Cursor = 0 } : null),
             SetupHint = screen.HintRow,
             AppLabel = screen.AppLabel,
             Hints = screen.Hints,

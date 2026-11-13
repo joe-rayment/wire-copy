@@ -54,12 +54,15 @@ internal static class RoutineEditorHandler
             screen = screen with { Selected = selected };
             ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
-            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
             var tile = TileGrid.ItemAt(screen, selected);
             if (selected == TileGrid.Bar && IsBarTypingKey(command, out var seed))
             {
                 barError = await AddSiteFromBarAsync(ctx, options, recipe, seed, ct).ConfigureAwait(false);
+            }
+            else if (command.RawKeyChar is 'J' or 'K' && tile is not null && tile.Id.StartsWith("site:", StringComparison.Ordinal))
+            {
+                await MoveSiteAsync(ctx, recipe, tile.Id["site:".Length..], command.RawKeyChar == 'K' ? -1 : 1).ConfigureAwait(false);
             }
             else if (command.Type == CommandType.ToggleSelection)
             {
@@ -76,14 +79,11 @@ internal static class RoutineEditorHandler
             }
             else if (command.RawKeyChar is 'x' or 'd' && tile is not null && tile.Id.StartsWith("site:", StringComparison.Ordinal))
             {
-                ctx.Renderer.HideLauncherPane();
-                await RemoveAsync(
-                    ctx, recipe, new RoutineRow(RoutineRowKind.Site, tile.Title, string.Empty, tile.Id["site:".Length..]), palette, ct).ConfigureAwait(false);
+                await RemoveAsync(ctx, screen, recipe, tile, ct).ConfigureAwait(false);
             }
             else if (command.RawKeyChar == 'r')
             {
-                ctx.Renderer.HideLauncherPane();
-                await RunNowAsync(ctx, options, recipe, ct).ConfigureAwait(false);
+                await RunNowAsync(ctx, options, recipe, screen, ct).ConfigureAwait(false);
             }
             else if (command.RawKeyChar == 'a')
             {
@@ -245,36 +245,19 @@ internal static class RoutineEditorHandler
     }
 
     private static async Task RemoveAsync(
-        CommandContext ctx, ScheduleRecipe recipe, RoutineRow row, ThemePalette palette, CancellationToken ct)
+        CommandContext ctx, TileScreen screen, ScheduleRecipe recipe, Tile tile, CancellationToken ct)
     {
-        List<int> victims;
-        string label;
-        if (row.Kind == RoutineRowKind.Section)
-        {
-            victims = new List<int> { row.StepIndex };
-            label = $"{row.Label} · {row.Value}";
-        }
-        else if (row.Kind == RoutineRowKind.Site)
-        {
-            var first = recipe.Steps.FirstOrDefault(s => s.SourceUrl == row.SiteUrl);
-            if (first is null)
-            {
-                return;
-            }
-
-            victims = Enumerable.Range(0, recipe.Steps.Count)
-                .Where(i => recipe.Steps[i].Domain == first.Domain && recipe.Steps[i].ConfigUrlPattern == first.ConfigUrlPattern)
-                .ToList();
-            label = row.Label;
-        }
-        else
+        var siteUrl = tile.Id["site:".Length..];
+        var first = recipe.Steps.FirstOrDefault(s => s.SourceUrl == siteUrl);
+        if (first is null)
         {
             return;
         }
 
-        var confirmed = await ConfirmationDialog.ConfirmAsync(
-            ctx.InputHandler, "Remove", RoutineText.RemoveConfirm(label), palette, ct, isDestructive: true).ConfigureAwait(false);
-        if (!confirmed)
+        var victims = Enumerable.Range(0, recipe.Steps.Count)
+            .Where(i => recipe.Steps[i].Domain == first.Domain && recipe.Steps[i].ConfigUrlPattern == first.ConfigUrlPattern)
+            .ToList();
+        if (!await TileConfirm.AskAsync(ctx, screen, RoutineText.RemoveConfirm(tile.Title), ct).ConfigureAwait(false))
         {
             return;
         }
@@ -287,6 +270,28 @@ internal static class RoutineEditorHandler
         await SaveAsync(ctx, recipe).ConfigureAwait(false);
     }
 
+    /// <summary>Moves a site (all its steps together) one place earlier (-1) or later (+1) among the sites.</summary>
+    private static async Task MoveSiteAsync(CommandContext ctx, ScheduleRecipe recipe, string siteUrl, int direction)
+    {
+        var groups = recipe.Steps
+            .GroupBy(s => (s.Domain, s.ConfigUrlPattern))
+            .Select(g => g.ToList())
+            .ToList();
+        var at = groups.FindIndex(g => g[0].SourceUrl == siteUrl);
+        var to = at + direction;
+        if (at < 0 || to < 0 || to >= groups.Count)
+        {
+            return;
+        }
+
+        (groups[at], groups[to]) = (groups[to], groups[at]);
+        var steps = groups.SelectMany(g => g).ToList();
+        await SaveAsync(
+            ctx,
+            ScheduleRecipe.Rehydrate(recipe.Id, recipe.Name, recipe.Enabled, recipe.Cadence, steps, recipe.OutputCollectionName, recipe.RunState, recipe.Version))
+            .ConfigureAwait(false);
+    }
+
     private static async Task<ScheduledRun?> LoadLastRunAsync(CommandContext ctx, Guid recipeId)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
@@ -294,23 +299,12 @@ internal static class RoutineEditorHandler
         return runs.FirstOrDefault();
     }
 
-    private static async Task RunNowAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
+    private static async Task RunNowAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, TileScreen screen, CancellationToken ct)
     {
         ctx.NavigationService.SetStatusMessage(RoutineText.Running(recipe.Name), TimeSpan.FromMinutes(10));
 
-        // Immediate feedback: repaint once with the Last run row reading "running…" while the run is awaited.
-        var runningRows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now, await LoadLastRunAsync(ctx, recipe.Id).ConfigureAwait(false), running: true);
-        var lastRunRow = runningRows.FindIndex(r => r.Kind == RoutineRowKind.LastRun);
-        ctx.Renderer.LeaveHtmlPanes();
-        RoutineEditorScreen.Draw(
-            new RenderHelpers { TerminalHeight = options.TerminalHeight },
-            BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme),
-            Math.Max(20, options.TerminalWidth - 2),
-            options.TerminalHeight,
-            recipe.Name,
-            runningRows,
-            Math.Max(0, lastRunRow),
-            0);
+        // Immediate feedback: repaint once with the running hint while the run is awaited.
+        ctx.Renderer.RenderTileScreen(screen with { HintRow = RoutineText.Running(recipe.Name) }, ctx.GetCurrentRenderOptions());
         RunNowResult result;
         using (var scope = ctx.ScopeFactory.CreateScope())
         {
@@ -330,6 +324,7 @@ internal static class RoutineEditorHandler
 
         if (result.Run is { } finished && RoutineRunDiagnosis.Diagnose(finished).NeedsAttention)
         {
+            ctx.Renderer.HideLauncherPane();
             await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
         }
     }
@@ -346,7 +341,7 @@ internal static class RoutineEditorHandler
             ctx,
             options,
             recipe,
-            RoutineRowKind.Name,
+            "Name: ",
             RoutineText.NameEditHint,
             ghostDefault ? null : recipe.Name,
             v => NameProblem(v, taken),
@@ -373,18 +368,12 @@ internal static class RoutineEditorHandler
         CommandContext ctx,
         RenderOptions options,
         ScheduleRecipe recipe,
-        RoutineRowKind kind,
+        string label,
         string hint,
         string? initial,
         Func<string, string?> validate,
         CancellationToken ct)
     {
-        var label = kind switch
-        {
-            RoutineRowKind.Name => "Name: ",
-            RoutineRowKind.Podcast => "Podcast: ",
-            _ => "Time: ",
-        };
         var hintRow = hint;
         while (!ct.IsCancellationRequested)
         {
@@ -458,7 +447,7 @@ internal static class RoutineEditorHandler
             ctx,
             options,
             recipe,
-            RoutineRowKind.Podcast,
+            "Podcast: ",
             RoutineText.PodcastEditHint,
             recipe.OutputCollectionName,
             v => string.IsNullOrWhiteSpace(v) ? RoutineText.PodcastEmpty : null,
