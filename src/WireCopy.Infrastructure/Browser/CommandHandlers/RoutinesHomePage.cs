@@ -152,7 +152,7 @@ internal static class RoutinesHomePage
             Title = r.Name.ToUpperInvariant(),
             Hint = hint,
             Detail = hasAlert ? null : detail,
-            Alert = hasAlert ? alerts![r.Id] + " · Enter to fix" : null,
+            Alert = hasAlert ? alerts![r.Id] : null,
             Disabled = !r.Enabled,
         };
     }
