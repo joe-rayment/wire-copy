@@ -240,6 +240,11 @@ internal sealed class SchedulerHostedService : BackgroundService
         (DateTimeOffset Start, DateTimeOffset End)? previousPass,
         CancellationToken stoppingToken)
     {
+        if (recipe.Steps.Count == 0)
+        {
+            return;
+        }
+
         var runRepo = scope.ServiceProvider.GetRequiredService<IScheduledRunRepository>();
 
         await RecordMissedPreviousSlotAsync(scope, runRepo, recipe, nowLocal, stoppingToken).ConfigureAwait(false);

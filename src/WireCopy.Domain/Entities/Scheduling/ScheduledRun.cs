@@ -126,5 +126,19 @@ public class ScheduledRun
         FinishedAtUtc = DateTime.UtcNow;
     }
 
+    /// <summary>Records a run the user stopped; terminal, never asks for attention.</summary>
+    public void MarkCancelled(string message)
+    {
+        if (Status is not (ScheduledRunStatus.Running or ScheduledRunStatus.Pending))
+        {
+            return;
+        }
+
+        Status = ScheduledRunStatus.Interrupted;
+        ErrorClass = "Cancelled";
+        ErrorMessage = message;
+        FinishedAtUtc = DateTime.UtcNow;
+    }
+
     public void Acknowledge() => AcknowledgedAtUtc ??= DateTime.UtcNow;
 }

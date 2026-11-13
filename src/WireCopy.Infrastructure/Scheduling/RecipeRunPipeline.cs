@@ -53,6 +53,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     private readonly IPodcastNarrator? _narrator;
     private readonly IAudioEngineLauncher? _launcher;
     private readonly ILogBuffer? _logBuffer;
+    private readonly IRoutineRunTracker? _tracker;
 
     public RecipeRunPipeline(
         IUnattendedSectionLoader loader,
@@ -67,7 +68,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         IHierarchyConfigStore? configStore = null,
         IPodcastNarrator? narrator = null,
         IAudioEngineLauncher? launcher = null,
-        ILogBuffer? logBuffer = null)
+        ILogBuffer? logBuffer = null,
+        IRoutineRunTracker? tracker = null)
     {
         _loader = loader;
         _resolver = resolver;
@@ -82,6 +84,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         _narrator = narrator;
         _launcher = launcher;
         _logBuffer = logBuffer;
+        _tracker = tracker;
     }
 
     public async Task RunAsync(ScheduleRecipe recipe, ScheduledRun run, CancellationToken cancellationToken = default)
@@ -89,6 +92,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         ArgumentNullException.ThrowIfNull(recipe);
         ArgumentNullException.ThrowIfNull(run);
 
+        var tracked = false;
         try
         {
             if (recipe.Steps.Count == 0)
@@ -103,16 +107,24 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 return;
             }
 
+            using var runCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            var ct = runCts.Token;
+            BeginTracking(recipe, run, runCts);
+            tracked = true;
+
             _logger.LogInformation("Routine run {Recipe:l} ({Occurrence:l}) started with {Steps} section(s)", recipe.Name, run.OccurrenceKey, recipe.Steps.Count);
 
             // workspace-b6cmm: fail fast (and self-start a local audio-engine) before any page load.
+            _tracker?.SetStage(recipe.Id, "narration", RoutineRunStageState.Running);
             if (_narrator != null)
             {
-                var narration = await NarratorPreflight.EnsureReadyAsync(_narrator, _launcher, cancellationToken).ConfigureAwait(false);
+                var narration = await NarratorPreflight.EnsureReadyAsync(_narrator, _launcher, ct).ConfigureAwait(false);
                 if (!narration.Ready)
                 {
                     var message = string.IsNullOrWhiteSpace(narration.Message) ? "audio-engine isn't ready." : narration.Message;
                     _logger.LogInformation("Narration preflight: not ready - {Message:l}", message);
+                    var firstSentence = message.Split(". ", 2, StringSplitOptions.None)[0];
+                    _tracker?.SetStage(recipe.Id, "narration", RoutineRunStageState.Failed, firstSentence);
                     run.Finish(
                         ScheduledRunStatus.Failed,
                         itemCount: 0,
@@ -125,23 +137,38 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 _logger.LogInformation("Narration preflight: audio-engine ready");
             }
 
+            _tracker?.SetStage(recipe.Id, "narration", RoutineRunStageState.Done, "audio-engine is ready");
+
             var assembled = new List<(string Url, string Title)>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var outcomes = new List<RunStepOutcome>();
 
+            var stepIndex = 0;
             foreach (var step in recipe.Steps)
             {
-                cancellationToken.ThrowIfCancellationRequested();
+                ct.ThrowIfCancellationRequested();
+                var stageKey = $"step:{stepIndex++}";
+                _tracker?.SetStage(recipe.Id, stageKey, RoutineRunStageState.Running, HostOf(step.SourceUrl));
                 var before = assembled.Count;
                 _logger.LogInformation("Loading {Url:l}", step.SourceUrl);
                 var (status, matchCount, diagnostic) =
-                    await ResolveStepAsync(step, assembled, seen, cancellationToken).ConfigureAwait(false);
+                    await ResolveStepAsync(step, assembled, seen, ct).ConfigureAwait(false);
                 _logger.LogInformation(
                     "{Section:l}: {Status:l}, {Count} stories{Diagnostic:l}",
                     step.SectionName,
                     status,
                     assembled.Count - before,
                     string.IsNullOrEmpty(diagnostic) ? string.Empty : " - " + diagnostic);
+                var contributed = assembled.Count - before;
+                if (contributed > 0)
+                {
+                    _tracker?.SetStage(recipe.Id, stageKey, RoutineRunStageState.Done, $"{contributed} stories · {HostOf(step.SourceUrl)}");
+                }
+                else
+                {
+                    _tracker?.SetStage(recipe.Id, stageKey, RoutineRunStageState.Failed, string.IsNullOrWhiteSpace(diagnostic) ? status : diagnostic);
+                }
+
                 outcomes.Add(new RunStepOutcome
                 {
                     SectionName = step.SectionName,
@@ -180,7 +207,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 return;
             }
 
-            await GenerateAndFinalizeAsync(recipe, run, assembled, outcomes, outcomesJson, cancellationToken)
+            await GenerateAndFinalizeAsync(recipe, run, assembled, outcomes, outcomesJson, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
@@ -188,7 +215,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             // Host shutdown or the per-run timeout fired. Mark Interrupted (terminal,
             // visible) rather than letting a bare OCE bubble up and tear down the
             // scheduler's tick loop. Best-effort persist on a fresh token.
-            await MarkInterruptedAsync(recipe, run).ConfigureAwait(false);
+            var userStopped = _tracker?.Get(recipe.Id)?.CancelRequested == true;
+            await MarkInterruptedAsync(recipe, run, userStopped).ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -201,6 +229,13 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                     errorClass: ex.GetType().Name,
                     errorMessage: ex.Message);
                 await PersistAsync(recipe, run, RunStatus.Failed).ConfigureAwait(false);
+            }
+        }
+        finally
+        {
+            if (tracked)
+            {
+                _tracker?.End(recipe.Id);
             }
         }
     }
@@ -223,6 +258,86 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         r.Level >= LogSeverity.Warning ||
         (r.SourceContext?.StartsWith("WireCopy.Infrastructure.Scheduling", StringComparison.Ordinal) ?? false) ||
         (r.SourceContext?.StartsWith("WireCopy.Infrastructure.Podcast", StringComparison.Ordinal) ?? false);
+
+    private void BeginTracking(ScheduleRecipe recipe, ScheduledRun run, CancellationTokenSource runCts)
+    {
+        if (_tracker is null)
+        {
+            return;
+        }
+
+        var stages = new List<RoutineRunStage> { new() { Key = "narration", Title = "NARRATION", State = RoutineRunStageState.Waiting } };
+        var index = 0;
+        foreach (var step in recipe.Steps)
+        {
+            stages.Add(new RoutineRunStage
+            {
+                Key = $"step:{index++}",
+                Title = step.SectionName.ToUpperInvariant(),
+                State = RoutineRunStageState.Waiting,
+                Hint = HostOf(step.SourceUrl),
+            });
+        }
+
+        stages.Add(new RoutineRunStage { Key = "narrate", Title = "NARRATE", State = RoutineRunStageState.Waiting });
+        stages.Add(new RoutineRunStage
+        {
+            Key = "publish",
+            Title = "PUBLISH",
+            State = RoutineRunStageState.Waiting,
+            Hint = $"feed “{recipe.OutputCollectionName}”",
+        });
+        _tracker.Begin(
+            new RoutineRunProgress
+            {
+                RecipeId = recipe.Id,
+                RunId = run.Id,
+                RoutineName = recipe.Name,
+                StartedAtUtc = new DateTimeOffset(DateTime.SpecifyKind(run.StartedAtUtc, DateTimeKind.Utc)),
+                Stages = stages,
+            },
+            runCts);
+    }
+
+    private void ReportStage(Guid recipeId, PodcastProgress p)
+    {
+        if (_tracker is null)
+        {
+            return;
+        }
+
+        switch (p.Phase)
+        {
+            case PodcastPhase.CachingContent:
+                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "reading the stories");
+                break;
+            case PodcastPhase.GeneratingAudio:
+                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"story {p.CurrentArticle} of {p.TotalArticles}", $"“{p.ArticleTitle}”");
+                _tracker.Update(recipeId, r => r with { StoriesDone = p.CurrentArticle, StoriesTotal = p.TotalArticles });
+                break;
+            case PodcastPhase.AssemblingAudio:
+                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "putting the episode together");
+                break;
+            case PodcastPhase.Publishing:
+                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Done, $"{p.TotalArticles} stories");
+                _tracker.SetStage(recipeId, "publish", RoutineRunStageState.Running, "uploading");
+                break;
+            default:
+                break;
+        }
+    }
+
+    private async Task<string> EpisodeNameAsync(ScheduleRecipe recipe, ScheduledRun run, CancellationToken cancellationToken)
+    {
+        var localStart = TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(run.StartedAtUtc, DateTimeKind.Utc), TimeZoneInfo.Local);
+        var name = $"{recipe.OutputCollectionName} · {localStart.ToString("ddd d MMM", System.Globalization.CultureInfo.InvariantCulture)}";
+        var recent = await _runRepository.GetRecentForRecipeAsync(recipe.Id, 50, cancellationToken).ConfigureAwait(false);
+        var sameDay = recent.Count(r =>
+            r.Id != run.Id
+            && (r.Status is ScheduledRunStatus.Completed or ScheduledRunStatus.PartialSuccess)
+            && TimeZoneInfo.ConvertTimeFromUtc(DateTime.SpecifyKind(r.StartedAtUtc, DateTimeKind.Utc), TimeZoneInfo.Local).Date == localStart.Date);
+        return sameDay > 0 ? $"{name} ({sameDay + 1})" : name;
+    }
 
     /// <summary>
     /// Loads + resolves one step, appending its (deduped) items to <paramref name="assembled"/>.
@@ -322,8 +437,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         // UNIQUE transient collection name: embed the occurrence so neither the
         // orchestrator's name-keyed article cache NOR its output path can collide
         // with a previous occurrence or a manual run of the same name.
-        var occurrenceToken = run.OccurrenceKey.Replace(':', '.');
-        var collection = Collection.Create($"{recipe.OutputCollectionName} {occurrenceToken}");
+        var collection = Collection.Create(await EpisodeNameAsync(recipe, run, cancellationToken).ConfigureAwait(false));
         collection.AddItemsAtEnd(assembled);
 
         _logger.LogInformation("Generating podcast from {Count} articles", assembled.Count);
@@ -333,7 +447,11 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         using var generationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
-            var progress = new Progress<PodcastProgress>(_jobManager.ReportProgress);
+            var progress = new Progress<PodcastProgress>(p =>
+            {
+                _jobManager.ReportProgress(p);
+                ReportStage(recipe.Id, p);
+            });
             var generationTask = _orchestrator.GeneratePodcastAsync(collection, progress, generationCts.Token);
 
             // Surface the scheduled generation on the same status-bar/launcher badge the
@@ -368,6 +486,8 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
         // Past the quality floor every Required step resolved, so any degraded
         // (optional) step makes this a PartialSuccess; otherwise a clean Completed.
+        _tracker?.SetStage(recipe.Id, "narrate", RoutineRunStageState.Done);
+        _tracker?.SetStage(recipe.Id, "publish", RoutineRunStageState.Done, result.FeedUrl is null ? "saved on this computer" : "published");
         var degraded = outcomes.Any(o => o.Status != ResolutionStatus.Resolved.ToString());
         var scheduledStatus = degraded ? ScheduledRunStatus.PartialSuccess : ScheduledRunStatus.Completed;
         var runStatus = degraded ? RunStatus.PartialSuccess : RunStatus.Success;
@@ -382,14 +502,23 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         await PersistAsync(recipe, run, runStatus).ConfigureAwait(false);
     }
 
-    private async Task MarkInterruptedAsync(ScheduleRecipe recipe, ScheduledRun run)
+    private async Task MarkInterruptedAsync(ScheduleRecipe recipe, ScheduledRun run, bool userStopped)
     {
         if (run.Status is not (ScheduledRunStatus.Running or ScheduledRunStatus.Pending))
         {
             return;
         }
 
-        run.MarkInterrupted("Run cancelled (host shutdown or per-run timeout)");
+        if (userStopped)
+        {
+            run.MarkCancelled("You stopped this run");
+            run.Acknowledge();
+        }
+        else
+        {
+            run.MarkInterrupted("Run cancelled (host shutdown or per-run timeout)");
+        }
+
         try
         {
             await PersistAsync(recipe, run, RunStatus.Failed).ConfigureAwait(false);

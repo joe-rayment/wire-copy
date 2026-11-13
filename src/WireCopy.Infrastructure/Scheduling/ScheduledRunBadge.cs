@@ -21,6 +21,11 @@ internal static class ScheduledRunBadge
     public static bool NeedsAttention(ScheduledRun run)
     {
         ArgumentNullException.ThrowIfNull(run);
+        if (run.Status == ScheduledRunStatus.Interrupted && run.ErrorClass == "Cancelled")
+        {
+            return false;
+        }
+
         return run.Status is ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted or ScheduledRunStatus.PartialSuccess
                || IsRecovered(run);
     }

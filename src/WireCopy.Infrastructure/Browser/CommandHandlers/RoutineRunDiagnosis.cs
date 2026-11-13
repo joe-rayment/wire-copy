@@ -107,6 +107,11 @@ internal static class RoutineRunDiagnosis
             }
         }
 
+        if (run.Status == ScheduledRunStatus.Interrupted && run.ErrorClass == "Cancelled")
+        {
+            return Make("Stopped", "You stopped this run", null, null, Again, false);
+        }
+
         if (run.Status == ScheduledRunStatus.Interrupted)
         {
             return Make("✗ Interrupted", run.ErrorMessage ?? "The run was interrupted.", null, null, Again, attention);
