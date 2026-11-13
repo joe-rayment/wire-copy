@@ -114,9 +114,10 @@ internal static class TileGrid
                     return below;
                 }
 
-                for (var c = cell + cols; c < screen.Cells.Count; c += cols)
+                for (var row = (cell / cols) + 1; row * cols < screen.Cells.Count; row++)
                 {
-                    if (Enter(positions, c, Top) is var hit and >= 0)
+                    var hit = EnterRow(positions, screen.Cells.Count, row, cell % cols, cols, Top);
+                    if (hit >= 0)
                     {
                         return hit;
                     }
@@ -130,9 +131,10 @@ internal static class TileGrid
                     return above;
                 }
 
-                for (var c = cell - cols; c >= 0; c -= cols)
+                for (var row = (cell / cols) - 1; row >= 0; row--)
                 {
-                    if (Enter(positions, c, Bottom) is var hit and >= 0)
+                    var hit = EnterRow(positions, screen.Cells.Count, row, cell % cols, cols, Bottom);
+                    if (hit >= 0)
                     {
                         return hit;
                     }
@@ -198,6 +200,30 @@ internal static class TileGrid
     private static int Find(List<(int Cell, int Part)> positions, int cell, int part)
     {
         return positions.FindIndex(p => p.Cell == cell && p.Part == part);
+    }
+
+    /// <summary>The item to land on in <paramref name="row"/>: the cell in <paramref name="column"/>, else the nearest non-empty cell of that row (left before right at equal distance); -1 when the row is empty.</summary>
+    private static int EnterRow(List<(int Cell, int Part)> positions, int cellCount, int row, int column, int cols, int preferPart)
+    {
+        for (var distance = 0; distance < cols; distance++)
+        {
+            foreach (var c in new[] { column - distance, column + distance })
+            {
+                var cell = (row * cols) + c;
+                if (c < 0 || c >= cols || cell >= cellCount)
+                {
+                    continue;
+                }
+
+                var hit = Enter(positions, cell, preferPart);
+                if (hit >= 0)
+                {
+                    return hit;
+                }
+            }
+        }
+
+        return -1;
     }
 
     /// <summary>The item to land on in <paramref name="cell"/>: its whole tile, else the preferred half, else the other half; -1 when the cell is empty.</summary>

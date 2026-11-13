@@ -121,7 +121,7 @@ internal static class RoutineSitePicker
         };
         var cells = marks.Select((m, i) =>
         {
-            var host = LauncherRenderer.ExtractDomain(m.Url);
+            var host = HierarchyDomainKey.FromUrl(m.Url);
             var sections = recipe?.Steps.Count(s => string.Equals(s.Domain, host, StringComparison.OrdinalIgnoreCase)) ?? 0;
             string? detail = null;
             if (sections > 0)
