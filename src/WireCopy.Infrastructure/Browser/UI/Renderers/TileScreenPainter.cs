@@ -90,7 +90,7 @@ internal static class TileScreenPainter
         var selRow = cells.FindIndex(c => (c.Whole?.Selected ?? false) || (c.Top?.Selected ?? false) || (c.Bottom?.Selected ?? false));
         selRow = selRow < 0 ? 0 : selRow / cols;
 
-        var avail = Math.Max(5, options.TerminalHeight - headerLines - FooterLines - 1);
+        var avail = Math.Max(5, options.TerminalHeight - headerLines - FooterLines);
         var rowsFit = Math.Max(1, avail / 5);
         if (totalRows > rowsFit)
         {
@@ -203,7 +203,7 @@ internal static class TileScreenPainter
         }
 
         // Footer pinned to the bottom.
-        for (var i = used; i < options.TerminalHeight - FooterLines - 1; i++)
+        for (var i = used; i < options.TerminalHeight - FooterLines; i++)
         {
             helpers.WriteLine(string.Empty);
         }
