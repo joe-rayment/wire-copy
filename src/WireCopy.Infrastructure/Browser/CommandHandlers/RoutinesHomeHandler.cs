@@ -92,9 +92,11 @@ internal static class RoutinesHomeHandler
                 {
                     case 'n':
                         sel = TileGrid.Bar;
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         continue;
                     case >= '1' and <= '9' when command.Type != CommandType.JumpToIndex:
                         sel = TileGrid.Jump(screen, (key ?? '0') - '0');
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         continue;
                     case 'r' when current != null:
                         if (running.Add(current.Id))
@@ -121,15 +123,19 @@ internal static class RoutinesHomeHandler
                         continue;
                     case 'h':
                         sel = TileGrid.Move(screen, CommandType.MoveLeft);
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         continue;
                     case 'l':
                         sel = TileGrid.Move(screen, CommandType.MoveRight);
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         continue;
                     case 'k':
                         sel = TileGrid.Move(screen, CommandType.MoveUp);
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         continue;
                     case 'j':
                         sel = TileGrid.Move(screen, CommandType.MoveDown);
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         continue;
                     default:
                         break;
@@ -148,9 +154,11 @@ internal static class RoutinesHomeHandler
                             CommandType.ExpandNode => CommandType.MoveRight,
                             _ => command.Type,
                         });
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         break;
                     case CommandType.JumpToIndex:
                         sel = TileGrid.Jump(screen, command.Count);
+                        selId = null; // an explicit move: do not snap back to the previous tile
                         break;
                     case CommandType.ToggleSelection when current != null:
                         if (current.Enabled)
