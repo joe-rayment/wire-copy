@@ -671,6 +671,30 @@ public class TerminalPageRenderer : IPageRenderer
     }
 
     /// <inheritdoc />
+    public void RenderTileScreen(TileScreen screen, RenderOptions options, bool paneOnly = false)
+    {
+        LeaveLinkTreeIfShown();
+        if (!paneOnly)
+        {
+            _helpers.TerminalHeight = options.TerminalHeight;
+            _helpers.ColumnOffset = options.ContentLeftOffset;
+            TileScreenPainter.Paint(_helpers, BuiltInThemes.Get(_themeProvider.CurrentTheme), screen, options);
+        }
+
+        if (_shellChannel.IsConnected)
+        {
+            var state = TileScreenRenderer.BuildViewState(screen, options);
+            lock (_promptLock)
+            {
+                _launcherHiddenForOverlay = false;
+                _lastLauncherState = state;
+                _ = _shellChannel.SendLauncherStateAsync(true, state with { PromptLine = screen.Confirm ?? _promptLine });
+                _launcherStateVisible = true;
+            }
+        }
+    }
+
+    /// <inheritdoc />
     public void HideLauncherPane() => LeaveLauncherIfShown();
 
     /// <summary>

@@ -141,6 +141,11 @@ public interface IPageRenderer
     {
     }
 
+    /// <summary>Draws one <see cref="TileScreen"/> with the launcher pane's elements; default no-op.</summary>
+    void RenderTileScreen(TileScreen screen, RenderOptions options, bool paneOnly = false)
+    {
+    }
+
     /// <summary>Hides the shell's HTML launcher pane (before a terminal prompt/confirm card). No-op in terminal mode.</summary>
     void HideLauncherPane()
     {
