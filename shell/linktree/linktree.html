@@ -271,6 +271,28 @@ function paintPromptLine (state) {
     `<span class="typed">${esc(after)}</span>`
 }
 
+// In-pane choose-one box (display-only; the terminal owns the keys). Rebuilt on every push.
+function paintChooser (state) {
+  let box = document.getElementById('chooser')
+  const c = state.chooser
+  if (!c) {
+    if (box) box.remove()
+    return
+  }
+  if (!box) {
+    box = document.createElement('div')
+    box.id = 'chooser'
+    document.body.appendChild(box)
+  }
+  const opts = (c.options || []).map((o, i) =>
+    `<div class="chooser-row${i === c.selected ? ' selected' : ''}">${i === c.selected ? '<span class="card-rail"></span>' : ''}${esc(o)}</div>`).join('')
+  box.innerHTML =
+    `<div class="chooser-title">${esc(c.title)}</div>` +
+    `<div class="chooser-prompt">${esc(c.prompt)}</div>` +
+    `<div class="chooser-rows">${opts}</div>` +
+    (c.hint ? `<div class="chooser-hint">${esc(c.hint)}</div>` : '')
+}
+
 // Idempotent full re-render from a pushed state message.
 window.__renderLinkTree = function (msg) {
   lastMsg = msg
@@ -286,6 +308,7 @@ window.__renderLinkTree = function (msg) {
   paintScrollMarks(state)
   paintFooter(state)
   paintPromptLine(state)
+  paintChooser(state)
   window.__linkTreeReady = true
 }
 

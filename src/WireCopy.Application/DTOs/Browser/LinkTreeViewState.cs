@@ -80,6 +80,28 @@ public sealed record LinkTreeViewState
 
     /// <summary>The ':' / '/' prompt line while one is active over this pane (workspace-up3zx); null otherwise.</summary>
     public PromptLineState? PromptLine { get; init; }
+
+    /// <summary>A choose-one box drawn inside the pane over the stories (e.g. "Which routine?"); null when none.</summary>
+    public LinkTreeChooser? Chooser { get; init; }
+}
+
+/// <summary>A display-only choose-one box shown inside the link-tree pane; the terminal still owns the keys.</summary>
+public sealed record LinkTreeChooser
+{
+    /// <summary>Box title, one line.</summary>
+    public required string Title { get; init; }
+
+    /// <summary>Question under the title.</summary>
+    public required string Prompt { get; init; }
+
+    /// <summary>One row per option.</summary>
+    public required IReadOnlyList<string> Options { get; init; }
+
+    /// <summary>Index of the highlighted option.</summary>
+    public int Selected { get; init; }
+
+    /// <summary>Key hint line at the bottom; null for none.</summary>
+    public string? Hint { get; init; }
 }
 
 /// <summary>

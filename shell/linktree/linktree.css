@@ -443,3 +443,35 @@ html, body {
   #loading .ld-sweep { animation: none; left: 0; width: 100%; opacity: 0.5; }
   #loading .ld-dots span { animation: none; }
 }
+
+/* ── In-pane chooser (display-only box centred over the stories) ───────── */
+#chooser {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  min-width: min(520px, 80vw);
+  max-width: 80vw;
+  max-height: 80vh;
+  overflow: hidden;
+  padding: 21px 28px;
+  background: var(--tr-bg-pure);
+  border: 2px solid var(--tr-green);
+  box-shadow: 0 0 24px rgba(var(--tr-glow-rgb), 0.35);
+  z-index: 50;
+  pointer-events: none;
+}
+.chooser-title  { font-weight: 700; color: var(--tr-green); font-size: clamp(21px, 2.25vw, 34px); line-height: 1.35; }
+.chooser-prompt { color: var(--tr-bright); font-size: clamp(14px, 1.36vw, 20px); line-height: 1.5; margin-bottom: 11px; }
+.chooser-row {
+  position: relative;
+  padding: 6px 14px 6px 20px;
+  color: var(--tr-green);
+  font-size: clamp(16px, 1.6vw, 24px);
+  line-height: 1.4;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.chooser-row.selected { background: var(--tr-sel-bg); color: var(--tr-white); }
+.chooser-hint { color: var(--tr-muted); font-size: 14px; margin-top: 11px; }
