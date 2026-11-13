@@ -61,9 +61,16 @@ internal static class RoutineRunPage
         var fileName = FileLabel(run.TargetLocalPath);
         var again = new Tile { Id = "again", Title = "RUN AGAIN", Hint = "same sections, now" };
 
+        var missed = RoutineText.IsMissed(run);
         var firstIsAgain = false;
         Tile first;
-        if (success)
+        if (missed)
+        {
+            var day = RoutineText.RunMomentLocal(run).DayOfWeek.ToString()[..3];
+            first = new Tile { Id = "again", Title = "RUN NOW", Hint = $"it has not run since {day} · Enter runs it now" };
+            firstIsAgain = true;
+        }
+        else if (success)
         {
             first = new Tile { Id = "play", Title = "PLAY EPISODE", Hint = Path.GetFileNameWithoutExtension(fileName) };
         }
@@ -90,6 +97,10 @@ internal static class RoutineRunPage
         else if (success)
         {
             thisRun = new TileCell { Legend = "This run", Top = again, Bottom = showFile };
+        }
+        else if (missed)
+        {
+            thisRun = new TileCell();
         }
         else if (firstIsAgain)
         {
@@ -137,13 +148,13 @@ internal static class RoutineRunPage
             Eyebrow = $"Routines › {recipe.Name} › {(isLatest ? "Last run" : "Earlier run")}",
             Title = TitleFor(run),
             Tagline = tagline,
-            CountLabel = $"{VerbFor(run)} {RoutineText.When(run.StartedAtUtc, now)}",
+            CountLabel = missed ? $"missed {RoutineText.MissedSlot(run)}" : $"{VerbFor(run)} {RoutineText.When(run.StartedAtUtc, now)}",
             HintRow = hintRow,
             Cells = cells,
             Columns = 2,
             Selected = selected,
             AppLabel = "Run",
-            Hints = new List<LauncherHint>
+            Hints = missed ? MissedHints() : new List<LauncherHint>
             {
                 new() { Key = "Enter", Label = "open" },
                 new() { Key = "1-9", Label = "jump" },
@@ -177,6 +188,13 @@ internal static class RoutineRunPage
             },
         };
     }
+
+    private static List<LauncherHint> MissedHints() => new()
+    {
+        new() { Key = "Enter", Label = "run now" },
+        new() { Key = "r", Label = "run now" },
+        new() { Key = "Esc", Label = "back" },
+    };
 
     private static TileCell StageCell(RoutineRunStage stage)
     {
@@ -240,10 +258,14 @@ internal static class RoutineRunPage
 
     private static Tile EarlierTile(ScheduledRun run)
     {
-        var local = DateTime.SpecifyKind(run.StartedAtUtc, DateTimeKind.Utc).ToLocalTime();
+        var local = RoutineText.RunMomentLocal(run);
         var when = local.ToString("ddd HH:mm", CultureInfo.InvariantCulture).ToUpperInvariant();
         string hint;
-        if (run.Status is ScheduledRunStatus.Completed or ScheduledRunStatus.PartialSuccess)
+        if (RoutineText.IsMissed(run))
+        {
+            hint = "missed · Wire Copy wasn't open";
+        }
+        else if (run.Status is ScheduledRunStatus.Completed or ScheduledRunStatus.PartialSuccess)
         {
             var glyph = run.Status == ScheduledRunStatus.Completed ? "✓" : "⚠";
             hint = $"{glyph} {VerbFor(run)} · {run.ItemCount} stories · {Duration(run)}";
