@@ -52,7 +52,7 @@ internal static class RoutinePage
             Eyebrow = $"Routines › {recipe.Name}",
             Title = recipe.Name,
             Tagline = tagline,
-            CountLabel = RoutineText.Contents(recipe),
+            CountLabel = recipe.Steps.Count == 0 ? "nothing to read yet" : RoutineText.Contents(recipe),
             Status = recipe.Enabled ? "on" : "off",
             BarPlaceholder = "Add a site: type an address…",
             HintRow = hintRow,

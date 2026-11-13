@@ -9,6 +9,12 @@ internal static class TileConfirm
 {
     public static async Task<bool> AskAsync(CommandContext ctx, TileScreen screen, string question, CancellationToken ct)
     {
+        var trimmed = question.TrimEnd();
+        if (trimmed.EndsWith("y / n", StringComparison.Ordinal))
+        {
+            question = trimmed[..^"y / n".Length].TrimEnd();
+        }
+
         var asked = screen with
         {
             Confirm = new PromptLineState { Prefix = question + "  [y] yes · [n] no ", Buffer = string.Empty, Cursor = 0 },

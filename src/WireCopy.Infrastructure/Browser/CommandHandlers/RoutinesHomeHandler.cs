@@ -87,6 +87,19 @@ internal static class RoutinesHomeHandler
                 var key = command.RawKeyChar;
                 var current = sel == TileGrid.Bar ? null : recipes.FirstOrDefault(r => selId == "routine:" + r.Id);
 
+                if (sel == TileGrid.Bar && RoutineEditorHandler.IsBarTypingKey(command, out var seed))
+                {
+                    var made = await CreateAsync(ctx, options, store, recipes, seed, ct).ConfigureAwait(false);
+                    recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
+                    if (made is { } madeId)
+                    {
+                        selId = "routine:" + madeId;
+                        sel = TileGrid.IndexOfId(RoutinesHomePage.Build(recipes, running, null, null, DateTimeOffset.Now, 0), selId, 0);
+                    }
+
+                    continue;
+                }
+
                 // KEY READING RULE: raw characters first (the mapper may bind them to other commands).
                 switch (key)
                 {
@@ -173,16 +186,6 @@ internal static class RoutinesHomeHandler
                         await store.SaveAsync(current).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         break;
-                    case CommandType.ActivateLink when current == null:
-                        var made = await CreateAsync(ctx, options, store, recipes, ct).ConfigureAwait(false);
-                        recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
-                        if (made is { } madeId)
-                        {
-                            selId = "routine:" + madeId;
-                            sel = TileGrid.IndexOfId(RoutinesHomePage.Build(recipes, running, null, null, DateTimeOffset.Now, 0), selId, 0);
-                        }
-
-                        break;
                     case CommandType.ActivateLink:
                         await RoutineEditorHandler.OpenAsync(ctx, options, current!.Id, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
@@ -239,13 +242,49 @@ internal static class RoutinesHomeHandler
         RenderOptions options,
         IScheduleStore store,
         List<ScheduleRecipe> recipes,
+        string seed,
         CancellationToken ct)
     {
+        var taken = recipes.Select(r => r.Name).ToList();
+        var hint = "Name the routine, then pick what it reads";
+        var typed = seed;
+        string name;
+        while (true)
+        {
+            var input = await RoutineEditorHandler.ReadInBarAsync(
+                ctx,
+                ctx.GetCurrentRenderOptions(),
+                string.Empty,
+                typed,
+                hint,
+                (_, hintRow) => RoutinesHomePage.Build(recipes, new HashSet<Guid>(), null, null, DateTimeOffset.Now, TileGrid.Bar) with { HintRow = hintRow },
+                ct).ConfigureAwait(false);
+            if (string.IsNullOrWhiteSpace(input))
+            {
+                return null;
+            }
+
+            name = input.Trim();
+            var problem = name.Length > 80 ? "Keep the name to 80 characters" : RoutineEditorHandler.NameProblem(name, taken);
+            if (problem is null)
+            {
+                break;
+            }
+
+            hint = problem;
+            typed = input;
+        }
+
         ctx.Renderer.HideLauncherPane();
-        var name = RoutineText.UniqueDefaultName(recipes.Select(r => r.Name));
         var recipe = ScheduleRecipe.Create(name, Cadence.Daily(new TimeOnly(5, 0)), Array.Empty<RecipeStep>(), name, true);
         await store.SaveAsync(recipe).ConfigureAwait(false);
-        await RoutineEditorHandler.OpenAsync(ctx, options, recipe.Id, ct, nameNew: true).ConfigureAwait(false);
+        var url = await RoutineSitePicker.PickAsync(ctx, name, ct, recipe).ConfigureAwait(false);
+        if (url is not null)
+        {
+            await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
+        }
+
+        await RoutineEditorHandler.OpenAsync(ctx, options, recipe.Id, ct, "Run now to hear it — press r").ConfigureAwait(false);
         return recipe.Id;
     }
 }

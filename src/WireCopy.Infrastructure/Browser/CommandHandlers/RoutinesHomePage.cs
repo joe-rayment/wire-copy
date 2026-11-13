@@ -87,13 +87,14 @@ internal static class RoutinesHomePage
 
     private static string Tagline(List<ScheduleRecipe> ordered, DateTimeOffset now)
     {
-        var on = ordered.Count(r => r.Enabled);
+        var live = ordered.Where(r => r.Enabled && r.Steps.Count > 0).ToList();
+        var on = live.Count;
         if (on == 0)
         {
             return "all off";
         }
 
-        var next = ordered[0];
+        var next = live[0];
         var when = RoutineText.NextRun(next.Cadence, now).Replace("next ", string.Empty, StringComparison.Ordinal);
         return $"{on} on · next {next.Name} {when}";
     }
@@ -110,18 +111,23 @@ internal static class RoutinesHomePage
         {
             hint = "off · " + freq;
         }
+        else if (r.Steps.Count == 0)
+        {
+            hint = freq + " · not scheduled until it has a site";
+        }
         else
         {
             hint = freq + " · " + RoutineText.NextRun(r.Cadence, now);
         }
 
+        var detail = r.Steps.Count == 0 ? "nothing to read yet · add a site" : RoutineText.Contents(r) + " · " + RoutineText.LastResult(r, now);
         var hasAlert = alerts is not null && alerts.ContainsKey(r.Id);
         return new Tile
         {
             Id = "routine:" + r.Id,
             Title = r.Name.ToUpperInvariant(),
             Hint = hint,
-            Detail = hasAlert ? null : RoutineText.Contents(r) + " · " + RoutineText.LastResult(r, now),
+            Detail = hasAlert ? null : detail,
             Alert = hasAlert ? alerts![r.Id] + " · Enter to fix" : null,
             Disabled = !r.Enabled,
         };

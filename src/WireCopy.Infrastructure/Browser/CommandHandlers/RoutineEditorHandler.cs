@@ -22,7 +22,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class RoutineEditorHandler
 {
-    public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid routineId, CancellationToken ct, bool nameNew = false)
+    public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid routineId, CancellationToken ct, string? firstHint = null)
     {
         var selected = 0;
         string? selectedId = null;
@@ -36,25 +36,15 @@ internal static class RoutineEditorHandler
                 return;
             }
 
-            if (nameNew)
-            {
-                nameNew = false;
-                if (await EditNameAsync(ctx, options, recipe, ghostDefault: true, ct).ConfigureAwait(false))
-                {
-                    selectedId = "addSite";
-                }
-
-                continue;
-            }
-
             var lastRun = await LoadLastRunAsync(ctx, routineId).ConfigureAwait(false);
-            var screen = RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, ctx.Bookmarks?.ToList() ?? new List<Bookmark>(), 0, barError);
+            var screen = RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, ctx.Bookmarks?.ToList() ?? new List<Bookmark>(), 0, barError ?? (recipe.Steps.Count > 0 ? firstHint : null));
             barError = null;
             selected = TileGrid.IndexOfId(screen, selectedId, selected);
             screen = screen with { Selected = selected };
             ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            firstHint = null;
             var tile = TileGrid.ItemAt(screen, selected);
             if (selected == TileGrid.Bar && IsBarTypingKey(command, out var seed))
             {
@@ -143,6 +133,16 @@ internal static class RoutineEditorHandler
         return false;
     }
 
+    internal static string? NameProblem(string value, List<string> taken)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return RoutineText.NameEmpty;
+        }
+
+        return taken.Contains(value.Trim(), StringComparer.OrdinalIgnoreCase) ? RoutineText.NameTaken : null;
+    }
+
     internal static async Task<string?> ReadInBarAsync(
         CommandContext ctx,
         RenderOptions options,
@@ -224,7 +224,7 @@ internal static class RoutineEditorHandler
                 await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
                 break;
             case "name":
-                await EditNameAsync(ctx, options, recipe, ghostDefault: false, ct).ConfigureAwait(false);
+                await EditNameAsync(ctx, options, recipe, ct).ConfigureAwait(false);
                 break;
             case "podcast":
                 await EditPodcastAsync(ctx, options, recipe, ct).ConfigureAwait(false);
@@ -235,7 +235,7 @@ internal static class RoutineEditorHandler
     private static async Task AddSiteAsync(
         CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
-        var url = await RoutineSitePicker.PickAsync(ctx, recipe.Name, ct).ConfigureAwait(false);
+        var url = await RoutineSitePicker.PickAsync(ctx, recipe.Name, ct, recipe).ConfigureAwait(false);
         if (url is null)
         {
             return;
@@ -331,7 +331,7 @@ internal static class RoutineEditorHandler
 
     /// <summary>Edits the Name row in place; true when a name was committed (a valid typed name).</summary>
     private static async Task<bool> EditNameAsync(
-        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, bool ghostDefault, CancellationToken ct)
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
         var taken = (await GetAllAsync(ctx).ConfigureAwait(false))
             .Where(r => r.Id != recipe.Id)
@@ -343,7 +343,7 @@ internal static class RoutineEditorHandler
             recipe,
             "Name: ",
             RoutineText.NameEditHint,
-            ghostDefault ? null : recipe.Name,
+            recipe.Name,
             v => NameProblem(v, taken),
             ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))
@@ -428,16 +428,6 @@ internal static class RoutineEditorHandler
             hintRow,
             (_, hint) => RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, bookmarks, TileGrid.Bar, hint),
             ct).ConfigureAwait(false);
-    }
-
-    private static string? NameProblem(string value, List<string> taken)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return RoutineText.NameEmpty;
-        }
-
-        return taken.Contains(value.Trim(), StringComparer.OrdinalIgnoreCase) ? RoutineText.NameTaken : null;
     }
 
     private static async Task EditPodcastAsync(
