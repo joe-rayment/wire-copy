@@ -65,7 +65,7 @@ internal static class RoutinesHomeHandler
                 selId = sel == TileGrid.Bar ? null : TileGrid.ItemAt(screen, sel)?.Id;
                 ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
-                inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+                inputTask ??= RoutineEditorHandler.TakeParked(ctx) ?? ctx.InputHandler.WaitForInputAsync(ct);
                 await RoutineEditorHandler.WakeAsync(inputTask, tracker, running.Count > 0, ct).ConfigureAwait(false);
 
                 if (!inputTask.IsCompleted)

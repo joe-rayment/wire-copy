@@ -59,12 +59,12 @@ internal static class RoutinePickModeHandler
         // (the launcher, or the list they pressed g s on) - the Esc chain never strands them on the site.
         var startedInLauncher = ctx.NavigationService.InLauncherMode;
         var startPage = ctx.NavigationService.CurrentPage;
+        var carry = new InputCarry();
 
         try
         {
             ctx.NavigationService.SetStatusMessage("Loading " + request.SiteUrl + " …", TimeSpan.FromSeconds(30));
             await ctx.NavigateToAsync(request.SiteUrl, options, ct).ConfigureAwait(false);
-            var carry = new InputCarry();
             var tree = await WaitForLoadedAsync(ctx, request.SiteUrl, options, carry, ct).ConfigureAwait(false);
             if (tree is null)
             {
@@ -169,6 +169,13 @@ internal static class RoutinePickModeHandler
         }
         finally
         {
+            // Any exit that leaves the load wait's key waiter unread (failure, timeout, no links, error) parks it for the caller's loop.
+            if (carry.Pending is not null)
+            {
+                ctx.ParkedInput = carry.Pending;
+                carry.Pending = null;
+            }
+
             session.Active = false;
             ctx.SetOverlayPainter(null);
             if (startPage is not null && !ReferenceEquals(ctx.NavigationService.CurrentPage, startPage) && ctx.NavigationService.CanGoBack)
