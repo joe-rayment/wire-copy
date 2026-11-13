@@ -68,7 +68,9 @@ internal static class RoutineRunPage
         }
         else if (diagnosis.Fix.Kind is RunFixKind.SetupRow or RunFixKind.OpenSite or RunFixKind.OpenEngineSettings)
         {
-            first = new Tile { Id = "fix", Title = diagnosis.Fix.Label.ToUpperInvariant(), Hint = "the fix · Enter does it, then run again" };
+            first = diagnosis.Fix.Kind == RunFixKind.OpenEngineSettings
+                ? new Tile { Id = "fix", Title = "OPEN AUDIO-ENGINE’S SETTINGS", Hint = "the fix · Enter opens them, then run again" }
+                : new Tile { Id = "fix", Title = diagnosis.Fix.Label.ToUpperInvariant(), Hint = "the fix · Enter does it, then run again" };
         }
         else
         {
@@ -118,9 +120,14 @@ internal static class RoutineRunPage
         {
             tagline = $"{run.ItemCount} stories · took {Duration(run)}";
         }
+        else if (run.ErrorClass is "NarrationNotReady" or "GenerationFailed" && RoutineRunDiagnosis.IsKnownShort(diagnosis.Short))
+        {
+            tagline = $"{diagnosis.Short}, so nothing could read the stories aloud";
+        }
         else
         {
-            tagline = string.IsNullOrWhiteSpace(diagnosis.Short) ? diagnosis.What : diagnosis.Short;
+            var plain = RoutineRunDiagnosis.PlainSentence(diagnosis.What, 100);
+            tagline = plain.Length > 0 ? plain : diagnosis.Short;
         }
 
         return new TileScreen
