@@ -54,6 +54,9 @@ public partial class BrowserOrchestrator : IBrowserService
     private readonly IInputHandler _inputHandler;
     private readonly NavigationService _navigationService;
     private readonly IServiceScopeFactory _scopeFactory;
+    private volatile bool _routineRunEnded;
+    private int _lastActiveRoutineRuns;
+    private Application.Interfaces.Scheduling.IRoutineRunTracker? _routineRunTracker;
     private readonly Configuration.BrowserConfiguration _browserConfig;
     private readonly IBrowserSessionControl _browserSession;
     private readonly IResizeDetector _resizeDetector;
@@ -574,6 +577,7 @@ public partial class BrowserOrchestrator : IBrowserService
                 }
 
                 // Start waiting for input if not already waiting
+                WatchRoutineRuns();
                 pendingInput ??= _inputHandler.WaitForInputAsync(cancellationToken);
 
                 // Build the race: input, timer, and optionally background load + speed read + quality retry
@@ -749,6 +753,16 @@ public partial class BrowserOrchestrator : IBrowserService
                 else
                 {
                     // Timer elapsed — update loading status or check preload progress
+                    if (_routineRunEnded)
+                    {
+                        _routineRunEnded = false;
+                        if (_navigationService.CurrentContext.ViewMode == ViewMode.Launcher)
+                        {
+                            await RenderCurrentPageAsync(options, cancellationToken).ConfigureAwait(false);
+                            continue;
+                        }
+                    }
+
                     if (HasActiveBackgroundLoad() && _loadingStatus != null)
                     {
                         // workspace-wef6.5: the load stage is the activity slot's
@@ -796,6 +810,7 @@ public partial class BrowserOrchestrator : IBrowserService
             // Dispose browser session and background services
             try
             {
+                UnwatchRoutineRuns();
                 _preloadService.Dispose();
                 _idleDetector.Dispose();
                 _browserSession.Dispose();

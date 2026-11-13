@@ -322,9 +322,17 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
                 break;
             case PodcastPhase.GeneratingAudio:
-                var narrating = p.TotalArticles > 0 ? $"narrating story {p.CurrentArticle} of {p.TotalArticles}" : "narrating the stories";
-                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, narrating, $"“{p.ArticleTitle}”");
-                _tracker.Update(recipeId, r => r with { StoriesDone = p.CurrentArticle, StoriesTotal = p.TotalArticles });
+                if (p.TotalArticles > 0 && p.CurrentArticle > 0)
+                {
+                    var narratingTitle = string.IsNullOrWhiteSpace(p.ArticleTitle) ? null : $"“{p.ArticleTitle}”";
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"narrating story {p.CurrentArticle} of {p.TotalArticles}", narratingTitle);
+                    _tracker.Update(recipeId, r => r with { StoriesDone = p.CurrentArticle, StoriesTotal = p.TotalArticles });
+                }
+                else
+                {
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "narrating the stories");
+                }
+
                 break;
             case PodcastPhase.AssemblingAudio:
                 _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "putting the episode together");

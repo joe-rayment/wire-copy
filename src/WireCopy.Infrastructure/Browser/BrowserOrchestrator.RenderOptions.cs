@@ -267,6 +267,50 @@ public partial class BrowserOrchestrator
     /// failures/recoveries (null when nothing needs attention). Read on each launcher
     /// frame so a run that finished while the user was away surfaces on next focus.
     /// </summary>
+    private void WatchRoutineRuns()
+    {
+        if (_routineRunTracker is not null)
+        {
+            return;
+        }
+
+        try
+        {
+            using var scope = _scopeFactory.CreateScope();
+            _routineRunTracker = scope.ServiceProvider
+                .GetService<Application.Interfaces.Scheduling.IRoutineRunTracker>();
+            if (_routineRunTracker is not null)
+            {
+                _lastActiveRoutineRuns = _routineRunTracker.Active.Count;
+                _routineRunTracker.Changed += OnRoutineRunChanged;
+            }
+        }
+        catch (Exception ex)
+        {
+            _logger.LogDebug(ex, "Failed to watch routine runs for launcher repaint");
+        }
+    }
+
+    private void UnwatchRoutineRuns()
+    {
+        if (_routineRunTracker is not null)
+        {
+            _routineRunTracker.Changed -= OnRoutineRunChanged;
+            _routineRunTracker = null;
+        }
+    }
+
+    private void OnRoutineRunChanged(object? sender, EventArgs e)
+    {
+        var count = _routineRunTracker?.Active.Count ?? 0;
+        if (count < _lastActiveRoutineRuns)
+        {
+            _routineRunEnded = true;
+        }
+
+        _lastActiveRoutineRuns = count;
+    }
+
     private string? GetScheduledRunBadge()
     {
         try
