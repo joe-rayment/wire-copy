@@ -10,7 +10,6 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// <summary>The schedule as one screen of launcher tiles: presets, days, and the time typed in the bar (workspace-6ifpp.2).</summary>
 internal static class RoutineSchedulePage
 {
-    private const string DefaultHint = "Runs while Wire Copy is open. A missed run starts when you next open it.";
     private const string LastDayHint = "At least one day has to stay on";
 
     private static readonly DayOfWeek[] AllDays = [DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday];
@@ -55,7 +54,7 @@ internal static class RoutineSchedulePage
             Screen = "schedule",
             Eyebrow = $"Routines › {recipe.Name} › Schedule",
             Title = RoutineText.FrequencyInWords(recipe.Cadence),
-            Tagline = message ?? DefaultHint,
+            Tagline = message ?? RoutineText.ScheduleNote,
             CountLabel = next,
             FooterCount = next,
             BarPlaceholder = $"Time: {recipe.Cadence.LocalTime:HH:mm}",

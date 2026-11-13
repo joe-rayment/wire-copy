@@ -648,30 +648,6 @@ public class TerminalPageRenderer : IPageRenderer
     }
 
     /// <inheritdoc />
-    public void RenderRoutinesHome(IReadOnlyList<ScheduleRecipe> recipes, IReadOnlySet<Guid> runningIds, int selectedIndex, DateTimeOffset now, RenderOptions options, IReadOnlyDictionary<Guid, string>? alerts = null, string? badge = null)
-    {
-        LeaveLinkTreeIfShown();
-        var cards = LauncherRenderer.BuildRoutineCards(recipes, runningIds, now, alerts);
-        _helpers.TerminalHeight = options.TerminalHeight;
-        _helpers.Clear();
-        _helpers.ColumnOffset = options.ContentLeftOffset;
-        _launcherRenderer.RenderRoutinesHome(cards, selectedIndex, options);
-        _helpers.PositionAtBottom();
-        _launcherRenderer.RenderRoutinesFooter(options.TerminalWidth);
-
-        if (_shellChannel.IsConnected)
-        {
-            var state = LauncherRenderer.BuildRoutinesViewState(cards, selectedIndex, options, badge);
-            lock (_promptLock)
-            {
-                _lastLauncherState = state;
-                _ = _shellChannel.SendLauncherStateAsync(true, state with { PromptLine = _promptLine });
-                _launcherStateVisible = true;
-            }
-        }
-    }
-
-    /// <inheritdoc />
     public void RenderTileScreen(TileScreen screen, RenderOptions options, bool paneOnly = false)
     {
         LeaveLinkTreeIfShown();

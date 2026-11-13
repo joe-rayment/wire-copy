@@ -12,16 +12,6 @@ namespace WireCopy.Infrastructure.Scheduling;
 /// </summary>
 public static class RoutineText
 {
-    /// <summary>Launcher footer hint while choosing a site to add to a routine.</summary>
-    public const string AddSiteFooter = "Enter: pick this site for the routine · Esc: back to the routine";
-
-    /// <summary>Status shown when Enter lands on the Reading List / Routines cell while adding a site.</summary>
-    public const string AddSiteNotASite = "That's not a site — pick a site tile or type a web address.";
-
-    public const string HomeStub = "Routines home isn't built yet";
-    public const string EditorStub = "Routine editor isn't built yet";
-    public const string PickStub = "Pick mode isn't built yet";
-    public const string CardRunning = "running…";
     public const string Busy = "Another podcast is generating — try again when it finishes";
     public const string NothingToCollect = "Nothing to collect yet";
     public const string WholeSectionAlready = "Whole section already included — Space on the header removes it";
@@ -31,13 +21,8 @@ public static class RoutineText
     public const string CannotPlace = "Can't place this story — the routine wouldn't find it in its section";
     public const string NameEmpty = "Name can't be empty";
     public const string NameTaken = "A routine with that name already exists";
-    public const string NameEditHint = "type a name · Enter done · Esc keep";
-    public const string PodcastEditHint = "type the podcast name · Enter done · Esc keep";
-    public const string TimeEditHint = "type a time like 07:00 · Enter done · Esc keep";
     public const string PodcastEmpty = "Podcast name can't be empty";
     public const string TimeInvalid = "Enter a time like 07:00";
-    public const string DefaultRoutineName = "New routine";
-    public const string HomeFooter = "[Enter]:open  [n]:new  [r]:run now  [e]:last run  [Space]:on/off  [d]:delete  [Esc]:back";
     public const string FixedRunAgainFormat = "Saved. Press r to run {0} again.";
 
     /// <summary>Status while the fix row looks for audio-engine.</summary>
@@ -51,31 +36,9 @@ public static class RoutineText
 
     /// <summary>Fix result when the person closed the location prompt without choosing.</summary>
     public const string NothingChosen = "Nothing chosen — WireCopy still can't find audio-engine.";
-    public const string RunNowRow = "Run now";
-    public const string RunAgainRow = "Run again";
-    public const string OpenLogRow = "Open the full app log";
-    public const string DetailsRunning = "running…";
-    public const string NeverRanYet = "This routine hasn't run yet.";
-    public const string NoLogKept = "No log was kept for this run.";
-    public const string SavedTo = "Saved to";
-    public const string FeedLabel = "Feed";
-    public const string WhatHappened = "What happened";
-    public const string AtStep = "At step";
     public const string HowToFix = "How to fix";
-    public const string SectionsHeading = "Sections";
-    public const string LogHeading = "Log";
-    public const string EarlierRunsHeading = "Earlier runs";
-    public const string DetailsFooter = "Enter select · r run again · l full log · ↑/↓ move · PgUp/PgDn scroll · Esc back";
-    public const string LastRunRow = "Last run";
-    public const string LastRunAction = "details";
-    public const string NeverRunValue = "never run";
 
-    public const string EditorFooter = "Enter edit · x remove · r run now · Esc back";
-    public const string NewRoutineTitle = "+ New routine";
-    public const string NewRoutineHint = "Enter to create";
     public const string RoutinesTitle = "ROUTINES";
-    public const string HomeTitle = "Routines";
-    public const string HomeEyebrow = "ROUTINES";
 
     /// <summary>Copy shown under the schedule: when runs happen and what a missed one does.</summary>
     public const string ScheduleNote = "Runs while Wire Copy is open. A missed run starts when you next open it.";
@@ -150,21 +113,6 @@ public static class RoutineText
             TakeMode.Slots => "● " + Slots(pick.Positions),
             _ => $"● all {sectionCount}",
         };
-    }
-
-    /// <summary>The default name for a freshly created routine: "New routine", then "New routine 2", "New routine 3", …</summary>
-    public static string UniqueDefaultName(IEnumerable<string> existing)
-    {
-        var taken = new HashSet<string>(existing, StringComparer.OrdinalIgnoreCase);
-        var n = 1;
-        var name = DefaultRoutineName;
-        while (taken.Contains(name))
-        {
-            n++;
-            name = $"{DefaultRoutineName} {n}";
-        }
-
-        return name;
     }
 
     public static string SlotBadge(int position, string sectionName) => $"#{position} · {sectionName}";
@@ -301,8 +249,6 @@ public static class RoutineText
 
     public static string FixedRunAgain(string name) => string.Format(CultureInfo.InvariantCulture, FixedRunAgainFormat, name);
 
-    public static string NarrationReady(string name) => $"Narration is ready. Press r to run {name} again.";
-
     /// <summary>Fix result once audio-engine answers; <paramref name="startedFrom"/> may be null when unknown.</summary>
     public static string AudioEngineRunning(string name, string? startedFrom)
         => $"audio-engine is running{(string.IsNullOrWhiteSpace(startedFrom) ? string.Empty : $" (started from {startedFrom})")}. Press r to run {name} again.";
@@ -378,26 +324,11 @@ public static class RoutineText
         return (local - slot).TotalSeconds > 90 ? slot.ToString("HH:mm", CultureInfo.InvariantCulture) : null;
     }
 
-    public static string DetailsEyebrow(string name) => $"ROUTINE · {name} · LAST RUN";
-
     /// <summary>Local "today 19:16" for a UTC start time.</summary>
     public static string When(DateTime startedAtUtc, DateTimeOffset nowLocal)
     {
         var local = DateTime.SpecifyKind(startedAtUtc, DateTimeKind.Utc).ToLocalTime();
         return DayWord(local, nowLocal.DateTime);
-    }
-
-    /// <summary>When a run row happened: the slot time for a missed run, "(due HH:mm)" appended for a late one.</summary>
-    public static string RunWhen(ScheduledRun run, DateTimeOffset nowLocal)
-    {
-        if (run.Status == ScheduledRunStatus.Skipped && run.ErrorClass == "MissedPastGrace"
-            && DateTime.TryParseExact(run.OccurrenceKey, "yyyy-MM-dd@HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var slot))
-        {
-            return DayWord(slot, nowLocal.DateTime);
-        }
-
-        var when = When(run.StartedAtUtc, nowLocal);
-        return LateDue(run.OccurrenceKey, run.StartedAtUtc) is { } due && run.Status != ScheduledRunStatus.Skipped ? $"{when} (due {due})" : when;
     }
 
     public static string Took(TimeSpan d) =>

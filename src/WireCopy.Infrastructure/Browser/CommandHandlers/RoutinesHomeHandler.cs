@@ -18,7 +18,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
 /// <summary>
 /// workspace-wyvga.4 (R4) — the Routines home: a 2-column card grid (index 0 is the
-/// "+ New routine" card, then the routines in <see cref="LauncherRenderer.SortedRoutines"/> order).
+/// "+ New routine" card, then the routines sorted by name).
 /// </summary>
 internal static class RoutinesHomeHandler
 {

@@ -17,9 +17,8 @@ using WireCopy.Infrastructure.Scheduling;
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
 /// <summary>
-/// The routine editor (workspace-wyvga.5): a Settings-style row screen painted in the terminal.
-/// The caller (Routines home) has already turned routine colours on; this never touches the mode.
-/// Rows and drawing live in <see cref="RoutineEditorScreen"/>. Every change saves at once.
+/// The routine page is a tile screen built by RoutinePage and drawn through RenderTileScreen.
+/// Every change saves at once.
 /// </summary>
 internal static class RoutineEditorHandler
 {
