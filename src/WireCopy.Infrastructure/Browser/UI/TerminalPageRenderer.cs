@@ -67,6 +67,7 @@ public class TerminalPageRenderer : IPageRenderer
     // and the input thread.
     private readonly object _promptLock = new();
     private PromptLineState? _promptLine;
+    private LinkTreeChooser? _chooser;
     private LauncherViewState? _lastLauncherState;
     private LinkTreeViewState? _lastLinkTreeState;
     private bool _launcherHiddenForOverlay; // workspace-wyvga.8: launcher pane hidden because a terminal card is up over it
@@ -153,7 +154,7 @@ public class TerminalPageRenderer : IPageRenderer
             {
                 // Same send pattern as the render path: the channel serialises writes in
                 // call order, so this follows the earlier hide and precedes any later render.
-                _ = _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine });
+                _ = _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine, Chooser = _chooser });
                 _linkTreeStateVisible = true;
             }
         }
@@ -204,7 +205,7 @@ public class TerminalPageRenderer : IPageRenderer
                 lock (_promptLock)
                 {
                     _lastLinkTreeState = linkState;
-                    _ = _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine });
+                    _ = _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine, Chooser = _chooser });
                     _linkTreeStateVisible = true;
                     _linkTreeHiddenForOverlay = false;
                 }
@@ -720,12 +721,33 @@ public class TerminalPageRenderer : IPageRenderer
 
             if (_linkTreeStateVisible && _lastLinkTreeState is { } linkState)
             {
-                return _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = line });
+                return _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = line, Chooser = _chooser });
             }
 
             if (_launcherStateVisible && _lastLauncherState is { } launcherState)
             {
                 return _shellChannel.SendLauncherStateAsync(true, launcherState with { PromptLine = line });
+            }
+
+            return Task.CompletedTask;
+        }
+    }
+
+    /// <summary>
+    /// Shows (or, with null, removes) the in-pane chooser box over the link-tree
+    /// pane and re-sends the pane's last state carrying it. Nothing is sent when the
+    /// link-tree pane is not showing; later renders keep carrying the stored chooser.
+    /// </summary>
+    /// <param name="chooser">The chooser to show, or null to clear it.</param>
+    /// <returns>A task that completes once the state has been handed to the channel.</returns>
+    public Task SetLinkTreeChooserAsync(LinkTreeChooser? chooser)
+    {
+        lock (_promptLock)
+        {
+            _chooser = chooser;
+            if (_shellChannel.IsConnected && _linkTreeStateVisible && _lastLinkTreeState is { } linkState)
+            {
+                return _shellChannel.SendLinkTreeStateAsync(true, linkState with { PromptLine = _promptLine, Chooser = chooser });
             }
 
             return Task.CompletedTask;

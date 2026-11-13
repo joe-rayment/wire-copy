@@ -181,4 +181,12 @@ public interface IPageRenderer
     /// BeginFrame was not invoked (no-op).
     /// </summary>
     void EndFrame();
+
+    /// <summary>
+    /// Shows (or with null removes) a choose-one box inside the link-tree pane so the stories stay
+    /// visible behind it. No-op for renderers without an HTML pane.
+    /// </summary>
+    /// <param name="chooser">The chooser to show, or null to clear it.</param>
+    /// <returns>A task that completes once the state has been handed to the pane.</returns>
+    Task SetLinkTreeChooserAsync(LinkTreeChooser? chooser) => Task.CompletedTask;
 }

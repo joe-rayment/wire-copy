@@ -53,7 +53,11 @@ internal static class ScheduleCommandHandler
         var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
 
         var overlay = new SetupWizardOverlay.State();
-        ctx.SetOverlayPainter(opts => SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+        if (!options.ShellPane)
+        {
+            ctx.SetOverlayPainter(opts => SetupWizardOverlay.Render(overlay, palette, opts.TerminalWidth, opts.TerminalHeight));
+        }
+
         Guid? routineId = null;
         var routineName = string.Empty;
         try
@@ -71,6 +75,7 @@ internal static class ScheduleCommandHandler
             else if (pick == recipes.Count)
             {
                 ctx.SetOverlayPainter(null);
+                await ctx.Renderer.SetLinkTreeChooserAsync(null).ConfigureAwait(false);
                 await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
                 var created = await CreateAsync(ctx, options, store, recipes, palette, ct).ConfigureAwait(false);
                 if (created != null)
@@ -83,6 +88,7 @@ internal static class ScheduleCommandHandler
         finally
         {
             ctx.SetOverlayPainter(null);
+            await ctx.Renderer.SetLinkTreeChooserAsync(null).ConfigureAwait(false);
         }
 
         if (routineId == null)
@@ -134,9 +140,20 @@ internal static class ScheduleCommandHandler
             Subtitle = "Name your routine · Esc cancels",
             Placeholder = "e.g. Morning briefing",
         };
-        var fieldWidth = Math.Min(80, Math.Max(30, options.TerminalWidth - 6));
-        var startRow = Math.Max(0, options.TerminalHeight - FormField.HeightFor(field) - 1);
-        var name = (await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false))?.Trim();
+        string? name;
+        if (options.ShellPane && PromptLineMirror.CanMirror(ctx, out var nameInput))
+        {
+            // The pane hides the terminal, so the name is asked on the pane's prompt line.
+            name = (await PromptLineMirror.RunAsync(
+                ctx.ExportPromptLine, "New routine: ", onChange => nameInput.PromptForInputMirroredAsync("New routine: ", null, ct, null, onChange)).ConfigureAwait(false))?.Trim();
+        }
+        else
+        {
+            var fieldWidth = Math.Min(80, Math.Max(30, options.TerminalWidth - 6));
+            var startRow = Math.Max(0, options.TerminalHeight - FormField.HeightFor(field) - 1);
+            name = (await FormField.PromptAsync(ctx.InputHandler, field, palette, startRow, fieldWidth, ct).ConfigureAwait(false))?.Trim();
+        }
+
         if (name == null)
         {
             return null;
@@ -180,7 +197,21 @@ internal static class ScheduleCommandHandler
         {
             overlay.Mode = SetupWizardOverlay.Mode.Card;
             overlay.Card = card;
-            await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            if (options.ShellPane)
+            {
+                await ctx.Renderer.SetLinkTreeChooserAsync(new LinkTreeChooser
+                {
+                    Title = CardTitle,
+                    Prompt = card.Prompt,
+                    Options = labels,
+                    Selected = card.Cursor,
+                    Hint = card.Hint,
+                }).ConfigureAwait(false);
+            }
+            else
+            {
+                await ctx.RenderCurrentPageAsync(options, ct).ConfigureAwait(false);
+            }
 
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
             switch (command.Type)
