@@ -104,7 +104,7 @@ try {
   for (let i = 0; i < 10; i++) { v = await pane(); if (v.state && v.state.screen === 'run') break; await sleep(200) }
   console.log('after r: screen', v.state && v.state.screen, 'title', v.state && v.state.title, 'ms', Date.now() - tr); shot('after-r')
   console.log('=== 2-4 watch')
-  let prev = '', esc = false, narrating = false
+  let prev = '', esc = false, narrating = false, tN = 0
   const t0 = Date.now()
   while (Date.now() - t0 < 220000) {
     v = await pane(); const s = v.state || {}; const l = line(v)
@@ -119,9 +119,14 @@ try {
       prev = ''
       continue
     }
-    if (esc && s.screen === 'run' && hints.some(h => /narrating story/.test(h))) {
+    if (esc && s.screen === 'run' && hints.some(h => /narrating/.test(h)) && !narrating) {
+      if (!tN) { tN = Date.now(); console.log('=== 4 first narrating line'); shot('narrating-first') }
+    }
+    const gotN = hints.some(h => /narrating story [1-9]\d* of \d+/.test(h))
+    const waited = tN ? (Date.now() - tN) / 1000 : 0
+    if (esc && s.screen === 'run' && tN && (gotN || waited >= 40)) {
       narrating = true
-      console.log('=== 4 narrating'); shot('narrating')
+      console.log(gotN ? `=== narrating story N reached after ${waited.toFixed(1)}s` : '=== 40s passed WITHOUT narrating story N'); shot('narrating-story-N')
       await k('x', 700)
       v = await pane(); console.log('after x: footer', J(v.state.footer), 'hints', J(v.state.hints)); shot('confirm')
       await k('y', 0)
@@ -134,7 +139,7 @@ try {
       break
     }
     if (s.screen === 'run' && s.title && s.title !== 'Running…' && s.title !== 'Stopping…') { console.log('run ended early'); break }
-    await sleep(1500)
+    await sleep(1000)
   }
   console.log('=== 5')
   show('after cancel')

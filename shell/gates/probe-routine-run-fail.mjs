@@ -78,14 +78,21 @@ try {
   console.log('--- 1'); await openHome(); await ps('1-home'); await k('r', 1500); const r1 = await ps('1-run'); shot('run-start')
   await k('Escape', 1000); await ps('1-esc1'); await k('Escape', 1200); const l1 = await ps('1-esc2'); console.log('1 screen', l1?.screen)
   { const t0 = Date.now(); let st = null; while (Date.now() - t0 < 90000) { await sleep(2000); const r = dbRows(); st = r[0]?.[2]; if (st === 4) break } console.log('1 Status', st, 'after', (Date.now() - t0) / 1000, 's') }
-  console.log('--- 2'); const s2 = (await pane())?.state; console.log('2 screen', s2?.screen); sl(s2).forEach(x => console.log('  slot', x)); console.log('2 footer', JSON.stringify(s2?.footer)); shot('launcher-after')
+  console.log('--- 2'); await sleep(3000); let s2 = (await pane())?.state; console.log('2 (3s, no key) screen', s2?.screen, 'footer', JSON.stringify(s2?.footer)); sl(s2).forEach(x => console.log('  slot', x)); shot('launcher-after')
+  if (!s2?.footer?.badge) { await sleep(5000); s2 = (await pane())?.state; console.log('2 (8s, no key) footer', JSON.stringify(s2?.footer)); sl(s2).forEach(x => console.log('  slot', x)); shot('launcher-after8') }
   console.log('--- 3'); await openHome(); const s3 = await ps('3-home'); console.log('3 tile1 alert', JSON.stringify(s3?.slots?.[0]?.alert), 'badge', JSON.stringify(s3?.footer?.badge)); shot('home')
   console.log('--- 4'); await k('Return', 2000); const s4 = await ps('4-failed'); console.log('FAILED_STATE', JSON.stringify(s4)); shot('failed-page')
+  { const lg = (s4?.slots || []).find(x => /log/i.test(x.title || '')); console.log('4 LOG slot', JSON.stringify(lg)) }
+  await k('l', 1500); { const v = await pane(); console.log('4 log visible', v?.visible, 'screen', v?.state?.screen); const t = await termText(); const i = t.indexOf('ffmpeg'); console.log('4 first200', t.slice(0, 200)); console.log('4 hasRunLog', t.includes('Run log'), 'hasFfmpeg', i >= 0); console.log('4 around', i < 0 ? 'none' : t.slice(Math.max(0, i - 150), i + 150)); shot('runlog') }
+  await k('G', 800); console.log('4 G', (await termText()).slice(0, 120)); shot('runlog-bottom')
+  await k('g', 800); console.log('4 g', (await termText()).slice(0, 120))
+  for (let i = 1; i <= 3; i++) { await k('Down', 500); console.log('4 Down' + i, (await termText()).slice(0, 120)) }
+  await k('Escape', 1200); await ps('4-after-log-esc')
   console.log('--- 5'); await k('Return', 4000); await ps('5-after-fix'); console.log('term:', (await termText()).slice(0, 400)); try { console.log('xdg', execFileSync('pgrep', ['-a', 'xdg-open']).toString()) } catch { console.log('xdg none') }; shot('fix-pressed')
   for (let i = 0; i < 6; i++) { const s = (await pane())?.state; if (s && s.screen === 'run') break; await k('Escape', 1000); await ps(`5-esc${i + 1}`) }
   console.log('5 lit after', (await pane())?.state?.selectedIndex)
-  console.log('--- 6'); await k('l', 2500); await ps('6-log'); { const t = await termText(); const i = t.indexOf('ffmpeg'); console.log('6 ffmpeg idx', i, '|', i < 0 ? t.slice(0, 300) : t.slice(Math.max(0, i - 150), i + 150)) } shot('log')
-  await k('Escape', 1200); await ps('6-back')
+
+
   console.log('--- 7'); await k('Escape', 1500); const s7 = await ps('7-home'); console.log('7 tile1 alert', JSON.stringify(s7?.slots?.[0]?.alert), 'badge', JSON.stringify(s7?.footer?.badge))
   await k('Escape', 1500); const s7b = (await pane())?.state; console.log('7 screen', s7b?.screen, 'footer', JSON.stringify(s7b?.footer)); sl(s7b).forEach(x => console.log('  slot', x)); shot('launcher-end')
   console.log('--- 8'); console.log('DB rows'); dbRows().forEach(r => console.log('   ', JSON.stringify(r)))

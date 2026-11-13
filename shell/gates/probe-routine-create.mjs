@@ -192,6 +192,15 @@ try {
     await k('space', 1000); await pickState('5-after-space')
     await k('Escape', 2500); await Q('5-routine', 'site-lit'); await OV('5')
   })
+  await T2('5b-bad-address', async () => {
+    for (let i = 0; i < 12; i++) { const s = await ls(); if (s.selectedIndex === -1) break; await k('Up', 300) }
+    await typeSlow('127.0.0.1:8124/'); await k('Return', 500)
+    const tb = Date.now(); let s = {}
+    for (let i = 0; i < 30; i++) { await sleep(2000); s = await ls(); if (s.screen === 'routine' && s.setupHint) break }
+    console.log(`[A] screen=${s.screen} | sel=${s.selectedIndex} | hint=${JSON.stringify(s.setupHint)} | urlTyping=${JSON.stringify(s.urlTyping)} | took ${Math.round((Date.now() - tb) / 1000)}s`)
+    shot('bad-address')
+    await k('Escape', 1500); await Q('A-esc', 'bad-address-esc')
+  })
   await T2('6', async () => {
     await upToBar(); await Q('6-bar'); await k('Escape', 1000); await Q('6-esc1', 'esc-routine')
     await k('Escape', 1500); await Q('6-esc2', 'back-home')
@@ -201,6 +210,25 @@ try {
     await ch('1', 600); await k('Return', 2500); await pick('7'); await k('space', 1000)
     await k('Escape', 2500); await Q('7-routine', 'hint-row', 300); await OV('7')
     await k('Down', 600); await Q('7-down')
+  })
+  await T2('C-linklist', async () => {
+    for (let i = 0; i < 8; i++) { const s = await ls(); if (s.screen === 'launcher') break; await k('Escape', 800) }
+    const s = await P('C-launcher')
+    const idx = (s.slots || []).findIndex(x => /Routine Fixture Gazette/i.test(x.title || ''))
+    console.log(`[C] fixture slot index=${idx}`)
+    await ch(String(idx + 1), 600); await k('Return', 1500)
+    let vis = false
+    for (let i = 0; i < 40; i++) {
+      const st = await paneState('linktree.html', '__linkTreeState')
+      if (st && st.visible) { vis = true; break }
+      await sleep(500)
+    }
+    await sleep(1500)
+    const full = await term.eval('window.__termText()').catch(() => '')
+    const j = full.indexOf('add to routine')
+    console.log(`[C] linktree visible=${vis} includes=${j >= 0} snippet=${j >= 0 ? JSON.stringify(full.slice(Math.max(0, j - 40), j + 54)) : 'n/a'}`)
+    if (j < 0) console.log('[C] termtext tail: ' + JSON.stringify(full.slice(-400)))
+    shot('linklist')
   })
 } catch (e) {
   console.error('PROBE ERROR:', e)
