@@ -262,7 +262,14 @@ public static class RoutineText
         => $"audio-engine is running now{(string.IsNullOrWhiteSpace(startedFrom) ? string.Empty : $" (started from {startedFrom})")}. Still needed: {stillNeeded}";
 
     /// <summary>Fourth line on a Routines-home card whose newest run needs attention (⚠ for a partial success, ✗ otherwise).</summary>
-    public static string CardAlert(string shortReason, bool partial) => $"{(partial ? "⚠" : "✗")} {shortReason} — e for details";
+    public static string CardAlert(string shortReason, bool partial) => partial ? $"⚠ {StripUrls(shortReason)} · Enter to see" : $"✗ {StripUrls(shortReason)} · Enter to fix";
+
+    /// <summary>Removes http(s) URL tokens from a raw message so plain text never carries an address.</summary>
+    public static string StripUrls(string text) =>
+        System.Text.RegularExpressions.Regex.Replace(text, @"\s*https?://\S+", string.Empty).Trim();
+
+    /// <summary>Routines-home header badge: how many routines need attention.</summary>
+    public static string BadgeOnHome(int count) => count == 1 ? "1 needs attention" : $"{count} need attention";
 
     /// <summary>Where the badge points: the launcher says where to go, the Routines home says what to press.</summary>
     public static string BadgeSuffix(bool onRoutinesHome, bool several)

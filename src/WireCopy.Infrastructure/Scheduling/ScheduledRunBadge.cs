@@ -51,6 +51,11 @@ internal static class ScheduledRunBadge
             return null;
         }
 
+        if (onRoutinesHome)
+        {
+            return RoutineText.BadgeOnHome(attention.Count);
+        }
+
         if (attention.Count > 1)
         {
             return RoutineText.BadgeSeveral(attention.Count, RoutineText.BadgeSuffix(onRoutinesHome, several: true));
@@ -60,10 +65,7 @@ internal static class ScheduledRunBadge
         var suffix = RoutineText.BadgeSuffix(onRoutinesHome, several: false);
         if (run.Status is ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted)
         {
-            // The Routines home card already carries the reason; the badge there only points at it.
-            return onRoutinesHome
-                ? RoutineText.BadgeFailedOnHome(run.RecipeName, suffix)
-                : RoutineText.BadgeFailed(run.RecipeName, RoutineRunDiagnosis.Diagnose(run).Short, suffix);
+            return RoutineText.BadgeFailed(run.RecipeName, RoutineRunDiagnosis.Diagnose(run).Short, suffix);
         }
 
         return IsRecovered(run)

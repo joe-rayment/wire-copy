@@ -26,6 +26,7 @@ internal static class RoutineRunDiagnosis
         ("rejected the API key", "audio-engine rejected the API key"),
         ("Finish setting it up in audio-engine", "audio-engine's narration engine is not ready"),
         ("isn't set up", "audio-engine isn't set up"),
+        ("but isn't ready", "audio-engine is running but isn't ready"),
         ("isn't running at", "audio-engine isn't running"),
     };
 
@@ -74,7 +75,8 @@ internal static class RoutineRunDiagnosis
             {
                 fix = new RunFix(RunFixKind.SetupRow, "Fix it: " + RowName(row), row);
             }
-            else if (run.ErrorMessage?.Contains("Finish setting it up in audio-engine", StringComparison.OrdinalIgnoreCase) == true)
+            else if (run.ErrorMessage?.Contains("Finish setting it up in audio-engine", StringComparison.OrdinalIgnoreCase) == true
+                || run.ErrorMessage?.Contains("but isn't ready", StringComparison.OrdinalIgnoreCase) == true)
             {
                 fix = OpenEngineSettings;
             }
@@ -129,6 +131,28 @@ internal static class RoutineRunDiagnosis
         _ => row.ToString(),
     };
 
+    /// <summary>True when <paramref name="shortText"/> is one of the fixed whole phrases for a known failure.</summary>
+    internal static bool IsKnownShort(string shortText) => KnownShorts.Any(k => k.Phrase == shortText);
+
+    /// <summary>
+    /// First sentence of a raw message with any http(s) URL removed, cut at a word boundary
+    /// with "…" when longer than <paramref name="max"/>.
+    /// </summary>
+    internal static string PlainSentence(string message, int max)
+    {
+        var text = RoutineText.StripUrls(message.Replace('\r', ' ').Replace('\n', ' '));
+        var cut = text.IndexOf(". ", StringComparison.Ordinal);
+        var sentence = (cut >= 0 ? text[..cut] : text).TrimEnd('.', ' ');
+        if (sentence.Length <= max)
+        {
+            return sentence;
+        }
+
+        var space = sentence.LastIndexOf(' ', max - 1);
+        var head = space > 0 ? sentence[..space] : sentence[..(max - 1)];
+        return head.TrimEnd(',', ':', ';', '(', '—', '-', ' ') + "…";
+    }
+
     private static RunDiagnosis Make(string headline, string what, string? step, string? how, RunFix fix, bool attention)
     {
         var oneLine = what.Replace('\r', ' ').Replace('\n', ' ');
@@ -152,14 +176,7 @@ internal static class RoutineRunDiagnosis
             }
         }
 
-        if (firstSentence.Length <= 60)
-        {
-            return firstSentence;
-        }
-
-        var space = firstSentence.LastIndexOf(' ', 59);
-        var head = space > 0 ? firstSentence[..space] : firstSentence[..59];
-        return head.TrimEnd(',', ':', ';', '(', '—', '-', ' ') + "…";
+        return PlainSentence(firstSentence, 60);
     }
 
     private static string TrimRetry(string fix)
