@@ -143,6 +143,7 @@ internal sealed class SchedulerHostedService : BackgroundService
         return slot > pass.Start && slot <= pass.End;
     }
 
+#pragma warning disable SA1204 // helpers sit beside their only caller
     private static DateTimeOffset SlotLocal(ScheduleRecipe recipe, DateOnly day, TimeSpan offset)
     {
         var t = recipe.Cadence.LocalTime;
@@ -231,6 +232,7 @@ internal sealed class SchedulerHostedService : BackgroundService
         }
     }
 
+#pragma warning restore SA1204
     private async Task EvaluateRecipeAsync(
         IServiceScope scope,
         ScheduleRecipe recipe,

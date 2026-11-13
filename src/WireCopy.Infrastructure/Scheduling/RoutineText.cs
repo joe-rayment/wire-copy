@@ -77,6 +77,9 @@ public static class RoutineText
     public const string HomeTitle = "Routines";
     public const string HomeEyebrow = "ROUTINES";
 
+    /// <summary>Copy shown under the schedule: when runs happen and what a missed one does.</summary>
+    public const string ScheduleNote = "Runs while Wire Copy is open. A missed run starts when you next open it.";
+
     private static readonly DayOfWeek[] MonToSun =
     {
         DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday,
@@ -359,9 +362,6 @@ public static class RoutineText
 
         return string.IsNullOrEmpty(shortReason) ? text : $"{text} — {shortReason}";
     }
-
-    /// <summary>Copy shown under the schedule: when runs happen and what a missed one does.</summary>
-    public const string ScheduleNote = "Runs while Wire Copy is open. A missed run starts when you next open it.";
 
     /// <summary>Reason recorded for a day's slot that came and went while Wire Copy was closed.</summary>
     public static string MissedReason(DayOfWeek day) => $"Wire Copy wasn't open on {day.ToString()[..3]}";
