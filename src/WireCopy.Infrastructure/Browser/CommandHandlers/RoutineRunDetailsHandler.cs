@@ -2,159 +2,42 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Podcast;
 using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Domain.Enums.Scheduling;
-using WireCopy.Infrastructure.Browser.Themes;
-using WireCopy.Infrastructure.Browser.UI.Renderers;
 using WireCopy.Infrastructure.Podcast.AudioEngine;
 using WireCopy.Infrastructure.Scheduling;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
 /// <summary>
-/// workspace-9undz — the "last run" screen for one routine: why it failed, the run's log, a one-key
-/// path to the fix, and run-again. Painted in the terminal like <see cref="RoutineEditorScreen"/>.
-/// Opening it (and every finished run while it is open) acknowledges the routine's finished runs.
+/// workspace-6ifpp.3 — the run view for one routine, as launcher tiles: watch a run live, stop it,
+/// or act on the result of the last one. Opening it (and every run that finishes while it is open)
+/// acknowledges the routine's finished runs.
 /// </summary>
 internal static class RoutineRunDetailsHandler
 {
-    private const string Reset = "\x1b[0m";
-    private const int LabelCol = 14;
     private const int MaxFixHops = 3;
-
-    private enum ActionKind
-    {
-        Fix,
-        Again,
-        Log,
-    }
 
     public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid recipeId, CancellationToken ct)
     {
         using var runScope = ctx.ScopeFactory.CreateScope();
         var runNow = runScope.ServiceProvider.GetRequiredService<IScheduleRunNow>();
-        Task<RunNowResult>? runTask = null;
-        Task<NavigationCommand>? inputTask = null;
-        string? status = null;
-        var selected = 0;
-        IReadOnlyList<ActionKind> previousActions = Array.Empty<ActionKind>();
-        var offset = 0;
-        var follow = true;
-
-        await AcknowledgeAsync(ctx, r => r.RecipeId == recipeId).ConfigureAwait(false);
-        while (!ct.IsCancellationRequested)
+        var tracker = runScope.ServiceProvider.GetRequiredService<IRoutineRunTracker>();
+        var signal = new Signal();
+        void OnChanged(object? sender, EventArgs e) => signal.Current.TrySetResult();
+        tracker.Changed += OnChanged;
+        try
         {
-            var (recipe, runs) = await LoadAsync(ctx, recipeId).ConfigureAwait(false);
-            if (recipe is null)
-            {
-                return;
-            }
-
-            var latest = runs.FirstOrDefault();
-            var diagnosis = latest is null ? null : RoutineRunDiagnosis.Diagnose(latest);
-            var actions = BuildActions(diagnosis, latest is null, runTask != null);
-            if (!actions.SequenceEqual(previousActions))
-            {
-                selected = 0;
-                previousActions = actions;
-            }
-
-            selected = Math.Clamp(selected, 0, actions.Count - 1);
-
-            var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-            ctx.Renderer.LeaveHtmlPanes();
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            var width = Math.Max(20, options.TerminalWidth - 2);
-            offset = Draw(helpers, palette, width, options.TerminalHeight, recipe, runs, diagnosis, actions, selected, offset, follow, runTask != null, status);
-
-            inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
-            await Task.WhenAny(runTask is null ? new Task[] { inputTask } : new Task[] { inputTask, runTask }).ConfigureAwait(false);
-
-            if (runTask is { IsCompleted: true })
-            {
-                var finished = runTask;
-                runTask = null;
-                status = finished.IsCompletedSuccessfully && finished.Result.Outcome == RunNowOutcome.Busy ? RoutineText.Busy : null;
-                await AcknowledgeAsync(ctx, r => r.RecipeId == recipeId).ConfigureAwait(false);
-                follow = true;
-            }
-
-            if (!inputTask.IsCompleted)
-            {
-                continue;
-            }
-
-            var command = await inputTask.ConfigureAwait(false);
-            inputTask = null;
-            follow = true;
-            var action = actions[selected];
-            var activate = command.Type == CommandType.ActivateLink;
-            if (command.RawKeyChar == 'r' || (activate && action == ActionKind.Again))
-            {
-                if (runTask is null)
-                {
-                    status = null;
-                    runTask = runNow.RunAsync(recipe, CancellationToken.None);
-                    selected = Math.Max(0, actions.IndexOf(ActionKind.Again));
-                }
-            }
-            else if (command.RawKeyChar == 'l' || (activate && action == ActionKind.Log))
-            {
-                await LogViewerCommandHandler.HandleAsync(ctx, options, ct).ConfigureAwait(false);
-            }
-            else if (activate && action == ActionKind.Fix && latest is not null && diagnosis is not null)
-            {
-                var capturedSelected = selected;
-                var capturedOffset = offset;
-                var capturedOptions = options;
-                void Paint(string interim) => Draw(
-                    new RenderHelpers { TerminalHeight = capturedOptions.TerminalHeight },
-                    BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme),
-                    Math.Max(20, capturedOptions.TerminalWidth - 2),
-                    capturedOptions.TerminalHeight,
-                    recipe,
-                    runs,
-                    diagnosis,
-                    actions,
-                    capturedSelected,
-                    capturedOffset,
-                    true,
-                    false,
-                    interim);
-
-                status = await FixAsync(ctx, options, recipe, latest, diagnosis.Fix, Paint, ct).ConfigureAwait(false);
-                selected = Math.Max(0, actions.IndexOf(ActionKind.Again));
-            }
-            else if (command.Type is CommandType.GoBack or CommandType.Quit)
-            {
-                return;
-            }
-            else if (command.Type == CommandType.TerminalResized)
-            {
-                options = ctx.GetCurrentRenderOptions();
-            }
-            else if (command.Type == CommandType.MoveDown)
-            {
-                selected = Math.Min(actions.Count - 1, selected + 1);
-            }
-            else if (command.Type == CommandType.MoveUp)
-            {
-                selected = Math.Max(0, selected - 1);
-            }
-            else if (command.Type == CommandType.PageDown)
-            {
-                offset += Math.Max(1, options.TerminalHeight - 8);
-                follow = false;
-            }
-            else if (command.Type == CommandType.PageUp)
-            {
-                offset = Math.Max(0, offset - Math.Max(1, options.TerminalHeight - 8));
-                follow = false;
-            }
+            await LoopAsync(ctx, options, recipeId, runNow, tracker, signal, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            tracker.Changed -= OnChanged;
         }
     }
 
@@ -179,6 +62,238 @@ internal static class RoutineRunDetailsHandler
         await unit.SaveChangesAsync().ConfigureAwait(false);
     }
 
+    private static async Task LoopAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        Guid recipeId,
+        IScheduleRunNow runNow,
+        IRoutineRunTracker tracker,
+        Signal signal,
+        CancellationToken ct)
+    {
+        Task<NavigationCommand>? inputTask = null;
+        string? status = null;
+        string? selId = null;
+        Guid? viewRunId = null;
+        var wasRunning = false;
+
+        await AcknowledgeAsync(ctx, r => r.RecipeId == recipeId).ConfigureAwait(false);
+        while (!ct.IsCancellationRequested)
+        {
+            var wakeUp = signal.Reset();
+            var (recipe, runs) = await LoadAsync(ctx, recipeId).ConfigureAwait(false);
+            if (recipe is null)
+            {
+                return;
+            }
+
+            var progress = tracker.Get(recipeId);
+            var running = progress is not null;
+            if (wasRunning && !running)
+            {
+                await AcknowledgeAsync(ctx, r => r.RecipeId == recipeId).ConfigureAwait(false);
+                viewRunId = null;
+                selId = null;
+            }
+
+            wasRunning = running;
+            var viewRun = runs.FirstOrDefault(r => r.Id == viewRunId) ?? runs.FirstOrDefault();
+            var isLatest = viewRun is not null && viewRun.Id == runs[0].Id;
+            var earlier = viewRun is null ? new List<ScheduledRun>() : runs.Skip(runs.IndexOf(viewRun) + 1).ToList();
+            var diagnosis = viewRun is null ? null : RoutineRunDiagnosis.Diagnose(viewRun);
+            var screen = BuildScreen(recipe, progress, viewRun, earlier, isLatest, status);
+            var sel = TileGrid.IndexOfId(screen, selId, 0);
+            screen = screen with { Selected = sel };
+            selId = TileGrid.ItemAt(screen, sel)?.Id;
+            ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
+
+            inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+            var wake = new List<Task> { inputTask, wakeUp };
+            if (running)
+            {
+                wake.Add(Task.Delay(TimeSpan.FromSeconds(1), ct));
+            }
+
+            try
+            {
+                await Task.WhenAny(wake).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                return;
+            }
+
+            if (!inputTask.IsCompleted)
+            {
+                continue;
+            }
+
+            var command = await inputTask.ConfigureAwait(false);
+            inputTask = null;
+            status = null;
+            var key = command.RawKeyChar;
+            var activate = command.Type == CommandType.ActivateLink;
+
+            if (command.Type == CommandType.ShowHelp)
+            {
+                await TileHelp.ShowAsync(ctx, "Run", HelpKeys(running), ct).ConfigureAwait(false);
+                continue;
+            }
+
+            if (command.Type is CommandType.GoBack or CommandType.Quit)
+            {
+                if (!running && !isLatest)
+                {
+                    viewRunId = null;
+                    selId = null;
+                    continue;
+                }
+
+                return;
+            }
+
+            if (command.Type == CommandType.TerminalResized)
+            {
+                options = ctx.GetCurrentRenderOptions();
+                continue;
+            }
+
+            if (key == 'l' || (activate && selId == "log" && !running))
+            {
+                ctx.Renderer.HideLauncherPane();
+                await LogViewerCommandHandler.HandleAsync(ctx, options, ct).ConfigureAwait(false);
+                continue;
+            }
+
+            if (running)
+            {
+                if (key == 'x' && await TileConfirm.AskAsync(ctx, screen, "Stop this run?", ct).ConfigureAwait(false))
+                {
+                    tracker.Cancel(recipeId);
+                }
+
+                continue;
+            }
+
+            if (key is >= '1' and <= '9' && command.Type != CommandType.JumpToIndex)
+            {
+                selId = TileGrid.ItemAt(screen, TileGrid.Jump(screen, key.Value - '0'))?.Id;
+                continue;
+            }
+
+            if (command.Type == CommandType.JumpToIndex)
+            {
+                selId = TileGrid.ItemAt(screen, TileGrid.Jump(screen, command.Count))?.Id;
+                continue;
+            }
+
+            if (command.Type is CommandType.MoveLeft or CommandType.CollapseNode
+                or CommandType.MoveRight or CommandType.ExpandNode
+                or CommandType.MoveUp or CommandType.MoveDown)
+            {
+                var moveType = command.Type switch
+                {
+                    CommandType.CollapseNode => CommandType.MoveLeft,
+                    CommandType.ExpandNode => CommandType.MoveRight,
+                    _ => command.Type,
+                };
+                selId = TileGrid.ItemAt(screen, TileGrid.Move(screen, moveType))?.Id;
+                continue;
+            }
+
+            if (key == 'r' || (activate && selId == "again"))
+            {
+                status = runNow.StartInBackground(recipe) == RunNowOutcome.Busy ? RoutineText.Busy : null;
+                selId = null;
+            }
+            else if (activate && selId == "fix" && viewRun is not null && diagnosis is not null)
+            {
+                ctx.Renderer.HideLauncherPane();
+                var paintRun = viewRun;
+                var paintRecipe = recipe;
+                var paintEarlier = earlier;
+                var paintLatest = isLatest;
+                void Paint(string interim) => ctx.Renderer.RenderTileScreen(
+                    RoutineRunPage.Finished(paintRecipe, paintRun, paintEarlier, paintLatest, DateTimeOffset.Now, 0, interim),
+                    ctx.GetCurrentRenderOptions());
+
+                status = await FixAsync(ctx, options, recipe, viewRun, diagnosis.Fix, Paint, ct).ConfigureAwait(false);
+                selId = "again";
+            }
+            else if (activate && viewRun is not null && selId is not null)
+            {
+                if (selId.StartsWith("run:", StringComparison.Ordinal) && Guid.TryParse(selId.AsSpan(4), out var earlierId))
+                {
+                    viewRunId = earlierId;
+                    selId = null;
+                }
+                else
+                {
+                    status = ActivateResult(ctx, selId, viewRun);
+                }
+            }
+        }
+    }
+
+    private static TileScreen BuildScreen(
+        ScheduleRecipe recipe, RoutineRunProgress? progress, ScheduledRun? viewRun, IReadOnlyList<ScheduledRun> earlier, bool isLatest, string? status)
+    {
+        var now = DateTimeOffset.Now;
+        if (progress is not null)
+        {
+            return RoutineRunPage.Running(recipe, progress, now);
+        }
+
+        if (viewRun is null)
+        {
+            return RoutineRunPage.NeverRan(recipe) with { HintRow = status };
+        }
+
+        return RoutineRunPage.Finished(recipe, viewRun, earlier, isLatest, now, 0, status);
+    }
+
+    private static IReadOnlyList<(string Key, string What)> HelpKeys(bool running)
+    {
+        if (running)
+        {
+            return
+            [
+                ("X", "Stop the run"),
+                ("ESC", "Leave it running"),
+                ("L", "Open the log"),
+            ];
+        }
+
+        return
+        [
+            ("ENTER", "Do what is lit"),
+            ("1-9", "Jump to a tile"),
+            ("R", "Run again"),
+            ("L", "Open the log"),
+            ("← ↑ ↓ →", "Move"),
+            ("ESC", "Back"),
+        ];
+    }
+
+    /// <summary>Performs the Enter action of a finished-run tile; returns the hint row text, if any.</summary>
+    private static string? ActivateResult(CommandContext ctx, string id, ScheduledRun run)
+    {
+        switch (id)
+        {
+            case "play" when !string.IsNullOrWhiteSpace(run.TargetLocalPath):
+                SettingsCommandHandler.OpenExternal(run.TargetLocalPath, ctx.Logger);
+                return "Opening the episode…";
+            case "copyFeed" when !string.IsNullOrWhiteSpace(run.TargetFeedUrl):
+                Osc52Clipboard.Copy(run.TargetFeedUrl);
+                return "Feed address copied";
+            case "showFile" when !string.IsNullOrWhiteSpace(run.TargetLocalPath):
+                SettingsCommandHandler.OpenExternal(Path.GetDirectoryName(run.TargetLocalPath) ?? run.TargetLocalPath, ctx.Logger);
+                return run.TargetLocalPath;
+            default:
+                return null;
+        }
+    }
+
     private static async Task<(ScheduleRecipe? Recipe, List<ScheduledRun> Runs)> LoadAsync(CommandContext ctx, Guid recipeId)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
@@ -195,29 +310,6 @@ internal static class RoutineRunDetailsHandler
             .OrderByDescending(r => r.StartedAtUtc)
             .ToList();
         return (recipe, runs);
-    }
-
-    private static List<ActionKind> BuildActions(RunDiagnosis? diagnosis, bool neverRan, bool running)
-    {
-        var list = new List<ActionKind>();
-        if (running && !neverRan)
-        {
-            list.Add(ActionKind.Log);
-            return list;
-        }
-
-        if (!neverRan && diagnosis is { Fix.Kind: RunFixKind.SetupRow or RunFixKind.OpenSite or RunFixKind.OpenEngineSettings })
-        {
-            list.Add(ActionKind.Fix);
-        }
-
-        list.Add(ActionKind.Again);
-        if (!neverRan)
-        {
-            list.Add(ActionKind.Log);
-        }
-
-        return list;
     }
 
     private static async Task<string> FixAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ScheduledRun run, RunFix fix, Action<string> paint, CancellationToken ct)
@@ -344,254 +436,18 @@ internal static class RoutineRunDetailsHandler
         return RoutineText.AudioEngineRunning(recipe.Name, launcher.Discover().Program?.Display);
     }
 
-    private static int Draw(
-        RenderHelpers helpers,
-        ThemePalette palette,
-        int width,
-        int terminalHeight,
-        ScheduleRecipe recipe,
-        IReadOnlyList<ScheduledRun> runs,
-        RunDiagnosis? diagnosis,
-        IReadOnlyList<ActionKind> actions,
-        int selected,
-        int offset,
-        bool follow,
-        bool running,
-        string? status)
+    private sealed class Signal
     {
-        var dim = palette.GetDimFg().AnsiFg;
-        var primary = palette.PrimaryText.AnsiFg;
-        var now = DateTimeOffset.Now;
-        helpers.Clear();
-        helpers.WriteLine();
-        helpers.WriteLine($"  {palette.GetRoutineAccentFg().AnsiFg}{RenderHelpers.TruncateText(RoutineText.DetailsEyebrow(recipe.Name), width - 4)}{Reset}");
-        helpers.WriteLine();
+        private TaskCompletionSource _current = new(TaskCreationOptions.RunContinuationsAsynchronously);
 
-        var body = new List<string>();
-        var selectedLine = 0;
-        var latest = runs.FirstOrDefault();
-        if (latest is null || diagnosis is null)
+        public TaskCompletionSource Current => Volatile.Read(ref _current);
+
+        /// <summary>Arms a fresh signal and returns the task that completes when the tracker next changes.</summary>
+        public Task Reset()
         {
-            body.Add($"  {dim}{RoutineText.NeverRanYet}{Reset}");
-            if (running)
-            {
-                body.Add($"  {palette.GetWarningFg().AnsiFg}{RoutineText.DetailsRunning}{Reset}");
-            }
-
-            body.Add(string.Empty);
-            selectedLine = body.Count;
-            body.Add(ActionLine(palette, width, true, RoutineText.RunNowRow));
+            var fresh = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+            Volatile.Write(ref _current, fresh);
+            return fresh.Task;
         }
-        else
-        {
-            var color = running ? palette.GetWarningFg().AnsiFg : HeadlineColor(palette, diagnosis.Headline);
-            if (running)
-            {
-                body.Add($"  {color}{RenderHelpers.TruncateText(RoutineText.CardRunning, width - 4)}{Reset}");
-            }
-            else
-            {
-                var took = latest.FinishedAtUtc is { } fin ? " · took " + RoutineText.Took(fin - latest.StartedAtUtc) : string.Empty;
-                body.Add($"  {color}{RenderHelpers.TruncateText($"{diagnosis.Headline} · {RoutineText.RunWhen(latest, now)}{took}", width - 4)}{Reset}");
-                if (latest.Status is ScheduledRunStatus.Completed or ScheduledRunStatus.PartialSuccess)
-                {
-                    AddLabelled(body, width, dim, primary, RoutineText.SavedTo, latest.TargetLocalPath);
-                    AddLabelled(body, width, dim, primary, RoutineText.FeedLabel, latest.TargetFeedUrl);
-                }
-            }
-
-            body.Add(string.Empty);
-            if (!running)
-            {
-                AddLabelled(body, width, dim, primary, RoutineText.WhatHappened, diagnosis.What);
-                AddLabelled(body, width, dim, primary, RoutineText.AtStep, diagnosis.Step);
-                AddLabelled(body, width, dim, primary, RoutineText.HowToFix, diagnosis.HowToFix);
-                body.Add(string.Empty);
-            }
-
-            for (var i = 0; i < actions.Count; i++)
-            {
-                if (i == selected)
-                {
-                    selectedLine = body.Count;
-                }
-
-                var label = actions[i] switch
-                {
-                    ActionKind.Fix => diagnosis.Fix.Label,
-                    ActionKind.Again => RoutineText.RunAgainRow,
-                    _ => RoutineText.OpenLogRow,
-                };
-                body.Add(ActionLine(palette, width, i == selected, label));
-            }
-
-            if (!running)
-            {
-                AddSteps(body, palette, width, RoutineRunDiagnosis.Steps(latest));
-                body.Add(string.Empty);
-                body.Add($"  {palette.SecondaryText.AnsiFg}{RoutineText.LogHeading}{Reset}");
-                var log = RoutineRunLog.Read(latest.Id);
-                if (log.Count == 0)
-                {
-                    body.Add($"    {dim}{RoutineText.NoLogKept}{Reset}");
-                }
-
-                foreach (var line in log)
-                {
-                    var lineColor = LogColor(palette, line, dim);
-                    AddWrapped(body, line, lineColor, width);
-                }
-            }
-
-            if (runs.Count > (running ? 0 : 1))
-            {
-                body.Add(string.Empty);
-                body.Add($"  {palette.SecondaryText.AnsiFg}{RoutineText.EarlierRunsHeading}{Reset}");
-                foreach (var older in runs.Skip(running ? 0 : 1).Take(5))
-                {
-                    var d = RoutineRunDiagnosis.Diagnose(older);
-                    var text = $"{d.Headline} · {RoutineText.RunWhen(older, now)}" + (d.Short.Length > 0 ? " · " + d.Short : string.Empty);
-                    AddWrapped(body, text, HeadlineColor(palette, d.Headline), width);
-                }
-            }
-        }
-
-        var statusLines = status is null
-            ? new List<string>()
-            : RenderHelpers.WrapText(status, Math.Max(10, width - 4)).ToList();
-        var budget = Math.Max(3, terminalHeight - 3 - 3 - Math.Max(0, statusLines.Count - 1));
-        var maxOffset = Math.Max(0, body.Count - budget);
-        if (follow)
-        {
-            if (selectedLine < offset)
-            {
-                offset = selectedLine;
-            }
-            else if (selectedLine >= offset + budget)
-            {
-                offset = selectedLine - budget + 1;
-            }
-        }
-
-        offset = Math.Clamp(offset, 0, maxOffset);
-        foreach (var line in body.Skip(offset).Take(budget))
-        {
-            helpers.WriteLine(line);
-        }
-
-        helpers.WriteLine();
-        if (statusLines.Count == 0)
-        {
-            helpers.WriteLine(string.Empty);
-        }
-
-        foreach (var statusLine in statusLines)
-        {
-            helpers.WriteLine($"  {palette.GetWarningFg().AnsiFg}{statusLine}{Reset}");
-        }
-
-        helpers.WriteLine($"  {dim}{RenderHelpers.TruncateText(RoutineText.DetailsFooter, width - 4)}{Reset}");
-        helpers.ClearRemainingLines();
-        return offset;
-    }
-
-    private static string HeadlineColor(ThemePalette palette, string headline)
-    {
-        if (headline.StartsWith('✗'))
-        {
-            return palette.ErrorFg.AnsiFg;
-        }
-
-        if (headline.StartsWith('⚠'))
-        {
-            return palette.GetWarningFg().AnsiFg;
-        }
-
-        if (headline.StartsWith("missed", StringComparison.Ordinal))
-        {
-            return palette.GetDimFg().AnsiFg;
-        }
-
-        return headline.StartsWith('✓') ? palette.GetSuccessFg().AnsiFg : palette.GetDimFg().AnsiFg;
-    }
-
-    // The drill-down never cuts anything: wrap to the width, continuation lines indented 4 more.
-    private static void AddWrapped(List<string> body, string text, string color, int width)
-    {
-        var first = true;
-        foreach (var part in RenderHelpers.WrapText(text, Math.Max(10, width - 10)))
-        {
-            body.Add($"{(first ? "    " : "        ")}{color}{part}{Reset}");
-            first = false;
-        }
-    }
-
-    private static string LogColor(ThemePalette palette, string line, string dim)
-    {
-        if (line.Contains("ERR", StringComparison.Ordinal))
-        {
-            return palette.ErrorFg.AnsiFg;
-        }
-
-        return line.Contains("WRN", StringComparison.Ordinal) ? palette.GetWarningFg().AnsiFg : dim;
-    }
-
-    private static void AddLabelled(List<string> body, int width, string dim, string primary, string label, string? text)
-    {
-        if (string.IsNullOrWhiteSpace(text))
-        {
-            return;
-        }
-
-        var lines = RenderHelpers.WrapText(text, Math.Max(10, width - 4 - LabelCol));
-        for (var i = 0; i < lines.Count; i++)
-        {
-            var head = i == 0 ? label.PadRight(LabelCol) : new string(' ', LabelCol);
-            body.Add($"  {dim}{head}{Reset}{primary}{lines[i]}{Reset}");
-        }
-    }
-
-    private static void AddSteps(List<string> body, ThemePalette palette, int width, IReadOnlyList<WireCopy.Application.DTOs.Scheduling.RunStepOutcome> steps)
-    {
-        if (steps.Count == 0)
-        {
-            return;
-        }
-
-        body.Add(string.Empty);
-        body.Add($"  {palette.SecondaryText.AnsiFg}{RoutineText.SectionsHeading}{Reset}");
-        foreach (var step in steps)
-        {
-            var ok = step.ItemsContributed > 0 && step.Status is "Resolved" or "Recovered";
-            var (glyph, color) = ("✓", palette.GetSuccessFg().AnsiFg);
-            if (!ok)
-            {
-                (glyph, color) = ("✗", palette.ErrorFg.AnsiFg);
-            }
-            else if (step.Status == "Recovered")
-            {
-                (glyph, color) = ("⚠", palette.GetWarningFg().AnsiFg);
-            }
-
-            var host = Uri.TryCreate(step.SourceUrl, UriKind.Absolute, out var u) ? u.Host : step.SourceUrl;
-            var stories = step.ItemsContributed == 1 ? "story" : "stories";
-            body.Add($"    {color}{glyph}{Reset} {palette.PrimaryText.AnsiFg}{RenderHelpers.TruncateText($"{step.SectionName} · {step.ItemsContributed} {stories} — {host}", width - 8)}{Reset}");
-            if (!string.IsNullOrWhiteSpace(step.Diagnostic))
-            {
-                foreach (var l in RenderHelpers.WrapText(step.Diagnostic, Math.Max(10, width - 10)))
-                {
-                    body.Add($"      {palette.GetDimFg().AnsiFg}{l}{Reset}");
-                }
-            }
-        }
-    }
-
-    private static string ActionLine(ThemePalette palette, int width, bool selected, string text)
-    {
-        var plain = RenderHelpers.TruncateText(text, Math.Max(4, width - 8)).PadRight(Math.Max(4, width - 8));
-        var gutter = $"{palette.GetMutedFg().AnsiFg}{(selected ? "▌" : " ")}{Reset}";
-        return selected
-            ? $"  {gutter} {palette.SelectedItemBg.AnsiBg}{palette.SelectedItemFg.AnsiFg}{plain}{Reset}"
-            : $"  {gutter} {palette.GetRoutineAccentFg().AnsiFg}{plain.TrimEnd()}{Reset}";
     }
 }
