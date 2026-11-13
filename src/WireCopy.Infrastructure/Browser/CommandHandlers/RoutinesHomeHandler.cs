@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Application.Interfaces.Browser;
 using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Scheduling;
@@ -29,9 +30,9 @@ internal static class RoutinesHomeHandler
         var modeService = scope.ServiceProvider.GetRequiredService<IUiModeService>();
 
         modeService.Set(UiMode.Routine);
-        var running = new HashSet<Guid>();
-        var runs = new Dictionary<Guid, Task<RunNowResult>>();
+        var tracker = scope.ServiceProvider.GetRequiredService<IRoutineRunTracker>();
         Task<NavigationCommand>? inputTask = null;
+        string? busyHint = null;
         try
         {
             var recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
@@ -43,7 +44,14 @@ internal static class RoutinesHomeHandler
             {
                 var (alerts, badge) = await LoadAttentionAsync(ctx, recipes).ConfigureAwait(false);
                 var now = DateTimeOffset.Now;
+                var running = tracker.Active.ToDictionary(x => x.RecipeId);
                 var screen = RoutinesHomePage.Build(recipes, running, alerts, badge, now, sel);
+                if (busyHint is not null)
+                {
+                    screen = screen with { HintRow = busyHint };
+                    busyHint = null;
+                }
+
                 if (recipes.Count == 0)
                 {
                     sel = TileGrid.Bar;
@@ -58,24 +66,7 @@ internal static class RoutinesHomeHandler
                 ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
                 inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
-                await Task.WhenAny(new Task[] { inputTask }.Concat(runs.Values)).ConfigureAwait(false);
-
-                // Any finished run: drop it from "running", surface Busy, refresh from the store.
-                var done = runs.Where(kv => kv.Value.IsCompleted).ToList();
-                if (done.Count > 0)
-                {
-                    foreach (var (id, task) in done)
-                    {
-                        runs.Remove(id);
-                        running.Remove(id);
-                        if (task.IsCompletedSuccessfully && task.Result.Outcome == RunNowOutcome.Busy)
-                        {
-                            ctx.NavigationService.SetStatusMessage(RoutineText.Busy, TimeSpan.FromSeconds(6));
-                        }
-                    }
-
-                    recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
-                }
+                await RoutineEditorHandler.WakeAsync(inputTask, tracker, running.Count > 0, ct).ConfigureAwait(false);
 
                 if (!inputTask.IsCompleted)
                 {
@@ -114,7 +105,7 @@ internal static class RoutinesHomeHandler
                     if (made is { } madeId)
                     {
                         selId = "routine:" + madeId;
-                        sel = TileGrid.IndexOfId(RoutinesHomePage.Build(recipes, running, null, null, DateTimeOffset.Now, 0), selId, 0);
+                        sel = TileGrid.IndexOfId(RoutinesHomePage.Build(recipes, new Dictionary<Guid, RoutineRunProgress>(), null, null, DateTimeOffset.Now, 0), selId, 0);
                     }
 
                     continue;
@@ -132,14 +123,15 @@ internal static class RoutinesHomeHandler
                         selId = null; // an explicit move: do not snap back to the previous tile
                         continue;
                     case 'r' when current != null:
-                        if (running.Add(current.Id))
+                        if (runNow.StartInBackground(current) == RunNowOutcome.Busy)
                         {
-                            runs[current.Id] = runNow.RunAsync(current, CancellationToken.None);
+                            busyHint = RoutineText.Busy;
                         }
 
+                        await RoutineRunDetailsHandler.OpenAsync(ctx, options, current.Id, ct).ConfigureAwait(false);
+                        recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         continue;
                     case 'e' when current != null:
-                        ctx.Renderer.HideLauncherPane();
                         await RoutineRunDetailsHandler.OpenAsync(ctx, options, current.Id, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         continue;
@@ -204,6 +196,10 @@ internal static class RoutinesHomeHandler
                         }
 
                         await store.SaveAsync(current).ConfigureAwait(false);
+                        recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
+                        break;
+                    case CommandType.ActivateLink when current != null && alerts.ContainsKey(current.Id):
+                        await RoutineRunDetailsHandler.OpenAsync(ctx, options, current.Id, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         break;
                     case CommandType.ActivateLink:
@@ -277,7 +273,7 @@ internal static class RoutinesHomeHandler
                 string.Empty,
                 typed,
                 hint,
-                (_, hintRow) => RoutinesHomePage.Build(recipes, new HashSet<Guid>(), null, null, DateTimeOffset.Now, TileGrid.Bar) with { HintRow = hintRow },
+                (_, hintRow) => RoutinesHomePage.Build(recipes, new Dictionary<Guid, RoutineRunProgress>(), null, null, DateTimeOffset.Now, TileGrid.Bar) with { HintRow = hintRow },
                 ct).ConfigureAwait(false);
             if (string.IsNullOrWhiteSpace(input))
             {
