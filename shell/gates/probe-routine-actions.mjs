@@ -157,7 +157,7 @@ try {
   await sleep(2000)
   await T('A', async () => {
     await openHome()
-    await ch('2', 600); await k('Return', 2000)
+    { const h = await ls(); const mi = (h.slots || []).findIndex(x => x && x.title === 'MORNING BRIEF'); await ch(String(mi + 1), 600) } await k('Return', 2000)
     const s = await full('A', 'page'); console.log('  slots:', JSON.stringify((s.slots || []).map(x => x.title)), 'hr=', JSON.stringify(s.headerRight || s.status))
     J('A')
   })

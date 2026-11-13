@@ -169,7 +169,7 @@ try {
     await k('Up'); await dump('3-up', '04-moved')
   })
   await T('4', async () => {
-    await ch('1'); await dump('4-sel1', '04-sel')
+    await k('Escape'); await ch('1'); await dump('4-sel1', '04-sel')
     await ch(' '); await dump('4-off', '05-off', 1500, true)
     await ch(' '); await dump('4-on', '06-on', 1500)
   })
@@ -179,7 +179,7 @@ try {
     await ch('d'); await ch('y', 1500); await dump('5-deleted', '08-deleted', 1200, true)
   })
   await T('6', async () => { await ch('n'); await dump('6-bar', '09-bar') })
-  await T('7', async () => { await k('Escape', 2000); await dump('7-launcher', '10-launcher', 1200, true) })
+  await T('7', async () => { await k('Escape', 800); await k('Escape', 2000); await dump('7-launcher', '10-launcher', 1200, true) })
 } catch (e) {
   console.error('PROBE ERROR:', e)
   console.error(shell.stderrText.slice(-2000))

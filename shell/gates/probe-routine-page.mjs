@@ -163,7 +163,7 @@ try {
     console.log('  bar focus:', JSON.stringify(s.active))
   })
   await T('04', async () => {
-    await ch('1'); await k('Return', 2500)
+    await k('Escape'); await ch('1'); await k('Return', 2500)
     await waitTree()
     await step2('4a', 'pick', 1000)
     await k('Escape', 2500); await step2('4b', 'back')
