@@ -336,7 +336,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 }
                 else if (p.CurrentArticleChunkTotal > 0)
                 {
-                    var part = Math.Clamp(p.CurrentArticleChunkIndex, 1, p.CurrentArticleChunkTotal);
+                    var part = Math.Min(p.CurrentArticleChunkIndex + 1, p.CurrentArticleChunkTotal);
                     _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"narrating · part {part} of {p.CurrentArticleChunkTotal}");
                 }
                 else if (p.PercentComplete > 0)
