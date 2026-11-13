@@ -309,10 +309,21 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         switch (p.Phase)
         {
             case PodcastPhase.CachingContent:
-                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "reading the stories");
+                if (p.TotalArticles > 0 && p.CurrentArticle > 0)
+                {
+                    var reading = string.IsNullOrWhiteSpace(p.ArticleTitle) ? null : $"“{p.ArticleTitle}”";
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"reading story {p.CurrentArticle} of {p.TotalArticles}", reading);
+                    _tracker.Update(recipeId, r => r with { StoriesDone = p.CurrentArticle, StoriesTotal = p.TotalArticles });
+                }
+                else
+                {
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "reading the stories");
+                }
+
                 break;
             case PodcastPhase.GeneratingAudio:
-                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"story {p.CurrentArticle} of {p.TotalArticles}", $"“{p.ArticleTitle}”");
+                var narrating = p.TotalArticles > 0 ? $"narrating story {p.CurrentArticle} of {p.TotalArticles}" : "narrating the stories";
+                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, narrating, $"“{p.ArticleTitle}”");
                 _tracker.Update(recipeId, r => r with { StoriesDone = p.CurrentArticle, StoriesTotal = p.TotalArticles });
                 break;
             case PodcastPhase.AssemblingAudio:
@@ -521,7 +532,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
         try
         {
-            await PersistAsync(recipe, run, RunStatus.Failed).ConfigureAwait(false);
+            await PersistAsync(recipe, run, userStopped ? RunStatus.Stopped : RunStatus.Failed).ConfigureAwait(false);
         }
         catch (Exception ex)
         {

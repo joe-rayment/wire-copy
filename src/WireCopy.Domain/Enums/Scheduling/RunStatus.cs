@@ -13,4 +13,5 @@ public enum RunStatus
     PartialSuccess,
     Failed,
     Skipped,
+    Stopped,
 }

@@ -183,6 +183,7 @@ public static class RoutineText
             RunStatus.PartialSuccess => $"last: ⚠ partial{suffix}",
             RunStatus.Failed => $"last: ✗ failed{suffix}",
             RunStatus.Skipped => $"last: skipped{suffix}",
+            RunStatus.Stopped => $"last: stopped{suffix}",
             _ => "never run",
         };
     }
@@ -296,6 +297,7 @@ public static class RoutineText
         {
             ScheduledRunStatus.Completed => "✓",
             ScheduledRunStatus.PartialSuccess => "⚠ partial",
+            ScheduledRunStatus.Interrupted when run.ErrorClass == "Cancelled" => "stopped",
             ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted => "✗ failed",
             ScheduledRunStatus.Skipped => run.ErrorClass == "MissedPastGrace" ? "missed" : "skipped",
             _ => "running",
