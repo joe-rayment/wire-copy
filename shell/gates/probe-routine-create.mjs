@@ -166,41 +166,41 @@ try {
   const goTo = async title => { for (let i = 0; i < 16; i++) { const s = await ls(); if (s.slots?.[s.selectedIndex]?.title?.toLowerCase() === title.toLowerCase()) return true; await k('Down', 300) } return false }
   const T2 = async (name, fn) => { console.log('--- ' + name); try { await fn() } catch (e) { console.log(`  STEP FAILED ${name}: ${e.message}`); try { shot(name + '-failed') } catch {} } }
 
+  const OV = async id => { try { const t = await findTarget(env.cdpPort, x => x.url.includes('launcher.html'), 1500, 'launcher.html'); const c = await Cdp.connect(t.webSocketDebuggerUrl); const v = await c.eval('document.documentElement.scrollHeight + " vs inner " + innerHeight'); c.close(); console.log(`[${id}] overflow scrollHeight ${v}`) } catch (e) { console.log(`[${id}] overflow ERR ${e.message}`) } }
+  const Q = async (id, shotName, wait = 1200) => { await sleep(wait); const s = await ls(); const sl = s.slots || []
+    console.log(`[${id}] ${s.screen} | ${JSON.stringify(s.title)} | eyebrow=${JSON.stringify(s.eyebrow)} | sel=${s.selectedIndex} (${JSON.stringify(sl[s.selectedIndex]?.title)}) | buf=${JSON.stringify(s.urlTyping?.buffer)} | hint=${JSON.stringify(s.setupHint)} | slots=${JSON.stringify(sl.map(x => x.title))}${s.err ? ' ERR ' + s.err : ''}`)
+    if (shotName) shot(shotName); return s }
+  const upToBar = async () => { for (let i = 0; i < 12; i++) { const s = await ls(); if (s.selectedIndex === -1) break; await k('Up', 300) } }
+  const pick = async id => { await sleep(1500); for (let q = 0; q < 3 && !(await waitTree()); q++); await pickState(id) }
   await T2('1', async () => {
-    await openHome(); await P('1-home')
-    await ch('n', 800); await typeSlow('Trial run'); await P('1-naming', 'naming'); JS('1-naming')
-    await k('Return', 1500); await P('1-addsite', 'addsite'); JS('1-addsite')
+    await openHome(); await Q('1-home')
+    await ch('n', 800); await Q('1-n')
+    await k('Escape', 1000); await Q('1-esc', 'esc-on-bar')
   })
   await T2('2', async () => {
-    await k('Return', 2500); for (let q = 0; q < 2 && !(await waitTree()); q++); await pickState('2'); await P('2-pick', 'pick', 800)
-    await k('space', 1000); await pickState('2-after-space')
-    await k('Escape', 2500); await P('2-page', 'page'); JS('2-page')
+    await ch('n', 800); await typeSlow('quick hits'); await Q('2-typed', 'typed-name'); await OV('2')
+    await k('Return', 1500); await Q('2-addsite', 'addsite')
   })
   await T2('3', async () => {
-    await k('Escape', 1500); await P('3-home')
-    await ch('n', 800); await P('3-n'); await k('Escape', 1000); await P('3-n-esc'); JS('3-n-esc')
-    if ((await ls()).screen !== 'routines') { await ch(':routines', 600); await k('Return', 2000) }
-    await ch('n', 800); await typeSlow('Empty'); await P('3-empty-typed'); await k('Return', 1500); await P('3-empty-addsite'); await k('Escape', 1500); await P('3-emptypage', 'emptypage')
-    await k('Escape', 1500); await P('3-home2', 'home')
+    await k('Escape', 2000); await Q('3-routine', 'routine-nosite')
   })
   await T2('4', async () => {
-    { const s0 = await ls(); const ix = (s0.slots || []).findIndex(x => x.title === 'MORNING BRIEF'); await ch(String(ix + 1), 600); console.log('morning idx', ix, (await ls()).slots?.[(await ls()).selectedIndex]?.title) } await k('Return', 1500); await P('4-page')
-    for (let i = 0; i < 12; i++) { const s = await ls(); if (s.selectedIndex === -1) break; await k('Up', 300) }
-    await P('4-bar')
-    await ch('h', 600); await P('4-h'); await typeSlow('ttp:/'); await typeSlow('/127.0.0.1:8124/'); await k('Home', 300); await ch('h', 400); await P('4-typed')
-    await k('Return', 2500); for (let q = 0; q < 3 && !(await waitTree()); q++); await pickState('4'); await P('4-pick', 'pick2', 800)
-    await k('Escape', 2500); await P('4-routine'); JS('4')
+    await upToBar(); await Q('4-bar'); await typeSlow('http://127.0.0.1:8124/'); await Q('4-typed', 'typed-url')
+    await k('Return', 2500); await pick('4'); await shot('pick')
   })
   await T2('5', async () => {
-    await k('Down', 600); await P('5-down'); await ch('1', 800); await ch('d', 1000); await P('5-confirm', 'confirm')
-    await ch('n', 800); await P('5-after-n')
+    await k('space', 1000); await pickState('5-after-space')
+    await k('Escape', 2500); await Q('5-routine', 'site-lit'); await OV('5')
   })
   await T2('6', async () => {
-    await ch('?', 1000); await P('6-help', 'help')
-    await k('Escape', 1200); await P('6-back')
-    await k('Escape', 1500); await P('6-home')
-    await ch('?', 1000); await P('6-help-home', 'help-home')
-    await k('Escape', 1200); await P('6-end')
+    await upToBar(); await Q('6-bar'); await k('Escape', 1000); await Q('6-esc1', 'esc-routine')
+    await k('Escape', 1500); await Q('6-esc2', 'back-home')
+  })
+  await T2('7', async () => {
+    await ch('n', 800); await typeSlow('jk reads'); await k('Return', 1500); await Q('7-addsite')
+    await ch('1', 600); await k('Return', 2500); await pick('7'); await k('space', 1000)
+    await k('Escape', 2500); await Q('7-routine', 'hint-row', 300); await OV('7')
+    await k('Down', 600); await Q('7-down')
   })
 } catch (e) {
   console.error('PROBE ERROR:', e)

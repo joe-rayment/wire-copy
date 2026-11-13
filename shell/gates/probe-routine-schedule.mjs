@@ -44,7 +44,7 @@ const step = (sectionName, takeMode = 'WholeSection', takeCount = 0) => ({
   takeMode, takeCount, positions: [], required: false
 })
 const recipe = (id, name, enabled, days, localTime, steps) => ({
-  id, name, enabled, days, localTime, steps, outputCollectionName: name, version: 1, lastStatus: 'Never'
+  id, name, enabled, days, localTime, steps, outputCollectionName: name, version: 1, lastStatus: 'Never', scheduleArmedAtUtc: new Date().toISOString()
 })
 fs.writeFileSync(path.join(dataDir, 'schedules.json'), JSON.stringify({
   version: 1,
@@ -54,8 +54,7 @@ fs.writeFileSync(path.join(dataDir, 'schedules.json'), JSON.stringify({
       [step('World'), step('Science', 'TopN', 3)]),
     recipe('a1000000-0000-4000-8000-000000000002', 'Weekend long reads', true,
       ['Saturday', 'Sunday'], '09:30', [step('Arts')]),
-    recipe('a1000000-0000-4000-8000-000000000003', 'Disaster watch', false, ALL, '18:00', [step('Disasters')]),
-    recipe('a1000000-0000-4000-8000-000000000004', 'Empty one', true, ALL, '05:00', [])
+    recipe('a1000000-0000-4000-8000-000000000003', 'Disaster watch', false, ALL, '18:00', [step('Disasters')])
   ]
 }, null, 2))
 
@@ -162,47 +161,39 @@ try {
     await line('0-page', null)
     await ch('3'); await k('Return', 2000); await line('1', 'ck2-01-sched', true, true)
   })
+  const L = async (lab, shotName) => {
+    await sleep(900); const s = await ls()
+    console.log(`[${lab}] ${s.screen} | ${s.title} | ${s.tagline} | sel=${s.selectedIndex} | lit=${JSON.stringify(s.slots?.[s.selectedIndex]?.title)} | cols=${s.columns} | typing=${JSON.stringify(s.urlTyping)}`)
+    if (shotName) shot(shotName); return s }
   await T('02', async () => {
-    await ch('1'); await line('2a-every-day', null, true)
-    for (let i = 1; i <= 3; i++) { await k('Right', 500); await line(`2b-right${i}`) }
-    await k('Left', 500); await line('2c-left')
+    await ch('7'); await L('2a-7', null); await k('Down', 500); await L('2b-down', 'step2-sun')
   })
   await T('03', async () => {
-    await ch('t'); await line('3a-t')
-    await ch('09', 300); await ch(':30', 300); const s = await line('3b-typing')
-    console.log('   buffer check: ' + (s.urlTyping?.buffer === 'Time: 09:30'))
-    await k('Return', 1000); await line('3c-enter', null, true)
+    await ch('7'); await L('3a-7', null); await k('Up', 500); await L('3b-up', 'step3-weekends')
+    await k('Up', 500); await L('3c-up', 'step3-bar')
   })
   await T('04', async () => {
-    const s = await ls()
-    const idx = t => (s.slots || []).findIndex(x => String(x.title).toUpperCase().startsWith(t))
-    globalThis.__idx = { MON: idx('MON'), TUE: idx('TUE'), WED: idx('WED'), THU: idx('THU'), FRI: idx('FRI') }
-    console.log('  day idx', JSON.stringify(globalThis.__idx))
-    const goto = async name => {
-      for (let i = 0; i < 12; i++) { const c = await ls(); const t = globalThis.__idx[name], f = c.selectedIndex
-        if (f === t) return
-        const dr = Math.floor(t / 4) - Math.floor(f / 4)
-        if (dr) await k(dr > 0 ? 'Down' : 'Up', 300); else await k(t > f ? 'Right' : 'Left', 300) } }
-    for (const d of ['MON', 'TUE', 'WED', 'THU']) { await goto(d); await k('space', 500) }
-    await line('4a-one-left', null, true)
-    await k('Right', 500); await line('4a2-onfri'); await k('space', 600)
-    await line('4b-lastday', 'ck2-02-lastday', true, true)
-    await k('Down', 600); await line('4c-down', null, true)
+    await k('Down', 500); await L('4a-down-from-bar', null)
+    await ch('8'); await L('4b-8', null); await k('Up', 500); await L('4c-up', 'step4-up')
+    await k('Down', 500); await L('4d-down', 'step4-down')
   })
   await T('05', async () => {
-    await ch('t'); await ch('25', 300); await ch(':99', 300); await line('5a-typing')
-    await k('Return', 1000); await line('5', null, true)
+    await ch('t'); await L('5a-t', null)
+    await ch('09', 300); await ch(':30', 300); await L('5b-typed', null)
+    await k('Return', 1000); await L('5c-enter', 'step5-time')
+    console.log('   overflow: ' + await overflow())
   })
   await T('06', async () => {
-    await ch('?', 1500); await line('6a-help', 'ck2-03-help')
-    await k('Escape', 1500); await line('6b-back')
+    await k('Escape', 1500); await L('6a-page', null)
+    await ch('a', 1500); const s = await L('6b-addsite', 'step6-addsite')
+    for (const x of s.slots || []) console.log(`   slot: ${x.title} | ${x.hint ?? ''} | ${x.detail ?? ''}`)
   })
   await T('07', async () => {
-    await k('Escape', 1500); await line('7a-page', null, true)
-    await ch('a', 1500); await line('7b-addsite', 'ck2-04-addsite')
-    await ch('?', 1500); await line('7c-help')
-    await k('Escape', 1500); await line('7d-addsite')
-    await k('Escape', 1500); await line('7e-routine')
+    await k('Escape', 1500); await L('7a-page', null)
+    await k('Escape', 1500); await L('7b-home', null)
+    for (const x of (await ls()).slots || []) console.log(`   home slot: ${x.title}`)
+    await ch('2'); await L('7c-2', null); await k('Down', 500); await L('7d-down', 'step7-down')
+    await k('Up', 500); await L('7e-up', 'step7-up')
   })
 } catch (e) {
   console.error('PROBE ERROR:', e)
