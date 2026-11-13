@@ -19,7 +19,7 @@ internal static class RoutineSchedulePage
 
     private static readonly DayOfWeek[] Weekends = [DayOfWeek.Saturday, DayOfWeek.Sunday];
 
-    public static TileScreen Build(ScheduleRecipe recipe, DateTimeOffset now, int selected, int columns, string? hintRow = null)
+    public static TileScreen Build(ScheduleRecipe recipe, DateTimeOffset now, int selected, int columns, string? message = null)
     {
         var days = recipe.Cadence.Days;
         var cells = new List<TileCell>
@@ -55,11 +55,10 @@ internal static class RoutineSchedulePage
             Screen = "schedule",
             Eyebrow = $"Routines › {recipe.Name} › Schedule",
             Title = RoutineText.FrequencyInWords(recipe.Cadence),
-            Tagline = "Every change is saved as you make it",
+            Tagline = message ?? DefaultHint,
             CountLabel = next,
             FooterCount = next,
             BarPlaceholder = $"Time: {recipe.Cadence.LocalTime:HH:mm}",
-            HintRow = hintRow ?? DefaultHint,
             Cells = cells,
             Columns = cols,
             RowsPerPage = (cells.Count + cols - 1) / cols,
@@ -210,9 +209,9 @@ internal static class RoutineSchedulePage
             ctx,
             ctx.GetCurrentRenderOptions(),
             "Time: ",
-            seed ?? recipe.Cadence.LocalTime.ToString("HH:mm"),
+            seed,
             null,
-            (_, hint) => Build(recipe, DateTimeOffset.Now, TileGrid.Bar, columns, hint),
+            (_, message) => Build(recipe, DateTimeOffset.Now, TileGrid.Bar, columns, message),
             ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(text))
         {

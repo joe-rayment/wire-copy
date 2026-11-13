@@ -10,7 +10,8 @@ internal static class TileScreenRenderer
     internal static LauncherViewState BuildViewState(TileScreen screen, RenderOptions options)
     {
         var columns = Math.Max(1, screen.Columns);
-        var pageSize = Math.Max(1, columns * (screen.RowsPerPage ?? LauncherRenderer.PaneRowsPerPage(options)));
+        var paneOptions = screen.HintRow != null ? options with { ShowSetupHint = true } : options;
+        var pageSize = Math.Max(1, columns * (screen.RowsPerPage ?? LauncherRenderer.PaneRowsPerPage(paneOptions)));
 
         // Item number of the first item in each cell, and the cell holding the selection.
         var firstItem = new int[screen.Cells.Count];

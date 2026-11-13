@@ -142,21 +142,27 @@ internal static class TileGrid
 
             case CommandType.MoveRight:
             case CommandType.ExpandNode:
-                if (cell % cols == cols - 1)
+                for (var c = cell + 1; c < screen.Cells.Count; c++)
                 {
-                    return selected;
+                    if (Enter(positions, c, part) is var right and >= 0)
+                    {
+                        return right;
+                    }
                 }
 
-                return Enter(positions, cell + 1, part) is var right and >= 0 ? right : selected;
+                return selected;
 
             case CommandType.MoveLeft:
             case CommandType.CollapseNode:
-                if (cell % cols == 0)
+                for (var c = cell - 1; c >= 0; c--)
                 {
-                    return selected;
+                    if (Enter(positions, c, part) is var left and >= 0)
+                    {
+                        return left;
+                    }
                 }
 
-                return Enter(positions, cell - 1, part) is var left and >= 0 ? left : selected;
+                return selected;
 
             default:
                 return selected;
