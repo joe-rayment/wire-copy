@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.DTOs.Browser;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Scheduling;
+using WireCopy.Domain.Entities.Bookmarks;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
 using WireCopy.Infrastructure.Browser.Themes;
@@ -23,11 +24,8 @@ internal static class RoutineEditorHandler
 {
     public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid routineId, CancellationToken ct, bool nameNew = false)
     {
-        var selectedRow = -1;
-        var offset = 0;
-        var selectedKind = RoutineRowKind.Name;
-        string? selectedSite = null;
-        var selectedStep = -1;
+        var selected = 0;
+        string? selectedId = null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -42,32 +40,35 @@ internal static class RoutineEditorHandler
                 nameNew = false;
                 if (await EditNameAsync(ctx, options, recipe, ghostDefault: true, ct).ConfigureAwait(false))
                 {
-                    selectedKind = RoutineRowKind.AddSite;
-                    selectedSite = null;
-                    selectedStep = -1;
+                    selectedId = "addSite";
                 }
 
                 continue;
             }
 
             var lastRun = await LoadLastRunAsync(ctx, routineId).ConfigureAwait(false);
-            var rows = RoutineEditorScreen.BuildRows(recipe, DateTimeOffset.Now, lastRun);
-            selectedRow = RestoreSelection(rows, selectedKind, selectedSite, selectedStep, selectedRow);
+            var screen = RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, ctx.Bookmarks?.ToList() ?? new List<Bookmark>(), 0);
+            selected = TileGrid.IndexOfId(screen, selectedId, selected);
+            screen = screen with { Selected = selected };
+            ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
             var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
-            ctx.Renderer.LeaveHtmlPanes();
-            var helpers = new RenderHelpers { TerminalHeight = options.TerminalHeight };
-            var width = Math.Max(20, options.TerminalWidth - 2);
-            offset = RoutineEditorScreen.Draw(helpers, palette, width, options.TerminalHeight, recipe.Name, rows, selectedRow, offset);
-
             var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-            if (command.RawKeyChar == 'x')
+            var tile = TileGrid.ItemAt(screen, selected);
+            if (command.RawKeyChar is 'x' or 'd' && tile is not null && tile.Id.StartsWith("site:", StringComparison.Ordinal))
             {
-                await RemoveAsync(ctx, recipe, rows[selectedRow], palette, ct).ConfigureAwait(false);
+                ctx.Renderer.HideLauncherPane();
+                await RemoveAsync(
+                    ctx, recipe, new RoutineRow(RoutineRowKind.Site, tile.Title, "", tile.Id["site:".Length..]), palette, ct).ConfigureAwait(false);
             }
             else if (command.RawKeyChar == 'r')
             {
+                ctx.Renderer.HideLauncherPane();
                 await RunNowAsync(ctx, options, recipe, ct).ConfigureAwait(false);
+            }
+            else if (command.RawKeyChar == 'a')
+            {
+                await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
             }
             else if (command.Type is CommandType.GoBack or CommandType.Quit)
             {
@@ -76,14 +77,16 @@ internal static class RoutineEditorHandler
             else if (command.Type == CommandType.TerminalResized)
             {
                 options = ctx.GetCurrentRenderOptions();
+                continue;
             }
-            else if (command.Type == CommandType.MoveDown)
+            else if (command.Type is CommandType.MoveUp or CommandType.MoveDown or CommandType.MoveLeft
+                or CommandType.MoveRight or CommandType.ExpandNode or CommandType.CollapseNode)
             {
-                selectedRow = RoutineEditorScreen.Move(rows, selectedRow, 1);
+                selected = TileGrid.Move(screen, command.Type);
             }
-            else if (command.Type == CommandType.MoveUp)
+            else if (command.Type == CommandType.JumpToIndex)
             {
-                selectedRow = RoutineEditorScreen.Move(rows, selectedRow, -1);
+                selected = TileGrid.Jump(screen, command.Count);
             }
             else if (command.Type == CommandType.OpenCommandLine)
             {
@@ -93,15 +96,46 @@ internal static class RoutineEditorHandler
                     await SearchCommandHandler.HandleCommandLineInput(ctx, input.Trim(), options, ct).ConfigureAwait(false);
                 }
             }
-            else if (command.Type == CommandType.ActivateLink)
+            else if (command.Type == CommandType.ActivateLink && tile is not null)
             {
-                await ActivateAsync(ctx, options, recipe, rows[selectedRow], palette, ct).ConfigureAwait(false);
+                await ActivateTileAsync(ctx, options, recipe, tile, palette, ct).ConfigureAwait(false);
             }
 
-            var current = rows[Math.Clamp(selectedRow, 0, rows.Count - 1)];
-            selectedKind = current.Kind;
-            selectedSite = current.SiteUrl;
-            selectedStep = current.StepIndex;
+            selectedId = TileGrid.ItemAt(screen, selected)?.Id;
+        }
+    }
+
+    private static async Task ActivateTileAsync(
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, Tile tile, ThemePalette palette, CancellationToken ct)
+    {
+        if (tile.Id.StartsWith("site:", StringComparison.Ordinal))
+        {
+            await RoutinePickModeHandler.OpenAsync(
+                ctx, options, new RoutinePickRequest(recipe.Id, tile.Id["site:".Length..], null), ct).ConfigureAwait(false);
+            return;
+        }
+
+        if (tile.Id == "addSite")
+        {
+            await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
+            return;
+        }
+
+        ctx.Renderer.HideLauncherPane();
+        switch (tile.Id)
+        {
+            case "schedule":
+                await EditFrequencyAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
+                break;
+            case "lastRun":
+                await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
+                break;
+            case "name":
+                await EditNameAsync(ctx, options, recipe, ghostDefault: false, ct).ConfigureAwait(false);
+                break;
+            case "podcast":
+                await EditPodcastAsync(ctx, options, recipe, ct).ConfigureAwait(false);
+                break;
         }
     }
 

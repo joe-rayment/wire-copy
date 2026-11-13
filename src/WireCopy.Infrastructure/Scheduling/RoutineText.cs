@@ -83,6 +83,9 @@ public static class RoutineText
         DayOfWeek.Friday, DayOfWeek.Saturday, DayOfWeek.Sunday,
     };
 
+    /// <summary>Frequency with " · " read as " at " ("Weekdays at 07:00").</summary>
+    public static string FrequencyInWords(Cadence cadence) => Frequency(cadence).Replace(" · ", " at ", StringComparison.Ordinal);
+
     /// <summary>"Daily · 05:00", "Weekdays · 05:00", "Weekends · 05:00" or "Mon, Wed, Fri · 05:00".</summary>
     public static string Frequency(Cadence cadence)
     {

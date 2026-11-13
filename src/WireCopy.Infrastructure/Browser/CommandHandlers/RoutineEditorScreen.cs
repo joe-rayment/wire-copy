@@ -177,7 +177,7 @@ internal static class RoutineEditorScreen
         helpers.WriteLine($"{new string(' ', 6 + labelCol)}{color}{edit.Error ?? edit.Hint}{Reset}");
     }
 
-    private static string LastRunValue(ScheduledRun? run, DateTimeOffset now)
+    internal static string LastRunValue(ScheduledRun? run, DateTimeOffset now)
     {
         var d = run is null ? null : RoutineRunDiagnosis.Diagnose(run);
         return RoutineText.LastRunValue(run, d is { NeedsAttention: true } ? d.Short : null, now);
