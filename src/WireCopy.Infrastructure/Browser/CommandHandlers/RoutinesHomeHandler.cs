@@ -21,15 +21,12 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class RoutinesHomeHandler
 {
-    private const int Columns = 2;
-
     public static async Task OpenAsync(CommandContext ctx, RenderOptions options, CancellationToken ct)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         var store = scope.ServiceProvider.GetRequiredService<IScheduleStore>();
         var runNow = scope.ServiceProvider.GetRequiredService<IScheduleRunNow>();
         var modeService = scope.ServiceProvider.GetRequiredService<IUiModeService>();
-        var palette = BuiltInThemes.Get(ctx.ThemeProvider.CurrentTheme);
 
         modeService.Set(UiMode.Routine);
         var running = new HashSet<Guid>();
@@ -39,13 +36,26 @@ internal static class RoutinesHomeHandler
         {
             var recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
             var sel = 0;
+            string? selId = null;
             await RoutineRunDetailsHandler.AcknowledgeAsync(ctx, r => recipes.All(x => x.Id != r.RecipeId)).ConfigureAwait(false);
 
             while (!ct.IsCancellationRequested)
             {
-                sel = Math.Clamp(sel, 0, recipes.Count);
                 var (alerts, badge) = await LoadAttentionAsync(ctx, recipes).ConfigureAwait(false);
-                ctx.Renderer.RenderRoutinesHome(recipes, running, sel, DateTimeOffset.Now, ctx.GetCurrentRenderOptions(), alerts, badge);
+                var now = DateTimeOffset.Now;
+                var screen = RoutinesHomePage.Build(recipes, running, alerts, badge, now, sel);
+                if (recipes.Count == 0)
+                {
+                    sel = TileGrid.Bar;
+                }
+                else if (sel != TileGrid.Bar)
+                {
+                    sel = TileGrid.IndexOfId(screen, selId, sel);
+                }
+
+                screen = screen with { Selected = sel };
+                selId = sel == TileGrid.Bar ? null : TileGrid.ItemAt(screen, sel)?.Id;
+                ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
                 inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
                 await Task.WhenAny(new Task[] { inputTask }.Concat(runs.Values)).ConfigureAwait(false);
@@ -75,17 +85,16 @@ internal static class RoutinesHomeHandler
                 var command = await inputTask.ConfigureAwait(false);
                 inputTask = null;
                 var key = command.RawKeyChar;
-                var sorted = LauncherRenderer.SortedRoutines(recipes);
-                var current = sel > 0 && sel <= sorted.Count ? sorted[sel - 1] : null;
-                var total = recipes.Count + 1;
+                var current = sel == TileGrid.Bar ? null : recipes.FirstOrDefault(r => selId == "routine:" + r.Id);
 
                 // KEY READING RULE: raw characters first (the mapper may bind them to other commands).
                 switch (key)
                 {
                     case 'n':
-                        var made = await CreateAsync(ctx, options, store, recipes, ct).ConfigureAwait(false);
-                        recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
-                        sel = Reselect(recipes, made, sel);
+                        sel = TileGrid.Bar;
+                        continue;
+                    case >= '1' and <= '9' when command.Type != CommandType.JumpToIndex:
+                        sel = TileGrid.Jump(screen, key - '0');
                         continue;
                     case 'r' when current != null:
                         if (running.Add(current.Id))
@@ -100,9 +109,7 @@ internal static class RoutinesHomeHandler
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         continue;
                     case 'd' when current != null:
-                        ctx.Renderer.HideLauncherPane();
-                        var ok = await ConfirmationDialog.ConfirmAsync(
-                            ctx.InputHandler, "Delete routine", RoutineText.DeleteConfirm(current.Name), palette, ct, isDestructive: true).ConfigureAwait(false);
+                        var ok = await TileConfirm.AskAsync(ctx, screen, RoutineText.DeleteConfirm(current.Name), ct).ConfigureAwait(false);
                         if (ok)
                         {
                             await store.DeleteAsync(current.Id).ConfigureAwait(false);
@@ -112,10 +119,18 @@ internal static class RoutinesHomeHandler
                         }
 
                         continue;
-                    case 'h': sel = Math.Max(0, sel - 1); continue;
-                    case 'l': sel = Math.Min(total - 1, sel + 1); continue;
-                    case 'k': sel = sel - Columns >= 0 ? sel - Columns : sel; continue;
-                    case 'j': sel = sel + Columns < total ? sel + Columns : sel; continue;
+                    case 'h':
+                        sel = TileGrid.Move(screen, CommandType.MoveLeft);
+                        continue;
+                    case 'l':
+                        sel = TileGrid.Move(screen, CommandType.MoveRight);
+                        continue;
+                    case 'k':
+                        sel = TileGrid.Move(screen, CommandType.MoveUp);
+                        continue;
+                    case 'j':
+                        sel = TileGrid.Move(screen, CommandType.MoveDown);
+                        continue;
                     default:
                         break;
                 }
@@ -124,10 +139,19 @@ internal static class RoutinesHomeHandler
                 {
                     case CommandType.GoBack or CommandType.Quit:
                         return;
-                    case CommandType.MoveLeft or CommandType.CollapseNode: sel = Math.Max(0, sel - 1); break;
-                    case CommandType.MoveRight or CommandType.ExpandNode: sel = Math.Min(total - 1, sel + 1); break;
-                    case CommandType.MoveUp: sel = sel - Columns >= 0 ? sel - Columns : sel; break;
-                    case CommandType.MoveDown: sel = sel + Columns < total ? sel + Columns : sel; break;
+                    case CommandType.MoveLeft or CommandType.CollapseNode
+                        or CommandType.MoveRight or CommandType.ExpandNode
+                        or CommandType.MoveUp or CommandType.MoveDown:
+                        sel = TileGrid.Move(screen, command.Type switch
+                        {
+                            CommandType.CollapseNode => CommandType.MoveLeft,
+                            CommandType.ExpandNode => CommandType.MoveRight,
+                            _ => command.Type,
+                        });
+                        break;
+                    case CommandType.JumpToIndex:
+                        sel = TileGrid.Jump(screen, command.Count ?? 0);
+                        break;
                     case CommandType.ToggleSelection when current != null:
                         if (current.Enabled)
                         {
@@ -144,7 +168,12 @@ internal static class RoutinesHomeHandler
                     case CommandType.ActivateLink when current == null:
                         var made = await CreateAsync(ctx, options, store, recipes, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
-                        sel = Reselect(recipes, made, sel);
+                        if (made is { } madeId)
+                        {
+                            selId = "routine:" + madeId;
+                            sel = TileGrid.IndexOfId(RoutinesHomePage.Build(recipes, running, null, null, DateTimeOffset.Now, 0), selId, 0);
+                        }
+
                         break;
                     case CommandType.ActivateLink:
                         await RoutineEditorHandler.OpenAsync(ctx, options, current!.Id, ct).ConfigureAwait(false);
@@ -195,17 +224,6 @@ internal static class RoutinesHomeHandler
 
         var unacked = await repo.GetUnacknowledgedFinishedRunsAsync().ConfigureAwait(false);
         return (alerts, ScheduledRunBadge.Describe(unacked, onRoutinesHome: true));
-    }
-
-    private static int Reselect(IReadOnlyList<ScheduleRecipe> recipes, Guid? created, int sel)
-    {
-        if (created is null)
-        {
-            return sel;
-        }
-
-        var idx = LauncherRenderer.SortedRoutines(recipes).FindIndex(r => r.Id == created);
-        return idx >= 0 ? idx + 1 : sel;
     }
 
     private static async Task<Guid?> CreateAsync(
