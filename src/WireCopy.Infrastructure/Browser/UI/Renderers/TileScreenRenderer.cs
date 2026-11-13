@@ -20,7 +20,8 @@ internal static class TileScreenRenderer
         {
             firstItem[c] = running;
             var cell = screen.Cells[c];
-            var count = cell.Tile != null ? 1 : (cell.Top != null ? 1 : 0) + (cell.Bottom != null ? 1 : 0);
+            var halves = (cell.Top != null ? 1 : 0) + (cell.Bottom != null ? 1 : 0);
+            var count = cell.Tile != null ? 1 : halves;
             if (screen.Selected >= running && screen.Selected < running + count)
             {
                 selectedCell = c;
@@ -82,7 +83,7 @@ internal static class TileScreenRenderer
         }
 
         var cellsShown = end - start;
-        var pad = ((cellsShown + columns - 1) / columns) * columns - cellsShown;
+        var pad = (((cellsShown + columns - 1) / columns) * columns) - cellsShown;
         for (var k = 0; k < pad; k++)
         {
             slots.Add(new LauncherSlot { Index = total, Kind = "empty" });

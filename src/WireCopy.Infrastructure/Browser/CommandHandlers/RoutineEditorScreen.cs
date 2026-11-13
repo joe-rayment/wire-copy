@@ -157,6 +157,13 @@ internal static class RoutineEditorScreen
         return offset;
     }
 
+    internal static string LastRunValue(ScheduledRun? run, DateTimeOffset now)
+    {
+        var d = run is null ? null : RoutineRunDiagnosis.Diagnose(run);
+        return RoutineText.LastRunValue(run, d is { NeedsAttention: true } ? d.Short : null, now);
+    }
+
+    /// <summary>The row under edit: label, then blank space where the caller's prompt draws, then a hint (or the error) on the line below.</summary>
     private static void SetEditPosition(RoutineEditView? edit, int bodyTop, int editLine, int offset, bool scrolled)
     {
         if (edit != null)
@@ -165,7 +172,6 @@ internal static class RoutineEditorScreen
         }
     }
 
-    /// <summary>The row under edit: label, then blank space where the caller's prompt draws, then a hint (or the error) on the line below.</summary>
     private static void WriteEditRow(RenderHelpers helpers, ThemePalette palette, RoutineRow row, RoutineEditView edit)
     {
         const int labelCol = 24;
@@ -175,12 +181,6 @@ internal static class RoutineEditorScreen
         edit.InputCol = 2 + 1 + 1 + 2 + labelCol + edit.Prefix.Length;
         var color = edit.Error is null ? palette.GetDimFg().AnsiFg : palette.ErrorFg.AnsiFg;
         helpers.WriteLine($"{new string(' ', 6 + labelCol)}{color}{edit.Error ?? edit.Hint}{Reset}");
-    }
-
-    internal static string LastRunValue(ScheduledRun? run, DateTimeOffset now)
-    {
-        var d = run is null ? null : RoutineRunDiagnosis.Diagnose(run);
-        return RoutineText.LastRunValue(run, d is { NeedsAttention: true } ? d.Short : null, now);
     }
 
     private static void WriteRow(RenderHelpers helpers, ThemePalette palette, int width, RoutineRow row, bool selected)

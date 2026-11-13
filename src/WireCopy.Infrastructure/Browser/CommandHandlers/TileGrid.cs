@@ -73,7 +73,12 @@ internal static class TileGrid
             return Bar;
         }
 
-        return items.Count == 0 ? (screen.BarPlaceholder != null ? Bar : 0) : Math.Clamp(fallback, 0, items.Count - 1);
+        if (items.Count == 0)
+        {
+            return screen.BarPlaceholder != null ? Bar : 0;
+        }
+
+        return Math.Clamp(fallback, 0, items.Count - 1);
     }
 
     /// <summary>Digit jump: "4" selects the fourth item; a digit with no item changes nothing.</summary>
@@ -198,7 +203,9 @@ internal static class TileGrid
             return whole;
         }
 
-        var preferred = Find(positions, cell, preferPart == Bottom ? Bottom : Top);
-        return preferred >= 0 ? preferred : Find(positions, cell, preferPart == Bottom ? Top : Bottom);
+        var first = preferPart == Bottom ? Bottom : Top;
+        var second = preferPart == Bottom ? Top : Bottom;
+        var preferred = Find(positions, cell, first);
+        return preferred >= 0 ? preferred : Find(positions, cell, second);
     }
 }
