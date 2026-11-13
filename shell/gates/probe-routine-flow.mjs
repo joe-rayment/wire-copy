@@ -1,6 +1,7 @@
 // Walk the routine-creation flow the way a user does and shoot every screen:
-// :routines -> home -> "+ New routine" -> name -> editor -> "+ Add a site" -> choose the
-// fixture site -> pick mode -> Space on a section header -> Esc back to the editor.
+// :routines -> home (tiles) -> n, type the name, Return -> "Add a site" -> Return picks the first
+// saved site (the fixture) -> pick mode -> Space on a section header -> Esc to the routine page
+// (every change saves at once) -> Esc to the home, where the new routine is a tile.
 // Headful under Xvfb; real X keys via xdotool. Shots land in gates/out/<tag>-NN-*.png —
 // open them, they are the evidence.
 //
@@ -77,18 +78,25 @@ try {
   env.type(':routines'); env.key('Return'); await sleep(2000)
   await say('home'); shot('home')
 
-  env.key('Return'); await sleep(1500)                     // "+ New routine"
-  await say('new'); shot('new-routine')
+  const ls = async () => {
+    const v = await paneState('launcher.html', '__launcherState')
+    return (v && v.state) || {}
+  }
+  const line = async label => {
+    const st = await ls()
+    console.log(`  [${label}] screen=${st.screen} sel=${st.selectedIndex} title=${JSON.stringify(st.title)} slots=${JSON.stringify((st.slots || []).map(x => x.title))}`)
+  }
+  const schedules = () => fs.readFileSync(path.join(dataDir, 'schedules.json'), 'utf8').replace(/\s+/g, ' ')
 
-  env.type('Morning brief'); env.key('Return'); await sleep(1500)
-  await say('editor'); shot('editor')
+  await line('home'); 
+  if ((await ls()).selectedIndex !== -1) { env.type('n'); await sleep(800) }   // with no routines the bar is already lit; 'n' there would be typed into the name                          // the name bar lights (selectedIndex -1)
+  await line('name-bar'); shot('name-bar')
+  env.type('Morning brief'); await sleep(500)
+  await line('name-typed'); shot('name-typed')
+  env.key('Return'); await sleep(1800)                      // -> "Add a site"
+  await line('add-site'); shot('add-site')
 
-  env.key('Up')                                             // rows wrap: Up from Name = "+ Add a site"
-  await sleep(500)
-  env.key('Return'); await sleep(2000)
-  await say('add-site'); shot('add-site')
-
-  env.key('Return'); await sleep(1000)                      // first site = the fixture
+  env.key('Return'); await sleep(1000)                      // first saved site = the fixture
   for (let i = 0; i < 40; i++) {
     const st = await paneState('linktree.html', '__linkTreeState')
     if (st && st.state && (st.state.items || []).length) break
@@ -97,11 +105,16 @@ try {
   await sleep(1500)
   await say('pick'); shot('pick-mode')
 
-  env.key('space'); await sleep(1200)                       // include the section under the cursor
+  env.key('space'); await sleep(1200)                       // include the World section under the cursor
   await say('picked'); shot('pick-space')
 
-  env.key('Escape'); await sleep(2500)
-  await say('back'); shot('editor-after')
+  env.key('Escape'); await sleep(2500)                      // pick mode done -> routine page
+  await line('routine-page'); shot('routine-page')
+  console.log('SCHEDULES (routine page)', schedules())
+
+  env.key('Escape'); await sleep(2000)                      // routine page -> home
+  await line('home-after'); shot('home-after')
+  console.log('SCHEDULES (final)', schedules())
 } catch (e) {
   console.error('PROBE ERROR:', e)
   console.error(shell.stderrText.slice(-2000))

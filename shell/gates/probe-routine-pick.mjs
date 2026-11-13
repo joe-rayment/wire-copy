@@ -1,10 +1,14 @@
-// Walk the routine-creation flow the way a user does and shoot every screen:
-// :routines -> home -> "+ New routine" -> name -> editor -> "+ Add a site" -> choose the
-// fixture site -> pick mode -> Space on a section header -> Esc back to the editor.
-// Headful under Xvfb; real X keys via xdotool. Shots land in gates/out/<tag>-NN-*.png —
-// open them, they are the evidence.
-//
-// Run from shell/: source ~/.local/bin/x-env.sh && node gates/probe-routine-flow.mjs [--tag rf] [--no-build]
+// Pick mode, the way a user does it: create a routine ("n", name, Return), pick the fixture site,
+// then include/exclude whole sections and single stories with Space, and read the result on the
+// routine page and in schedules.json.
+//   default : n -> "Morning brief" -> Return -> Return (fixture site) -> Space on World header ->
+//             Down x DOWNS (default 2) -> Space on a story -> Space again (exclude) -> Esc (routine
+//             page) -> Esc (home). DOWNS=0 skips the story part.
+//   --legacy: seeds a routine whose World step is the old "top 3" (TakeMode TopN), opens it from the
+//             home (Return on the first tile), opens its site tile (Return) -> pick mode, moves
+//             LEGACY_KEYS (default Down,Down), Space on a story, Esc back to the routine page.
+// Shots land in gates/out/<tag>-NN-*.png. Run from shell/:
+//   source ~/.local/bin/x-env.sh && node gates/probe-routine-pick.mjs [--tag rf] [--legacy] [--no-build]
 // Env: PROBE_DISPLAY (default :95), PROBE_CDP (default 9315), FIXTURE_PORT (default 8123).
 import fs from 'node:fs'
 import path from 'node:path'
@@ -97,62 +101,66 @@ try {
   env.type(':routines'); env.key('Return'); await sleep(2000)
   await say('home'); shot('home')
 
-  if (LEGACY) {
-  env.key('Right'); await sleep(500); shot('home-legacy-selected')
-  env.key('Return'); await sleep(2000)
-  await say('editor'); shot('editor-legacy')
-  if (process.env.LEGACY_STOP) throw new Error('stop')
-  for (let i = 0; i < 4; i++) { env.key('Down'); await sleep(300) }
-  await sleep(300)
-  await say('site-row'); shot('editor-site-row')
-  env.key('Return'); await sleep(1000)
-  for (let i = 0; i < 40; i++) {
-    const st = await paneState('linktree.html', '__linkTreeState')
-    if (st && st.state && (st.state.items || []).length) break
-    await sleep(500)
+  const ls = async () => {
+    const v = await paneState('launcher.html', '__launcherState')
+    return (v && v.state) || {}
   }
-  await sleep(1500)
-  await say('pick'); shot('legacy-pick-mode')
-  if (process.env.LEGACY_TOUCH !== '0') {
+  const line = async label => {
+    const st = await ls()
+    console.log(`  [${label}] screen=${st.screen} sel=${st.selectedIndex} title=${JSON.stringify(st.title)} slots=${JSON.stringify((st.slots || []).map(x => x.title + (x.detail ? ' | ' + x.detail : '')))}`)
+  }
+  const treeLine = async label => {
+    const st = (await paneState('linktree.html', '__linkTreeState'))?.state || {}
+    console.log(`  [${label}] linktree cursor=${st.selectedIndex} items=${(st.items || []).length}`)
+  }
+  const schedules = () => fs.readFileSync(path.join(dataDir, 'schedules.json'), 'utf8').replace(/\s+/g, ' ')
+  const waitTree = async () => {
+    for (let i = 0; i < 40; i++) {
+      const st = await paneState('linktree.html', '__linkTreeState')
+      if (st && st.state && (st.state.items || []).length) break
+      await sleep(500)
+    }
+    await sleep(1500)
+  }
+  const downs = Number(process.env.DOWNS ?? 2)
+
+  if (LEGACY) {
+    await line('home'); shot('home-legacy')
+    env.key('Return'); await sleep(2000)                    // first tile = Legacy brief -> routine page
+    await line('routine-page'); shot('legacy-routine-page')
+    env.key('Return'); await sleep(1000)                    // its site tile -> pick mode
+    await waitTree()
+    await say('pick'); await treeLine('pick'); shot('legacy-pick-mode')
     for (const k of (process.env.LEGACY_KEYS || 'Down,Down').split(',').filter(Boolean)) { env.key(k); await sleep(400) }
     await sleep(600); shot('legacy-moved')
-    env.key('space'); await sleep(1000); await say('story'); shot('legacy-space-story')
-  }
-  env.key('Escape'); await sleep(2500)
-  await say('back'); shot('legacy-editor-after')
-  console.log('SCHEDULES', fs.readFileSync(path.join(dataDir, 'schedules.json'), 'utf8').replace(/\s+/g, ' '))
+    env.key('space'); await sleep(1000); await say('story'); await treeLine('story'); shot('legacy-space-story')
+    env.key('Escape'); await sleep(2500)
+    await line('routine-page-after'); shot('legacy-routine-page-after')
+    console.log('SCHEDULES', schedules())
   } else {
-  env.key('Return'); await sleep(1500)                     // "+ New routine"
-  await say('new'); shot('new-routine')
+    await line('home')
+    if ((await ls()).selectedIndex !== -1) { env.type('n'); await sleep(800) }   // with no routines the bar is already lit; 'n' there would be typed into the name                         // the name bar lights
+    env.type('Morning brief'); await sleep(500)
+    env.key('Return'); await sleep(1800)                    // -> "Add a site"
+    await line('add-site'); shot('add-site')
+    env.key('Return'); await sleep(1000)                    // first saved site = the fixture
+    await waitTree()
+    await say('pick'); await treeLine('pick'); shot('pick-mode')
 
-  env.type('Morning brief'); env.key('Return'); await sleep(1500)
-  await say('editor'); shot('editor')
-
-  env.key('Up')                                             // rows wrap: Up from Name = "+ Add a site"
-  await sleep(500)
-  env.key('Return'); await sleep(2000)
-  await say('add-site'); shot('add-site')
-
-  env.key('Return'); await sleep(1000)                      // first site = the fixture
-  for (let i = 0; i < 40; i++) {
-    const st = await paneState('linktree.html', '__linkTreeState')
-    if (st && st.state && (st.state.items || []).length) break
-    await sleep(500)
-  }
-  await sleep(1500)
-  await say('pick'); shot('pick-mode')
-
-  env.key('space'); await sleep(1200)                       // Space on the World header
-  await say('world-all'); shot('space-world-header')
-  const downs = Number(process.env.DOWNS || 0)
-  for (let i = 0; i < downs; i++) { env.key('Down'); await sleep(400) }
-  await sleep(600); await say('moved'); shot('moved')
-  if (downs) {
-    env.key('space'); await sleep(1000); await say('story'); shot('space-story')
-    env.key('shift+t'); await sleep(1000); await say('shift-t'); shot('shift-t')
-  }
-  env.key('Escape'); await sleep(2500)
-  await say('back'); shot('editor-after')
+    env.key('space'); await sleep(1200)                     // include the World section
+    await treeLine('world-all'); shot('space-world-header')
+    for (let i = 0; i < downs; i++) { env.key('Down'); await sleep(400) }
+    await sleep(600); await treeLine('moved'); shot('moved')
+    if (downs) {
+      env.key('space'); await sleep(1000); await treeLine('story-toggled'); shot('space-story')
+      env.key('space'); await sleep(1000); await treeLine('story-toggled-back'); shot('space-story-back')
+    }
+    env.key('Escape'); await sleep(2500)                    // pick done -> routine page
+    await line('routine-page'); shot('routine-page')
+    console.log('SCHEDULES (routine page)', schedules())
+    env.key('Escape'); await sleep(2000)                    // -> home
+    await line('home-after'); shot('home-after')
+    console.log('SCHEDULES (final)', schedules())
   }
 } catch (e) {
   console.error('PROBE ERROR:', e)
