@@ -22,6 +22,9 @@ public sealed record RecipeRunState
     /// <summary>True when the last "run" is a slot Wire Copy never got to (it was closed) — shown as "missed".</summary>
     public bool LastRunMissed { get; init; }
 
+    /// <summary>When the routine was last switched on with its current schedule (created, cadence changed, enabled). Null = legacy, treated as armed long ago.</summary>
+    public DateTimeOffset? ScheduleArmedAtUtc { get; init; }
+
     public RunStatus LastStatus { get; init; } = RunStatus.Never;
 
     /// <summary>When the user dismissed the last-result badge (B11), else null.</summary>

@@ -56,6 +56,11 @@ internal static class RoutineRunDiagnosis
             return Make(string.IsNullOrWhiteSpace(run.TargetFeedUrl) ? "✓ Done — saved on this computer" : "✓ Published", run.ErrorMessage ?? string.Empty, null, null, None, attention);
         }
 
+        if (run.Status == ScheduledRunStatus.Skipped && run.ErrorClass == "MissedPastGrace")
+        {
+            return Make("missed", run.ErrorMessage ?? string.Empty, null, null, None, attention);
+        }
+
         if (run.Status == ScheduledRunStatus.Skipped && run.ErrorClass == "NothingToCollect")
         {
             return Make("Skipped — nothing to collect yet", string.Empty, null, null, None, attention);

@@ -392,7 +392,7 @@ internal static class RoutineRunDetailsHandler
             else
             {
                 var took = latest.FinishedAtUtc is { } fin ? " · took " + RoutineText.Took(fin - latest.StartedAtUtc) : string.Empty;
-                body.Add($"  {color}{RenderHelpers.TruncateText($"{diagnosis.Headline} · {RoutineText.When(latest.StartedAtUtc, now)}{took}", width - 4)}{Reset}");
+                body.Add($"  {color}{RenderHelpers.TruncateText($"{diagnosis.Headline} · {RoutineText.RunWhen(latest, now)}{took}", width - 4)}{Reset}");
                 if (latest.Status is ScheduledRunStatus.Completed or ScheduledRunStatus.PartialSuccess)
                 {
                     AddLabelled(body, width, dim, primary, RoutineText.SavedTo, latest.TargetLocalPath);
@@ -450,7 +450,7 @@ internal static class RoutineRunDetailsHandler
                 foreach (var older in runs.Skip(running ? 0 : 1).Take(5))
                 {
                     var d = RoutineRunDiagnosis.Diagnose(older);
-                    var text = $"{d.Headline} · {RoutineText.When(older.StartedAtUtc, now)}" + (d.Short.Length > 0 ? " · " + d.Short : string.Empty);
+                    var text = $"{d.Headline} · {RoutineText.RunWhen(older, now)}" + (d.Short.Length > 0 ? " · " + d.Short : string.Empty);
                     AddWrapped(body, text, HeadlineColor(palette, d.Headline), width);
                 }
             }

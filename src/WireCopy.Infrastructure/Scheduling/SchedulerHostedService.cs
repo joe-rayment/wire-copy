@@ -143,6 +143,94 @@ internal sealed class SchedulerHostedService : BackgroundService
         return slot > pass.Start && slot <= pass.End;
     }
 
+    private static DateTimeOffset SlotLocal(ScheduleRecipe recipe, DateOnly day, TimeSpan offset)
+    {
+        var t = recipe.Cadence.LocalTime;
+        return new DateTimeOffset(day.Year, day.Month, day.Day, t.Hour, t.Minute, 0, offset);
+    }
+
+    private static bool IsArmedAt(ScheduleRecipe recipe, DateTimeOffset slotDueLocal) =>
+        recipe.RunState.ScheduleArmedAtUtc is not { } armed || slotDueLocal > armed;
+
+    /// <summary>
+    /// The newest cadence day before today whose slot has no run row is recorded as Skipped
+    /// ("Wire Copy wasn't open on Tue") — once, only for a routine that was on at the time
+    /// and already has history, and never over a newer result.
+    /// </summary>
+    private async Task RecordMissedPreviousSlotAsync(
+        IServiceScope scope,
+        IScheduledRunRepository runRepo,
+        ScheduleRecipe recipe,
+        DateTimeOffset nowLocal,
+        CancellationToken ct)
+    {
+        var today = DateOnly.FromDateTime(nowLocal.DateTime);
+        DateOnly? day = null;
+        for (var back = 1; back <= 7; back++)
+        {
+            var d = today.AddDays(-back);
+            if (recipe.Cadence.Days.Contains(d.DayOfWeek))
+            {
+                day = d;
+                break;
+            }
+        }
+
+        if (day is not { } slotDay)
+        {
+            return;
+        }
+
+        var slot = SlotLocal(recipe, slotDay, nowLocal.Offset);
+        if (!IsArmedAt(recipe, slot))
+        {
+            return;
+        }
+
+        var key = NextDueCalculator.OccurrenceKey(slot);
+        if (_owed.Contains((recipe.Id, key))
+            || await runRepo.GetByOccurrenceKeyAsync(recipe.Id, key, ct).ConfigureAwait(false) != null)
+        {
+            return;
+        }
+
+        var recent = await runRepo.GetRecentForRecipeAsync(recipe.Id, 1, ct).ConfigureAwait(false);
+        if (recent.Count == 0)
+        {
+            if (recipe.RunState.LastStatus == RunStatus.Never)
+            {
+                return; // never ran: nothing to have "missed"
+            }
+        }
+        else if (new DateTimeOffset(DateTime.SpecifyKind(recent[0].StartedAtUtc, DateTimeKind.Utc)) >= slot)
+        {
+            return; // a newer run already exists
+        }
+
+        var skipped = ScheduledRun.Start(recipe.Id, recipe.Name, key);
+        skipped.Finish(
+            ScheduledRunStatus.Skipped,
+            itemCount: 0,
+            errorClass: "MissedPastGrace",
+            errorMessage: RoutineText.MissedReason(slotDay.DayOfWeek));
+        await runRepo.AddAsync(skipped, ct).ConfigureAwait(false);
+        await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync(ct).ConfigureAwait(false);
+
+        var store = scope.ServiceProvider.GetService<IScheduleStore>();
+        if (store != null)
+        {
+            await store.UpdateRunStateAsync(recipe.Id, new Domain.ValueObjects.Scheduling.RecipeRunState
+            {
+                LastRunLocalDate = slotDay,
+                LastRunOccurrenceKey = key,
+                LastStatus = RunStatus.Skipped,
+                LastRunMissed = true,
+                LastRunStartedAtUtc = DateTime.UtcNow,
+                AcknowledgedAtUtc = recipe.RunState.AcknowledgedAtUtc,
+            }).ConfigureAwait(false);
+        }
+    }
+
     private async Task EvaluateRecipeAsync(
         IServiceScope scope,
         ScheduleRecipe recipe,
@@ -151,6 +239,8 @@ internal sealed class SchedulerHostedService : BackgroundService
         CancellationToken stoppingToken)
     {
         var runRepo = scope.ServiceProvider.GetRequiredService<IScheduledRunRepository>();
+
+        await RecordMissedPreviousSlotAsync(scope, runRepo, recipe, nowLocal, stoppingToken).ConfigureAwait(false);
 
         // Decide against a NEUTRAL run-state — the authoritative "already ran"
         // signal is the EF row, not the JSON cache (so a JSON/EF divergence
@@ -180,17 +270,17 @@ internal sealed class SchedulerHostedService : BackgroundService
             kind = SchedulingDecisionKind.DueNow;
         }
 
+        if (!IsArmedAt(recipe, SlotLocal(recipe, DateOnly.FromDateTime(nowLocal.DateTime), nowLocal.Offset)))
+        {
+            return; // switched on or re-scheduled after this slot came due — wait for the next one
+        }
+
         if (kind == SchedulingDecisionKind.MissedPastGrace)
         {
-            var skipped = ScheduledRun.Start(recipe.Id, recipe.Name, occurrenceKey);
-            skipped.Finish(
-                ScheduledRunStatus.Skipped,
-                itemCount: 0,
-                errorClass: "MissedPastGrace",
-                errorMessage: "App was not open within the recipe's grace window");
-            await runRepo.AddAsync(skipped, stoppingToken).ConfigureAwait(false);
-            await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync(stoppingToken).ConfigureAwait(false);
-            return;
+            // Today's slot passed with no run: catch up once. The Running row written below
+            // is the dedup, so a same-day restart does not run it again.
+            _logger.LogInformation("Scheduler: {Recipe} slot {Slot} was missed — catching up now", recipe.Name, occurrenceKey);
+            kind = SchedulingDecisionKind.DueNow;
         }
 
         if (kind != SchedulingDecisionKind.DueNow)

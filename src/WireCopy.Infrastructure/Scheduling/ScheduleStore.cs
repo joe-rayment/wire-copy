@@ -66,8 +66,22 @@ internal sealed class ScheduleStore : IScheduleStore
         lock (_lock)
         {
             var all = Load();
+            var previous = all.FirstOrDefault(r => r.Id == recipe.Id);
             all.RemoveAll(r => r.Id == recipe.Id);
-            all.Add(ToPersisted(recipe));
+            var persisted = ToPersisted(recipe);
+            var cadenceChanged = previous is not null
+                && (previous.LocalTime != persisted.LocalTime
+                    || !previous.Days.OrderBy(d => d).SequenceEqual(persisted.Days.OrderBy(d => d)));
+            if (previous is null || cadenceChanged || (!previous.Enabled && persisted.Enabled))
+            {
+                persisted.ScheduleArmedAtUtc = DateTimeOffset.UtcNow;
+            }
+            else
+            {
+                persisted.ScheduleArmedAtUtc = previous.ScheduleArmedAtUtc;
+            }
+
+            all.Add(persisted);
             Write(all);
         }
 
@@ -128,6 +142,7 @@ internal sealed class ScheduleStore : IScheduleStore
         LastStatus = r.RunState.LastStatus,
         LastRunStartedAtUtc = r.RunState.LastRunStartedAtUtc,
         LastRunMissed = r.RunState.LastRunMissed,
+        ScheduleArmedAtUtc = r.RunState.ScheduleArmedAtUtc,
         AcknowledgedAtUtc = r.RunState.AcknowledgedAtUtc,
         Steps = r.Steps.Select(s => new PersistedStep
         {
@@ -178,6 +193,7 @@ internal sealed class ScheduleStore : IScheduleStore
             LastStatus = p.LastStatus,
             LastRunStartedAtUtc = p.LastRunStartedAtUtc,
             LastRunMissed = p.LastRunMissed,
+            ScheduleArmedAtUtc = p.ScheduleArmedAtUtc,
             AcknowledgedAtUtc = p.AcknowledgedAtUtc,
         };
 
@@ -250,6 +266,8 @@ internal sealed class ScheduleStore : IScheduleStore
         public DateTime? LastRunStartedAtUtc { get; set; }
 
         public bool LastRunMissed { get; set; }
+
+        public DateTimeOffset? ScheduleArmedAtUtc { get; set; }
 
         public DateTimeOffset? AcknowledgedAtUtc { get; set; }
     }

@@ -214,6 +214,17 @@ public static class RoutineText
             }
         }
 
+        if (state.LastRunMissed && hasSlot)
+        {
+            return $"missed · {slot.DayOfWeek.ToString()[..3]} (Wire Copy wasn't open)";
+        }
+
+        if (state.LastStatus == RunStatus.Success && state.LastRunStartedAtUtc is { } started
+            && LateDue(state.LastRunOccurrenceKey, started) is { } due)
+        {
+            return $"ran late · {When(started, new DateTimeOffset(now))} (due {due})";
+        }
+
         var suffix = hasSlot ? " " + DayWord(slot, now) : string.Empty;
         return state.LastStatus switch
         {
@@ -341,7 +352,30 @@ public static class RoutineText
             _ => "running",
         };
         var text = $"{word} {When(run.StartedAtUtc, nowLocal)}";
+        if (run.Status == ScheduledRunStatus.Completed && LateDue(run.OccurrenceKey, run.StartedAtUtc) is { } due)
+        {
+            text = $"ran late · {When(run.StartedAtUtc, nowLocal)} (due {due})";
+        }
+
         return string.IsNullOrEmpty(shortReason) ? text : $"{text} — {shortReason}";
+    }
+
+    /// <summary>Copy shown under the schedule: when runs happen and what a missed one does.</summary>
+    public const string ScheduleNote = "Runs while Wire Copy is open. A missed run starts when you next open it.";
+
+    /// <summary>Reason recorded for a day's slot that came and went while Wire Copy was closed.</summary>
+    public static string MissedReason(DayOfWeek day) => $"Wire Copy wasn't open on {day.ToString()[..3]}";
+
+    /// <summary>"05:00" when a scheduled run started more than 90 s after its slot, else null.</summary>
+    public static string? LateDue(string? occurrenceKey, DateTime startedAtUtc)
+    {
+        if (!DateTime.TryParseExact(occurrenceKey ?? string.Empty, "yyyy-MM-dd@HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var slot))
+        {
+            return null;
+        }
+
+        var local = DateTime.SpecifyKind(startedAtUtc, DateTimeKind.Utc).ToLocalTime();
+        return (local - slot).TotalSeconds > 90 ? slot.ToString("HH:mm", CultureInfo.InvariantCulture) : null;
     }
 
     public static string DetailsEyebrow(string name) => $"ROUTINE · {name} · LAST RUN";
@@ -351,6 +385,19 @@ public static class RoutineText
     {
         var local = DateTime.SpecifyKind(startedAtUtc, DateTimeKind.Utc).ToLocalTime();
         return DayWord(local, nowLocal.DateTime);
+    }
+
+    /// <summary>When a run row happened: the slot time for a missed run, "(due HH:mm)" appended for a late one.</summary>
+    public static string RunWhen(ScheduledRun run, DateTimeOffset nowLocal)
+    {
+        if (run.Status == ScheduledRunStatus.Skipped && run.ErrorClass == "MissedPastGrace"
+            && DateTime.TryParseExact(run.OccurrenceKey, "yyyy-MM-dd@HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var slot))
+        {
+            return DayWord(slot, nowLocal.DateTime);
+        }
+
+        var when = When(run.StartedAtUtc, nowLocal);
+        return LateDue(run.OccurrenceKey, run.StartedAtUtc) is { } due && run.Status != ScheduledRunStatus.Skipped ? $"{when} (due {due})" : when;
     }
 
     public static string Took(TimeSpan d) =>
