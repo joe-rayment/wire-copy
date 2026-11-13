@@ -46,7 +46,7 @@ internal static class RoutineEditorHandler
             screen = screen with { Selected = selected };
             ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
-            inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+            inputTask ??= TakeParked(ctx) ?? ctx.InputHandler.WaitForInputAsync(ct);
             await WakeAsync(inputTask, tracker, tracker.Get(routineId) is not null, ct).ConfigureAwait(false);
             if (!inputTask.IsCompleted)
             {
@@ -173,6 +173,14 @@ internal static class RoutineEditorHandler
     /// <param name="running">True while any run is in flight.</param>
     /// <param name="ct">Cancellation.</param>
     /// <returns>A task that completes on the first wake-up.</returns>
+    /// <summary>Takes the key waiter a sub-page parked on the context, or null.</summary>
+    internal static Task<NavigationCommand>? TakeParked(CommandContext ctx)
+    {
+        var parked = ctx.ParkedInput;
+        ctx.ParkedInput = null;
+        return parked;
+    }
+
     internal static async Task WakeAsync(Task input, IRoutineRunTracker tracker, bool running, CancellationToken ct)
     {
         var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);

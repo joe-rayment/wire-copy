@@ -52,6 +52,9 @@ internal class CommandContext
     // Content width override
     public int? ContentWidthOverride { get; set; }
 
+    /// <summary>A key waiter a finished sub-page left pending; the next page loop adopts it so that key is not lost.</summary>
+    public Task<NavigationCommand>? ParkedInput { get; set; }
+
     // Undo state for deferred destructive actions
     public UndoState? PendingUndo { get; set; }
 
