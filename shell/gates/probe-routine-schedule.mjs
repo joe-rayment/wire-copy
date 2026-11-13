@@ -134,12 +134,21 @@ try {
     } catch (e) { return { err: e.message } }
   }
   const sj = () => { try { return JSON.parse(fs.readFileSync(path.join(dataDir, 'schedules.json'), 'utf8')).recipes.find(r => r.name === 'Morning brief') } catch (e) { return { err: e.message } } }
-  const line = async (id, name, withJson = false) => {
+  const overflow = async () => {
+    try {
+      const t = await findTarget(env.cdpPort, x => x.url.includes('launcher.html'), 1500, 'launcher.html')
+      const c = await Cdp.connect(t.webSocketDebuggerUrl)
+      const v = await c.eval('JSON.stringify({sh: document.documentElement.scrollHeight, ih: window.innerHeight})')
+      c.close(); return v
+    } catch (e) { return 'ERR ' + e.message }
+  }
+  const line = async (id, name, withJson = false, withOverflow = false) => {
     await sleep(1200)
     const s = await ls()
-    console.log(`[${id}] screen=${s.screen} sel=${s.selectedIndex} selTitle=${JSON.stringify(s.slots?.[s.selectedIndex]?.title)} title=${JSON.stringify(s.title)} count=${JSON.stringify(s.countLabel)} setupHint=${JSON.stringify(s.setupHint)} urlTyping=${JSON.stringify(s.urlTyping)}${s.err ? ' ERR ' + s.err : ''}`)
-    console.log('   slots: ' + (s.slots || []).map(x => `${x.title}:${x.hint ?? ''}`).join(' | '))
+    console.log(`[${id}] screen=${s.screen} sel=${s.selectedIndex} selTitle=${JSON.stringify(s.slots?.[s.selectedIndex]?.title)} title=${JSON.stringify(s.title)} tagline=${JSON.stringify(s.tagline)} setupHint=${JSON.stringify(s.setupHint)} urlTyping=${JSON.stringify(s.urlTyping)}${s.err ? ' ERR ' + s.err : ''}`)
+    console.log('   slots: ' + (s.slots || []).map(x => `${x.title}|${x.hint ?? ''}|${x.detail ?? ''}`).join(' ;; '))
     if (withJson) { const r = sj(); console.log(`   json: days=${JSON.stringify(r.days)} time=${r.localTime}`) }
+    if (withOverflow) console.log('   overflow: ' + await overflow())
     if (name) shot(name)
     return s
   }
@@ -150,56 +159,50 @@ try {
     await openHome()
     for (let i = 0; i < 8; i++) { const c = await ls(); if (c.slots?.[c.selectedIndex]?.title === 'MORNING BRIEF') break; await k('Right', 300) }
     await k('Return', 2000)
-    await line('0-page', 'page0')
-    await ch('3'); await line('0b-digit3')
-    await k('Return', 2000); await line('1', 'sched-01', true)
+    await line('0-page', null)
+    await ch('3'); await k('Return', 2000); await line('1', 'ck2-01-sched', true, true)
   })
   await T('02', async () => {
-    await k('Right'); await k('Right'); await line('2a-onweekends')
-    await k('Return', 800); await line('2b-weekends', null, true)
-    await ch('t'); for (let i = 0; i < 6; i++) await k('BackSpace', 150); await ch('09', 300); await ch(':30', 300); await line('2c-typing')
-    await k('Return', 1000); await line('2', 'sched-02', true)
+    await ch('1'); await line('2a-every-day', null, true)
+    for (let i = 1; i <= 3; i++) { await k('Right', 500); await line(`2b-right${i}`) }
+    await k('Left', 500); await line('2c-left')
   })
   await T('03', async () => {
-    // day tiles follow the three presets: tiles 3.. are MON..SUN; find them by title
+    await ch('t'); await line('3a-t')
+    await ch('09', 300); await ch(':30', 300); const s = await line('3b-typing')
+    console.log('   buffer check: ' + (s.urlTyping?.buffer === 'Time: 09:30'))
+    await k('Return', 1000); await line('3c-enter', null, true)
+  })
+  await T('04', async () => {
     const s = await ls()
     const idx = t => (s.slots || []).findIndex(x => String(x.title).toUpperCase().startsWith(t))
-    globalThis.__idx = { MON: idx('MON'), TUE: idx('TUE'), WED: idx('WED'), THU: idx('THU'), FRI: idx('FRI'), SAT: idx('SAT'), SUN: idx('SUN') }
+    globalThis.__idx = { MON: idx('MON'), TUE: idx('TUE'), WED: idx('WED'), THU: idx('THU'), FRI: idx('FRI') }
     console.log('  day idx', JSON.stringify(globalThis.__idx))
     const goto = async name => {
       for (let i = 0; i < 12; i++) { const c = await ls(); const t = globalThis.__idx[name], f = c.selectedIndex
         if (f === t) return
         const dr = Math.floor(t / 4) - Math.floor(f / 4)
         if (dr) await k(dr > 0 ? 'Down' : 'Up', 300); else await k(t > f ? 'Right' : 'Left', 300) } }
-    globalThis.__goto = goto
-    for (const d of ['MON', 'WED', 'FRI']) { await goto(d); await k('space', 500) }
-    await line('3', 'sched-03', true)
-  })
-  await T('04', async () => {
-    for (const d of ['SAT', 'SUN', 'MON', 'WED']) { await globalThis.__goto(d); await k('space', 500) }
+    for (const d of ['MON', 'TUE', 'WED', 'THU']) { await goto(d); await k('space', 500) }
     await line('4a-one-left', null, true)
-    await globalThis.__goto('FRI'); await k('space', 600)
-    await line('4', 'sched-04', true)
+    await k('Right', 500); await line('4a2-onfri'); await k('space', 600)
+    await line('4b-lastday', 'ck2-02-lastday', true, true)
+    await k('Down', 600); await line('4c-down', null, true)
   })
   await T('05', async () => {
-    await ch('t'); for (let i = 0; i < 6; i++) await k('BackSpace', 150); await ch('25', 300); await ch(':99', 300); await line('5a-typing')
-    await k('Return', 1000); await line('5', 'sched-05', true)
+    await ch('t'); await ch('25', 300); await ch(':99', 300); await line('5a-typing')
+    await k('Return', 1000); await line('5', null, true)
   })
   await T('06', async () => {
-    await k('Escape', 1500)
-    await line('6', 'sched-06-page', true)
+    await ch('?', 1500); await line('6a-help', 'ck2-03-help')
+    await k('Escape', 1500); await line('6b-back')
   })
   await T('07', async () => {
-    await ch('a', 1500); await line('7', 'site-01')
-    await k('Escape', 1500); await line('7b-back')
-  })
-  await T('08', async () => {
-    await ch('a', 1500)
-    const s = await ls(); const i = (s.slots || []).findIndex(x => /FIXTURE/i.test(x.title))
-    console.log('  fixture tile idx', i)
-    for (let j = 0; j < i; j++) await k('Right', 250)
-    await k('Return', 3000); await line('8', 'site-02-pick')
-    await k('Escape', 1500); await line('8b-after-esc')
+    await k('Escape', 1500); await line('7a-page', null, true)
+    await ch('a', 1500); await line('7b-addsite', 'ck2-04-addsite')
+    await ch('?', 1500); await line('7c-help')
+    await k('Escape', 1500); await line('7d-addsite')
+    await k('Escape', 1500); await line('7e-routine')
   })
 } catch (e) {
   console.error('PROBE ERROR:', e)
