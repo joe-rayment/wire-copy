@@ -300,6 +300,11 @@ public static class RoutineText
             return "never run";
         }
 
+        if (IsMissed(run))
+        {
+            return $"missed · {MissedSlot(run)} (Wire Copy wasn't open)";
+        }
+
         var word = run.Status switch
         {
             ScheduledRunStatus.Completed => "✓",
@@ -316,6 +321,33 @@ public static class RoutineText
         }
 
         return string.IsNullOrEmpty(shortReason) ? text : $"{text} — {shortReason}";
+    }
+
+    /// <summary>True for the single note recorded for a slot that came and went while Wire Copy was closed.</summary>
+    public static bool IsMissed(ScheduledRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        return run.Status == ScheduledRunStatus.Skipped && run.ErrorClass == "MissedPastGrace";
+    }
+
+    /// <summary>The local moment a run row stands for: the missed slot for a missed note, else when it started.</summary>
+    public static DateTime RunMomentLocal(ScheduledRun run)
+    {
+        ArgumentNullException.ThrowIfNull(run);
+        if (IsMissed(run)
+            && DateTime.TryParseExact(run.OccurrenceKey, "yyyy-MM-dd@HH:mm", CultureInfo.InvariantCulture, DateTimeStyles.None, out var slot))
+        {
+            return slot;
+        }
+
+        return DateTime.SpecifyKind(run.StartedAtUtc, DateTimeKind.Utc).ToLocalTime();
+    }
+
+    /// <summary>"Thu 06:00": the day word the home uses plus the slot time, for a missed row.</summary>
+    public static string MissedSlot(ScheduledRun run)
+    {
+        var at = RunMomentLocal(run);
+        return $"{at.DayOfWeek.ToString()[..3]} {at.ToString("HH:mm", CultureInfo.InvariantCulture)}";
     }
 
     /// <summary>Reason recorded for a day's slot that came and went while Wire Copy was closed.</summary>

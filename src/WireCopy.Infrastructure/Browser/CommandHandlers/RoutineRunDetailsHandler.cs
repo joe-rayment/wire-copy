@@ -166,6 +166,12 @@ internal static class RoutineRunDetailsHandler
                 continue;
             }
 
+            if (key == 'l' && !running && viewRun is not null && RoutineText.IsMissed(viewRun))
+            {
+                // A run that never happened has no log to open.
+                continue;
+            }
+
             if (key == 'l' || (activate && selId == "log" && !running))
             {
                 ctx.Renderer.HideLauncherPane();
