@@ -2,6 +2,7 @@
 
 using Microsoft.Extensions.DependencyInjection;
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Application.Interfaces;
 using WireCopy.Application.Interfaces.Scheduling;
 using WireCopy.Domain.Entities.Bookmarks;
@@ -27,6 +28,9 @@ internal static class RoutineEditorHandler
         var selected = 0;
         string? selectedId = null;
         string? barError = null;
+        using var trackerScope = ctx.ScopeFactory.CreateScope();
+        var tracker = trackerScope.ServiceProvider.GetRequiredService<IRoutineRunTracker>();
+        Task<NavigationCommand>? inputTask = null;
 
         while (!ct.IsCancellationRequested)
         {
@@ -37,13 +41,21 @@ internal static class RoutineEditorHandler
             }
 
             var lastRun = await LoadLastRunAsync(ctx, routineId).ConfigureAwait(false);
-            var screen = RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, ctx.Bookmarks?.ToList() ?? new List<Bookmark>(), 0, barError ?? (recipe.Steps.Count > 0 ? firstHint : null));
+            var screen = RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, ctx.Bookmarks?.ToList() ?? new List<Bookmark>(), 0, barError ?? (recipe.Steps.Count > 0 ? firstHint : null), tracker.Get(routineId));
             barError = null;
             selected = TileGrid.IndexOfId(screen, selectedId, selected);
             screen = screen with { Selected = selected };
             ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
-            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+            await WakeAsync(inputTask, tracker, tracker.Get(routineId) is not null, ct).ConfigureAwait(false);
+            if (!inputTask.IsCompleted)
+            {
+                continue;
+            }
+
+            var command = await inputTask.ConfigureAwait(false);
+            inputTask = null;
             firstHint = null;
             var tile = TileGrid.ItemAt(screen, selected);
             if (command.Type == CommandType.ShowHelp)
@@ -93,7 +105,7 @@ internal static class RoutineEditorHandler
             }
             else if (command.RawKeyChar == 'r')
             {
-                await RunNowAsync(ctx, options, recipe, screen, ct).ConfigureAwait(false);
+                await StartRunAndOpenAsync(ctx, options, recipe, ct).ConfigureAwait(false);
             }
             else if (command.RawKeyChar == 'a')
             {
@@ -131,6 +143,35 @@ internal static class RoutineEditorHandler
             }
 
             selectedId = TileGrid.ItemAt(screen, selected)?.Id;
+        }
+    }
+
+    /// <summary>Waits for the pending input, a tracker change, or (while a run is in flight) one second.</summary>
+    /// <param name="input">The one pending input task.</param>
+    /// <param name="tracker">The run tracker.</param>
+    /// <param name="running">True while any run is in flight.</param>
+    /// <param name="ct">Cancellation.</param>
+    /// <returns>A task that completes on the first wake-up.</returns>
+    internal static async Task WakeAsync(Task input, IRoutineRunTracker tracker, bool running, CancellationToken ct)
+    {
+        var changed = new TaskCompletionSource(TaskCreationOptions.RunContinuationsAsynchronously);
+        void OnChanged(object? sender, EventArgs e) => changed.TrySetResult();
+        tracker.Changed += OnChanged;
+        try
+        {
+            using var tick = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            var wake = new List<Task> { input, changed.Task };
+            if (running)
+            {
+                wake.Add(Task.Delay(TimeSpan.FromSeconds(1), tick.Token));
+            }
+
+            await Task.WhenAny(wake).ConfigureAwait(false);
+            await tick.CancelAsync().ConfigureAwait(false);
+        }
+        finally
+        {
+            tracker.Changed -= OnChanged;
         }
     }
 
@@ -240,7 +281,6 @@ internal static class RoutineEditorHandler
                 await RoutineSchedulePage.OpenAsync(ctx, recipe.Id, ct).ConfigureAwait(false);
                 break;
             case "lastRun":
-                ctx.Renderer.HideLauncherPane();
                 await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
                 break;
             case "name":
@@ -319,34 +359,20 @@ internal static class RoutineEditorHandler
         return runs.FirstOrDefault();
     }
 
-    private static async Task RunNowAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, TileScreen screen, CancellationToken ct)
+    private static async Task StartRunAndOpenAsync(CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
-        ctx.NavigationService.SetStatusMessage(RoutineText.Running(recipe.Name), TimeSpan.FromMinutes(10));
-
-        // Immediate feedback: repaint once with the running hint while the run is awaited.
-        ctx.Renderer.RenderTileScreen(screen with { HintRow = RoutineText.Running(recipe.Name) }, ctx.GetCurrentRenderOptions());
-        RunNowResult result;
+        RunNowOutcome outcome;
         using (var scope = ctx.ScopeFactory.CreateScope())
         {
-            result = await scope.ServiceProvider.GetRequiredService<IScheduleRunNow>().RunAsync(recipe, CancellationToken.None).ConfigureAwait(false);
+            outcome = scope.ServiceProvider.GetRequiredService<IScheduleRunNow>().StartInBackground(recipe);
         }
 
-        if (result.Outcome == RunNowOutcome.Busy)
+        if (outcome == RunNowOutcome.Busy)
         {
             ctx.NavigationService.SetStatusMessage(RoutineText.Busy, TimeSpan.FromSeconds(6));
-            return;
         }
 
-        // Replace the 10-minute "Running…" status in every outcome — left in place it outlives
-        // the run and shows on the Routines home and the launcher long after it finished.
-        var reloaded = await LoadAsync(ctx, recipe.Id).ConfigureAwait(false) ?? recipe;
-        ctx.NavigationService.SetStatusMessage(RoutineText.LastResult(reloaded, DateTimeOffset.Now), TimeSpan.FromSeconds(10));
-
-        if (result.Run is { } finished && RoutineRunDiagnosis.Diagnose(finished).NeedsAttention)
-        {
-            ctx.Renderer.HideLauncherPane();
-            await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
-        }
+        await RoutineRunDetailsHandler.OpenAsync(ctx, options, recipe.Id, ct).ConfigureAwait(false);
     }
 
     /// <summary>Edits the Name row in place; true when a name was committed (a valid typed name).</summary>
@@ -362,8 +388,8 @@ internal static class RoutineEditorHandler
             options,
             recipe,
             "Name: ",
-            RoutineText.NameEditHint,
-            recipe.Name,
+            $"Type a new name · Esc keeps “{recipe.Name}”",
+            null,
             v => NameProblem(v, taken),
             ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))
@@ -458,8 +484,8 @@ internal static class RoutineEditorHandler
             options,
             recipe,
             "Podcast: ",
-            RoutineText.PodcastEditHint,
-            recipe.OutputCollectionName,
+            $"Type a new podcast name · Esc keeps “{recipe.OutputCollectionName}”",
+            null,
             v => string.IsNullOrWhiteSpace(v) ? RoutineText.PodcastEmpty : null,
             ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))

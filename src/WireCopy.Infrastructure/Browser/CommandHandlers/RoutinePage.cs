@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Domain.Entities.Bookmarks;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.ValueObjects.Scheduling;
@@ -12,7 +13,7 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 internal static class RoutinePage
 {
     public static TileScreen Build(
-        ScheduleRecipe recipe, ScheduledRun? lastRun, DateTimeOffset now, IReadOnlyList<Bookmark> bookmarks, int selected, string? hintRow = null)
+        ScheduleRecipe recipe, ScheduledRun? lastRun, DateTimeOffset now, IReadOnlyList<Bookmark> bookmarks, int selected, string? hintRow = null, RoutineRunProgress? running = null)
     {
         var freq = RoutineText.Frequency(recipe.Cadence);
         var schedule = recipe.Enabled ? $"{freq} · {RoutineText.NextRun(recipe.Cadence, now)}" : $"off · {freq}";
@@ -41,7 +42,7 @@ internal static class RoutinePage
             {
                 Legend = "Output",
                 Top = new Tile { Id = "podcast", Title = "PODCAST", Hint = $"{recipe.OutputCollectionName} · episodes go to this feed" },
-                Bottom = new Tile { Id = "lastRun", Title = "LAST RUN", Hint = LastRunValue(lastRun, now) },
+                Bottom = new Tile { Id = "lastRun", Title = "LAST RUN", Hint = running is null ? LastRunValue(lastRun, now) : RoutinesHomePage.RunningLabel(running) },
             },
         };
         cells.AddRange(sites.Skip(2).Select(t => new TileCell { Tile = t }));

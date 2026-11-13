@@ -1,6 +1,7 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Application.DTOs.Scheduling;
 using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.ValueObjects.Scheduling;
 using WireCopy.Infrastructure.Scheduling;
@@ -23,7 +24,7 @@ internal static class RoutinesHomePage
 
     public static TileScreen Build(
         IReadOnlyList<ScheduleRecipe> recipes,
-        IReadOnlySet<Guid> runningIds,
+        IReadOnlyDictionary<Guid, RoutineRunProgress> running,
         IReadOnlyDictionary<Guid, string>? alerts,
         string? badge,
         DateTimeOffset now,
@@ -37,7 +38,7 @@ internal static class RoutinesHomePage
                 Eyebrow = "Routines",
                 Title = "Routines",
                 AppLabel = "Routines",
-                Tagline = "Sections you pick, read to you on a schedule",
+                Tagline = "Sections you pick, read to you on a schedule · runs while Wire Copy is open",
                 CountLabel = "no routines yet",
                 FooterCount = "no routines yet",
                 Badge = badge,
@@ -56,7 +57,7 @@ internal static class RoutinesHomePage
         }
 
         var ordered = Ordered(recipes, now);
-        var cells = ordered.Select(r => new TileCell { Tile = ToTile(r, runningIds, alerts, now) }).ToList();
+        var cells = ordered.Select(r => new TileCell { Tile = ToTile(r, running, alerts, now) }).ToList();
         var count = ordered.Count == 1 ? "1 routine" : $"{ordered.Count} routines";
         return new TileScreen
         {
@@ -85,6 +86,29 @@ internal static class RoutinesHomePage
         };
     }
 
+    /// <summary>"running · story 4 of 12": the running stage's hint, else its title in lower case, else "starting".</summary>
+    /// <param name="progress">The in-flight run.</param>
+    /// <returns>The label.</returns>
+    public static string RunningLabel(RoutineRunProgress progress)
+    {
+        var stage = progress.Stages.FirstOrDefault(x => x.State == RoutineRunStageState.Running);
+        string what;
+        if (stage is null)
+        {
+            what = "starting";
+        }
+        else if (!string.IsNullOrWhiteSpace(stage.Hint))
+        {
+            what = stage.Hint;
+        }
+        else
+        {
+            what = stage.Title.ToLowerInvariant();
+        }
+
+        return "running · " + what;
+    }
+
     private static string Tagline(List<ScheduleRecipe> ordered, DateTimeOffset now)
     {
         var live = ordered.Where(r => r.Enabled && r.Steps.Count > 0).ToList();
@@ -99,13 +123,13 @@ internal static class RoutinesHomePage
         return $"{on} on · next {next.Name} {when}";
     }
 
-    private static Tile ToTile(ScheduleRecipe r, IReadOnlySet<Guid> runningIds, IReadOnlyDictionary<Guid, string>? alerts, DateTimeOffset now)
+    private static Tile ToTile(ScheduleRecipe r, IReadOnlyDictionary<Guid, RoutineRunProgress> running, IReadOnlyDictionary<Guid, string>? alerts, DateTimeOffset now)
     {
         var freq = RoutineText.Frequency(r.Cadence);
         string hint;
-        if (runningIds.Contains(r.Id))
+        if (running.TryGetValue(r.Id, out var progress))
         {
-            hint = RoutineText.CardRunning;
+            hint = RunningLabel(progress);
         }
         else if (!r.Enabled)
         {
