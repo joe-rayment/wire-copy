@@ -807,6 +807,8 @@ internal class LauncherRenderer
         return new LauncherViewState
         {
             Screen = "routines",
+            BarHidden = true,
+            CountLabel = string.Empty,
             Mode = options.UiMode,
             ModeVariant = options.UiModeVariant,
             Eyebrow = RoutineText.HomeEyebrow,
@@ -818,7 +820,7 @@ internal class LauncherRenderer
             Paging = new LauncherPaging { Offset = offset, Visible = visible, Total = total },
             BookmarkCount = 0,
             Footer = new LauncherFooter { Badge = badge, Status = options.StatusMessage },
-            Tagline = string.Empty,
+            Tagline = "All copy, no nonsense",
             Version = string.Empty,
         };
     }

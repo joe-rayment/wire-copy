@@ -436,12 +436,8 @@ html, body {
   color: var(--tr-bg-pure);
 }
 
-/* Routines home (workspace-wyvga.4): state.screen == "routines". Same pane and grid; the
-   URL bar and the bookmark counts are launcher-only, so they are hidden here (the setup and
-   extension hints are simply not painted by launcher.html). */
-html[data-screen="routines"] #urlbar-wrap,
-html[data-screen="routines"] #header-right .hr-count,
-html[data-screen="routines"] #footer-right .count { display: none; }
+/* Routines screens (workspace-wyvga.4): state.screen != "launcher". Same pane and grid; the bar,
+   counts, hints and legends all come from state (barHidden, countLabel, ...), nothing is hidden by CSS. */
 .card.disabled { opacity: .55; }
 .card .detail { margin-top: 3px; }
 /* Fourth line: why the last run needs attention. Red token follows the theme variant;

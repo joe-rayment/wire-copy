@@ -67,10 +67,11 @@ let lastMsg = null
 
 // One-time static chrome: the footer never changes; the masthead title block
 // ("▌ Launcher" / Wire Copy / cursor / scanlines) is static markup above.
-function paintChrome () {
+function paintChrome (state = {}) {
   $('footer-rule').textContent = '─'.repeat(500)
+  const hints = (state.hints && state.hints.map(h => [h.key, h.label])) || HINTS
   $('footer-hints').innerHTML =
-    `<span id="footer-app">Launcher</span>` + HINTS
+    `<span id="footer-app">${esc(state.appLabel == null ? 'Launcher' : state.appLabel)}</span>` + hints
       .map(([k, label]) =>
         `<span class="kbd"><span class="brk">[</span><span class="key">${esc(k)}</span><span class="brk">]</span>:${esc(label)}</span>`)
       .join('')
@@ -79,17 +80,22 @@ function paintChrome () {
 // Header status readout, right of the CRT title (Launcher Responsive.dc.html):
 // the bookmark count, plus the scheduled-run badge / transient status when the
 // TUI reports them. Only real state — no invented lines.
+function countText (state) {
+  return state.countLabel != null ? state.countLabel
+    : (state.bookmarkCount === 1 ? '1 bookmark' : `${state.bookmarkCount ?? 0} bookmarks`)
+}
+
 function paintHeaderRight (state) {
-  const count = state.bookmarkCount === 1 ? '1 bookmark' : `${state.bookmarkCount ?? 0} bookmarks`
+  const count = countText(state)
   const f = state.footer || {}
-  let html = `<div class="hr-count">${esc(count)}</div>`
+  let html = count === '' ? '' : `<div class="hr-count">${esc(count)}</div>`
   if (f.badge) html += `<div class="hr-badge">${esc(f.badge)}</div>`
   if (f.status) html += `<div class="hr-status">${esc(f.status)}</div>`
   $('header-right').innerHTML = html
 }
 
 function paintTagline (state) {
-  const tag = state.tagline || 'All copy, no nonsense'
+  const tag = state.tagline == null ? 'All copy, no nonsense' : state.tagline
   const ver = state.version || ''
   $('tagline').innerHTML =
     `${esc(tag)}${ver ? `<span class="sep">·</span><span class="ver">${esc(ver)}</span>` : ''}`
@@ -100,6 +106,8 @@ function paintTagline (state) {
 // when the cursor is past the end). Empty buffer while typing shows the placeholder.
 function paintUrlBar (state) {
   const bar = $('urlbar')
+  const ph = state.barPlaceholder == null ? 'Go to URL…' : state.barPlaceholder
+  $('urlbar-wrap').style.display = state.barHidden ? 'none' : ''
   const typing = state.urlTyping
   const focused = state.selectedIndex === -1 || !!typing
   bar.classList.toggle('focused', focused)
@@ -115,9 +123,9 @@ function paintUrlBar (state) {
       `<span class="cursor">${esc(at)}</span>` +
       `<span class="typed">${esc(after)}</span>`
   } else if (typing) {
-    bar.innerHTML = `<span class="cursor"> </span><span class="placeholder">Go to URL…</span>`
+    bar.innerHTML = `<span class="cursor"> </span><span class="placeholder">${esc(ph)}</span>`
   } else {
-    bar.innerHTML = `<span class="placeholder">Go to URL…</span>`
+    bar.innerHTML = `<span class="placeholder">${esc(ph)}</span>`
   }
 }
 
@@ -201,7 +209,7 @@ function paintGrid (state) {
       // a framed, tinted box with a "yours" legend so it reads as a different kind of
       // tile while keeping the same grid footprint.
       out.push(`<div class="card pair"><div class="pair-box">` +
-        `<div class="pair-legend">Yours</div>` +
+        `<div class="pair-legend">${esc(a.legend == null ? 'Yours' : a.legend)}</div>` +
         halfHtml(a, i === state.selectedIndex) +
         halfHtml(b, i + 1 === state.selectedIndex) + `</div></div>`)
       i++
@@ -232,8 +240,8 @@ function paintPaging (state) {
 function paintFooter (state) {
   // Badge/status live in the header readout now (paintHeaderRight); the footer
   // right keeps only the muted count, per Launcher Responsive.dc.html.
-  const count = state.bookmarkCount === 1 ? '1 bookmark' : `${state.bookmarkCount ?? 0} bookmarks`
-  $('footer-right').innerHTML = `<span class="count">${esc(count)}</span>`
+  const count = state.footerCount != null ? state.footerCount : countText(state)
+  $('footer-right').innerHTML = count === '' ? '' : `<span class="count">${esc(count)}</span>`
 }
 
 // ':' / '/' prompt line (workspace-up3zx). The TUI draws its command / search prompt on the
@@ -305,25 +313,25 @@ function paintMode (state) {
   document.documentElement.dataset.variant = state.modeVariant || 'amber'
   $('eyebrow').innerHTML = `<span class="tick">▌</span> ${esc(state.eyebrow || 'Launcher')}`
   $('apptitle').textContent = state.title || 'Wire Copy'
-  if (state.footerHint) {
+  if (state.hints) {
+    paintChrome(state)
+  } else if (state.footerHint) {
     $('footer-hints').innerHTML = `<span class="kbd">${esc(state.footerHint)}</span>`
   } else {
-    paintChrome()
+    paintChrome(state)
   }
 }
 
 window.__renderLauncher = function (msg) {
   lastMsg = msg
   const state = (msg && msg.state) || {}
-  // Routines home reuses this pane but hides the launcher-only chrome.
-  const routines = state.screen === 'routines'
-  document.documentElement.dataset.screen = routines ? 'routines' : 'launcher'
+  document.documentElement.dataset.screen = state.screen || 'launcher'
   paintMode(state)
   paintTagline(state)
   paintHeaderRight(state)
   paintUrlBar(state)
-  paintSetupHint(routines ? Object.assign({}, state, { setupHint: null }) : state)
-  paintExtensionHint(routines ? Object.assign({}, state, { extensionHint: null }) : state)
+  paintSetupHint(state)
+  paintExtensionHint(state)
   paintGrid(state)
   paintPaging(state)
   paintFooter(state)

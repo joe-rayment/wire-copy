@@ -21,8 +21,26 @@ public sealed record LauncherViewState
     /// <summary>"amber" | "cyan" (S6): cyan when the saved base theme is Amber.</summary>
     public string ModeVariant { get; init; } = "amber";
 
-    /// <summary>"launcher" | "routines".</summary>
+    /// <summary>"launcher" | "routines" | "routine" | "schedule" | "addSite" | "run".</summary>
     public string Screen { get; init; } = "launcher";
+
+    /// <summary>URL-bar placeholder; null = pane shows "Go to URL…".</summary>
+    public string? BarPlaceholder { get; init; }
+
+    /// <summary>True hides the URL bar entirely.</summary>
+    public bool BarHidden { get; init; }
+
+    /// <summary>Header and footer count label; null = the bookmark count text, "" = no count element.</summary>
+    public string? CountLabel { get; init; }
+
+    /// <summary>Overrides only the footer-right text; null = same as the header count, "" = empty.</summary>
+    public string? FooterCount { get; init; }
+
+    /// <summary>The footer's leading label; null = pane shows "Launcher".</summary>
+    public string? AppLabel { get; init; }
+
+    /// <summary>Structured footer key hints; null = the launcher's own hints. Wins over <see cref="FooterHint"/>.</summary>
+    public IReadOnlyList<LauncherHint>? Hints { get; init; }
 
     /// <summary>Header eyebrow; null = pane shows "LAUNCHER".</summary>
     public string? Eyebrow { get; init; }
@@ -115,6 +133,17 @@ public sealed record LauncherSlot
 
     /// <summary>True when a routine card is dimmed.</summary>
     public bool Disabled { get; init; }
+
+    /// <summary>Legend of a boxed top/bottom pair, read from the top half; null = "Yours".</summary>
+    public string? Legend { get; init; }
+}
+
+/// <summary>One footer key hint rendered as <c>[Key]:Label</c>.</summary>
+public sealed record LauncherHint
+{
+    public required string Key { get; init; }
+
+    public required string Label { get; init; }
 }
 
 /// <summary>The URL bar's in-progress typed buffer and cursor position.</summary>

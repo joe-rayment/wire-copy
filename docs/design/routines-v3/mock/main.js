@@ -1,6 +1,5 @@
 // Renders PROPOSED routines screens with the app's REAL launcher pane (shell/launcher/launcher.html):
-// each scenario is a state pushed through window.__renderLauncher, plus the few text slots the pane
-// hard-codes today (bar placeholder, count label, footer hints, box legend) set from the scenario.
+// each scenario is nothing but a state pushed through window.__renderLauncher.
 // Headed Electron under Xvfb; window content size = the shell's (1275x808).
 // Run from the repo root (source ~/.local/bin/x-env.sh first; needs an X display, never headless):
 //   shell/deps/<platform>/node_modules/.bin/electron docs/design/routines-v3/mock/main.js --no-sandbox \
@@ -18,12 +17,6 @@ app.whenReady().then(async () => {
     await win.webContents.executeJavaScript(`(() => {
       const sc = ${JSON.stringify(sc)}
       window.__renderLauncher({ visible: true, state: sc.state })
-      const q = s => document.querySelector(s)
-      if (sc.bar != null && q('#urlbar .placeholder')) q('#urlbar .placeholder').textContent = sc.bar
-      if (sc.count != null) { if (q('#header-right .hr-count')) q('#header-right .hr-count').textContent = sc.count; if (q('#footer-right .count')) q('#footer-right .count').textContent = sc.footRight != null ? sc.footRight : sc.count }
-      q('#urlbar-wrap').style.display = sc.noBar ? 'none' : ''
-      if (sc.hints) q('#footer-hints').innerHTML = '<span id="footer-app">' + sc.app + '</span>' + sc.hints.map(([k, l]) => '<span class="kbd"><span class="brk">[</span><span class="key">' + k + '</span><span class="brk">]</span>:' + l + '</span>').join('')
-      document.querySelectorAll('.pair-legend').forEach((el, i) => { if (sc.legends && sc.legends[i]) el.textContent = sc.legends[i] })
       document.querySelectorAll('*').forEach(el => { el.style.animation = 'none' })
       return document.documentElement.scrollHeight + 'x' + document.documentElement.scrollWidth + ' cards=' + document.querySelectorAll('.card').length
     })()`).then(v => console.log(sc.name, v))
