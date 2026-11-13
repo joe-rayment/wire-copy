@@ -56,7 +56,11 @@ internal static class RoutineEditorHandler
 
             var command = await inputTask.ConfigureAwait(false);
             inputTask = null;
-            firstHint = null;
+            if (command.Type != CommandType.TerminalResized)
+            {
+                firstHint = null;
+            }
+
             var tile = TileGrid.ItemAt(screen, selected);
             if (command.Type == CommandType.ShowHelp)
             {
@@ -80,7 +84,14 @@ internal static class RoutineEditorHandler
 
             if (selected == TileGrid.Bar && IsBarTypingKey(command, out var seed))
             {
+                var before = SiteIds(screen);
                 barError = await AddSiteFromBarAsync(ctx, options, recipe, seed, ct).ConfigureAwait(false);
+                if (barError is null && await NewSiteIdAsync(ctx, routineId, before, tracker).ConfigureAwait(false) is { } added)
+                {
+                    selectedId = added;
+                    selected = 0;
+                    continue;
+                }
             }
             else if (command.RawKeyChar is 'J' or 'K' && tile is not null && tile.Id.StartsWith("site:", StringComparison.Ordinal))
             {
@@ -109,7 +120,18 @@ internal static class RoutineEditorHandler
             }
             else if (command.RawKeyChar == 'a')
             {
+                var before = SiteIds(screen);
                 await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
+                if (await NewSiteIdAsync(ctx, routineId, before, tracker).ConfigureAwait(false) is { } added)
+                {
+                    selectedId = added;
+                    selected = 0;
+                    continue;
+                }
+            }
+            else if (selected == TileGrid.Bar && command.Type == CommandType.GoBack && TileGrid.Items(screen).Count > 0)
+            {
+                selected = 0;
             }
             else if (command.Type is CommandType.GoBack or CommandType.Quit)
             {
@@ -183,9 +205,7 @@ internal static class RoutineEditorHandler
             return true;
         }
 
-        if (command.RawKeyChar is { } typed && typed > ' '
-            && command.Type is not (CommandType.MoveDown or CommandType.MoveUp or CommandType.MoveLeft or CommandType.MoveRight
-                or CommandType.ExpandNode or CommandType.CollapseNode or CommandType.GoBack or CommandType.Quit))
+        if (command.RawKeyChar is { } typed && typed > ' ' && typed != (char)127)
         {
             seed = typed.ToString();
             return true;
@@ -505,5 +525,20 @@ internal static class RoutineEditorHandler
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<IScheduleStore>().GetAllAsync().ConfigureAwait(false);
+    }
+
+    private static HashSet<string> SiteIds(TileScreen screen) =>
+        TileGrid.Items(screen).Where(t => t.Id.StartsWith("site:", StringComparison.Ordinal)).Select(t => t.Id).ToHashSet();
+
+    private static async Task<string?> NewSiteIdAsync(CommandContext ctx, Guid routineId, HashSet<string> before, IRoutineRunTracker tracker)
+    {
+        var recipe = await LoadAsync(ctx, routineId).ConfigureAwait(false);
+        if (recipe is null)
+        {
+            return null;
+        }
+
+        var page = RoutinePage.Build(recipe, null, DateTimeOffset.Now, ctx.Bookmarks?.ToList() ?? new List<Bookmark>(), 0, null, tracker.Get(routineId));
+        return SiteIds(page).FirstOrDefault(id => !before.Contains(id));
     }
 }

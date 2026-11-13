@@ -168,6 +168,10 @@ internal static class RoutinesHomeHandler
 
                 switch (command.Type)
                 {
+                    case CommandType.GoBack when sel == TileGrid.Bar && recipes.Count > 0:
+                        sel = 0;
+                        selId = null;
+                        break;
                     case CommandType.GoBack or CommandType.Quit:
                         return;
                     case CommandType.MoveLeft or CommandType.CollapseNode
