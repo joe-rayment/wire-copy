@@ -115,7 +115,7 @@ internal static class RoutineRunDetailsHandler
 
             ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
-            inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
+            inputTask ??= RoutineEditorHandler.TakeParked(ctx) ?? ctx.InputHandler.WaitForInputAsync(ct);
             var wake = new List<Task> { inputTask, wakeUp };
             if (running)
             {

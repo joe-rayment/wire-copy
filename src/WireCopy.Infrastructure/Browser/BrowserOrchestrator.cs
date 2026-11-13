@@ -578,7 +578,7 @@ public partial class BrowserOrchestrator : IBrowserService
 
                 // Start waiting for input if not already waiting
                 WatchRoutineRuns();
-                pendingInput ??= _inputHandler.WaitForInputAsync(cancellationToken);
+                pendingInput ??= RoutineEditorHandler.TakeParked(_commandContext) ?? _inputHandler.WaitForInputAsync(cancellationToken);
 
                 // Build the race: input, timer, and optionally background load + speed read + quality retry
                 var raceTasks = new List<Task> { pendingInput, Task.Delay(500, cancellationToken) };
