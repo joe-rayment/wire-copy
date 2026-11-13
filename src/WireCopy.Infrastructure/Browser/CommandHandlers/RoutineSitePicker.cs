@@ -1,132 +1,152 @@
 // Licensed under the MIT License. See LICENSE in the repository root.
 
 using WireCopy.Application.DTOs.Browser;
+using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Browser;
-using WireCopy.Infrastructure.Scheduling;
+using WireCopy.Infrastructure.Browser.UI.Renderers;
 
 namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 
 /// <summary>
-/// "+ Add a site" in the routine editor: the app's own launcher (same tile grid, movement keys,
-/// digits and Go to URL) in routine colours. It keeps its own selection so the real launcher's
-/// is untouched; Enter on a site tile (or a submitted URL) returns that URL, Esc returns null.
+/// "+ Add a site" in the routine editor: its own tile screen with one tile per saved site and the
+/// bar for typing an address. Enter on a site tile (or a submitted address) returns that URL, Esc returns null.
 /// </summary>
 internal static class RoutineSitePicker
 {
-    public static async Task<string?> PickAsync(CommandContext ctx, string routineName, CancellationToken ct)
+    public static async Task<string?> PickAsync(
+        CommandContext ctx, string routineName, CancellationToken ct, ScheduleRecipe? recipe = null)
     {
-        var nav = ctx.NavigationService;
-        var savedSel = nav.LauncherSelectedIndex;
-        var savedScroll = nav.LauncherScrollOffset;
-        var sel = 0;
-        var scroll = 0;
-        ctx.LauncherOptionsOverride = o => o with
+        var marks = ctx.Bookmarks ?? Array.Empty<Domain.Entities.Bookmarks.Bookmark>();
+        var sel = marks.Count == 0 ? TileGrid.Bar : 0;
+        string? error = null;
+        while (!ct.IsCancellationRequested)
         {
-            LauncherEyebrow = RoutineText.Eyebrow(routineName),
-            LauncherFooterHint = RoutineText.AddSiteFooter,
-        };
-        try
-        {
-            while (!ct.IsCancellationRequested)
+            var screen = Build(routineName, marks, recipe, error, null) with { Selected = sel };
+            error = null;
+            ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
+
+            var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
+            if (command.Type == CommandType.TerminalResized)
             {
-                var opts = Options(ctx, routineName);
-                var bc = ctx.Bookmarks?.Count ?? 0;
-                Paint(ctx, opts, sel, scroll);
-
-                var command = await ctx.InputHandler.WaitForInputAsync(ct).ConfigureAwait(false);
-                if (command.Type == CommandType.TerminalResized)
-                {
-                    continue;
-                }
-
-                if (sel == -1 && command.RawKeyChar is { } typed && typed >= 32
-                    && command.Type is not (CommandType.MoveDown or CommandType.MoveUp or CommandType.ActivateLink))
-                {
-                    var typedUrl = await TypeUrlAsync(ctx, routineName, typed, ct).ConfigureAwait(false);
-                    if (typedUrl is not null)
-                    {
-                        return typedUrl;
-                    }
-
-                    continue;
-                }
-
-                switch (command.Type)
-                {
-                    case CommandType.GoBack:
-                    case CommandType.Quit:
-                        return null;
-                    case CommandType.GoToUrl:
-                    case CommandType.OpenInBrowser:
-                        sel = -1;
-                        var url = await TypeUrlAsync(ctx, routineName, null, ct).ConfigureAwait(false);
-                        if (url is not null)
-                        {
-                            return url;
-                        }
-
-                        break;
-                    case CommandType.ActivateLink:
-                        if (sel == -1)
-                        {
-                            var entered = await TypeUrlAsync(ctx, routineName, null, ct).ConfigureAwait(false);
-                            if (entered is not null)
-                            {
-                                return entered;
-                            }
-                        }
-                        else
-                        {
-                            var idx = LauncherCommandHandler.BookmarkIndexFromVirtual(sel, bc);
-                            if (idx >= 0 && ctx.Bookmarks is { } marks && idx < marks.Count)
-                            {
-                                return marks[idx].Url;
-                            }
-
-                            nav.SetStatusMessage(RoutineText.AddSiteNotASite, TimeSpan.FromSeconds(5));
-                        }
-
-                        break;
-                    default:
-                        sel = LauncherCommandHandler.MoveSelection(command.Type, command.Count, bc, sel, LauncherCommandHandler.LayoutColumns(opts));
-                        scroll = LauncherCommandHandler.NextScrollOffset(bc, sel, scroll, opts);
-                        break;
-                }
+                continue;
             }
 
-            return null;
-        }
-        finally
-        {
-            ctx.LauncherOptionsOverride = null;
-            nav.LauncherSelectedIndex = savedSel;
-            nav.LauncherScrollOffset = savedScroll;
-        }
-    }
-
-    private static async Task<string?> TypeUrlAsync(CommandContext ctx, string routineName, char? seed, CancellationToken ct)
-    {
-        var opts = Options(ctx, routineName);
-        return await LauncherCommandHandler.PromptUrlAsync(
-            ctx,
-            opts,
-            ct,
-            () =>
+            var onTile = sel != TileGrid.Bar;
+            var seed = string.Empty;
+            var typing = command.Type is CommandType.GoToUrl or CommandType.OpenInBrowser
+                || (!onTile && RoutineEditorHandler.IsBarTypingKey(command, out seed));
+            if (typing)
             {
-                Paint(ctx, Options(ctx, routineName), -1, 0);
-                return Task.CompletedTask;
-            },
-            seed).ConfigureAwait(false);
+                if (command.Type is CommandType.GoToUrl or CommandType.OpenInBrowser)
+                {
+                    seed = string.Empty;
+                }
+
+                var input = await RoutineEditorHandler.ReadInBarAsync(
+                    ctx,
+                    ctx.GetCurrentRenderOptions(),
+                    string.Empty,
+                    seed,
+                    null,
+                    (t, hint) => Build(routineName, marks, recipe, hint, t) with { Selected = TileGrid.Bar },
+                    ct).ConfigureAwait(false);
+                sel = TileGrid.Bar;
+                if (string.IsNullOrWhiteSpace(input))
+                {
+                    continue;
+                }
+
+                if (NavigationUrl.TryNormalize(input, out var url, out var urlError))
+                {
+                    return url;
+                }
+
+                error = urlError;
+                continue;
+            }
+
+            switch (command.Type)
+            {
+                case CommandType.GoBack:
+                case CommandType.Quit:
+                    return null;
+                case CommandType.JumpToIndex:
+                    sel = TileGrid.Jump(screen, command.Count);
+                    break;
+                case CommandType.ActivateLink:
+                    if (TileGrid.ItemAt(screen, sel)?.Id is { } id
+                        && id.StartsWith("bm:", StringComparison.Ordinal)
+                        && int.TryParse(id["bm:".Length..], out var idx) && idx >= 0 && idx < marks.Count)
+                    {
+                        return marks[idx].Url;
+                    }
+
+                    break;
+                default:
+                    sel = TileGrid.Move(screen, command.Type);
+                    break;
+            }
+        }
+
+        return null;
     }
 
-    private static RenderOptions Options(CommandContext ctx, string routineName) =>
-        ctx.GetCurrentRenderOptions() with
+    private static TileScreen Build(
+        string routineName,
+        IReadOnlyList<Domain.Entities.Bookmarks.Bookmark> marks,
+        ScheduleRecipe? recipe,
+        string? hintRow,
+        LauncherUrlTyping? typing)
+    {
+        var count = marks.Count switch
         {
-            LauncherEyebrow = RoutineText.Eyebrow(routineName),
-            LauncherFooterHint = RoutineText.AddSiteFooter,
+            0 => "no saved sites",
+            1 => "1 site",
+            _ => $"{marks.Count} sites",
         };
+        var cells = marks.Select((m, i) =>
+        {
+            var host = LauncherRenderer.ExtractDomain(m.Url);
+            var sections = recipe?.Steps.Count(s => string.Equals(s.Domain, host, StringComparison.OrdinalIgnoreCase)) ?? 0;
+            string? detail = null;
+            if (sections > 0)
+            {
+                detail = $"already in this routine · {sections} section" + (sections == 1 ? string.Empty : "s");
+            }
 
-    private static void Paint(CommandContext ctx, RenderOptions opts, int sel, int scroll) =>
-        ctx.Renderer.RenderLauncher(
-            ctx.Bookmarks?.ToList() ?? new List<Domain.Entities.Bookmarks.Bookmark>(), sel, scroll, opts);
+            return new TileCell
+            {
+                Tile = new Tile
+                {
+                    Id = $"bm:{i}",
+                    Title = m.Name.ToUpperInvariant(),
+                    Hint = host,
+                    Detail = detail,
+                },
+            };
+        }).ToList();
+        return new TileScreen
+        {
+            Screen = "addSite",
+            Eyebrow = $"Routines › {routineName} › Add a site",
+            Title = "Add a site",
+            Tagline = "Pick one of your sites, or type an address",
+            CountLabel = count,
+            FooterCount = count,
+            BarPlaceholder = "Go to URL…",
+            BarTyping = typing,
+            HintRow = marks.Count == 0 ? hintRow ?? "No saved sites yet — type a site's address above" : hintRow,
+            AppLabel = "Add a site",
+            Columns = 2,
+            Cells = cells,
+            Selected = marks.Count == 0 ? TileGrid.Bar : 0,
+            Hints =
+            [
+                new LauncherHint { Key = "Enter", Label = "pick this site" },
+                new LauncherHint { Key = "1-9", Label = "jump" },
+                new LauncherHint { Key = "o", Label = "type an address" },
+                new LauncherHint { Key = "Esc", Label = "back" },
+            ],
+        };
+    }
 }
