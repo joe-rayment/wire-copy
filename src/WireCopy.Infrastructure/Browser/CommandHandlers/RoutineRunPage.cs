@@ -52,7 +52,7 @@ internal static class RoutineRunPage
     }
 
     public static TileScreen Finished(
-        ScheduleRecipe recipe, ScheduledRun run, IReadOnlyList<ScheduledRun> earlier, bool isLatest, DateTimeOffset now, int selected, string? hintRow = null)
+        ScheduleRecipe recipe, ScheduledRun run, IReadOnlyList<ScheduledRun> earlier, bool isLatest, DateTimeOffset now, int selected, string? hintRow = null, int? logLines = null)
     {
         var diagnosis = RoutineRunDiagnosis.Diagnose(run);
         var success = run.Status is ScheduledRunStatus.Completed or ScheduledRunStatus.PartialSuccess;
@@ -79,7 +79,7 @@ internal static class RoutineRunPage
             firstIsAgain = true;
         }
 
-        var log = new Tile { Id = "log", Title = "OPEN THE LOG", Hint = "what happened, line by line" };
+        var log = new Tile { Id = "log", Title = "OPEN THE LOG", Hint = logLines is > 0 ? $"{logLines} lines from this run" : "what happened, line by line" };
         var showFile = new Tile { Id = "showFile", Title = "SHOW FILE", Hint = fileName };
         TileCell thisRun;
         if (success && hasFeed)

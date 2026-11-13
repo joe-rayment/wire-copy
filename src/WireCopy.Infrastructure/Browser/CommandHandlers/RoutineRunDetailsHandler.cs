@@ -169,7 +169,17 @@ internal static class RoutineRunDetailsHandler
             if (key == 'l' || (activate && selId == "log" && !running))
             {
                 ctx.Renderer.HideLauncherPane();
-                await LogViewerCommandHandler.HandleAsync(ctx, options, ct).ConfigureAwait(false);
+                var runLines = running || viewRun is null ? Array.Empty<string>() : RoutineRunLog.Read(viewRun.Id);
+                if (runLines.Count > 0 && viewRun is not null)
+                {
+                    var title = $"{recipe.Name} · {RoutineText.When(viewRun.StartedAtUtc, DateTimeOffset.Now)}";
+                    await RoutineRunLogViewer.ShowAsync(ctx, options, title, runLines, ct).ConfigureAwait(false);
+                }
+                else
+                {
+                    await LogViewerCommandHandler.HandleAsync(ctx, options, ct).ConfigureAwait(false);
+                }
+
                 continue;
             }
 
@@ -257,7 +267,8 @@ internal static class RoutineRunDetailsHandler
             return RoutineRunPage.NeverRan(recipe) with { HintRow = status };
         }
 
-        return RoutineRunPage.Finished(recipe, viewRun, earlier, isLatest, now, 0, status);
+        var logCount = RoutineRunLog.Read(viewRun.Id).Count;
+        return RoutineRunPage.Finished(recipe, viewRun, earlier, isLatest, now, 0, status, logCount);
     }
 
     private static IReadOnlyList<(string Key, string What)> HelpKeys(bool running)
