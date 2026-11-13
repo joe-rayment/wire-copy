@@ -30,6 +30,9 @@ public static class ScheduleDependencyInjection
         // reusing the scheduler's gate + Running-row admission protocol.
         services.AddSingleton<IScheduleRunNow, ScheduleRunNow>();
 
+        // workspace-6ifpp.3: in-flight routine run progress + cancel.
+        services.AddSingleton<IRoutineRunTracker, RoutineRunTracker>();
+
         // workspace-frpl.7 (B6): the in-process scheduler tick loop.
         services.AddHostedService<SchedulerHostedService>();
         return services;
