@@ -102,9 +102,17 @@ internal static class RoutineRunDetailsHandler
             var earlier = viewRun is null ? new List<ScheduledRun>() : runs.Skip(runs.IndexOf(viewRun) + 1).ToList();
             var diagnosis = viewRun is null ? null : RoutineRunDiagnosis.Diagnose(viewRun);
             var screen = BuildScreen(recipe, progress, viewRun, earlier, isLatest, status);
-            var sel = TileGrid.IndexOfId(screen, selId, 0);
-            screen = screen with { Selected = sel };
-            selId = TileGrid.ItemAt(screen, sel)?.Id;
+            if (running)
+            {
+                selId = null;
+            }
+            else
+            {
+                var sel = TileGrid.IndexOfId(screen, selId, 0);
+                screen = screen with { Selected = sel };
+                selId = TileGrid.ItemAt(screen, sel)?.Id;
+            }
+
             ctx.Renderer.RenderTileScreen(screen, ctx.GetCurrentRenderOptions());
 
             inputTask ??= ctx.InputHandler.WaitForInputAsync(ct);
