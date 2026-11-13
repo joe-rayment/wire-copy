@@ -50,7 +50,7 @@ internal static class TileScreenRenderer
                     selectedSlot = slots.Count;
                 }
 
-                slots.Add(Slot(cell.Tile, index, "routine", null, null));
+                slots.Add(Slot(cell.Tile, index, "routine", null, null, screen.Numbered));
                 emitted++;
             }
             else if (cell.Top != null || cell.Bottom != null)
@@ -62,7 +62,7 @@ internal static class TileScreenRenderer
                         selectedSlot = slots.Count;
                     }
 
-                    slots.Add(Slot(cell.Top, index++, "routines", "top", cell.Legend));
+                    slots.Add(Slot(cell.Top, index++, "routines", "top", cell.Legend, screen.Numbered));
                     emitted++;
                 }
 
@@ -73,7 +73,7 @@ internal static class TileScreenRenderer
                         selectedSlot = slots.Count;
                     }
 
-                    slots.Add(Slot(cell.Bottom, index, "routines", "bottom", null));
+                    slots.Add(Slot(cell.Bottom, index, "routines", "bottom", null, screen.Numbered));
                     emitted++;
                 }
             }
@@ -119,7 +119,7 @@ internal static class TileScreenRenderer
         };
     }
 
-    private static LauncherSlot Slot(Tile tile, int index, string kind, string? half, string? legend) => new()
+    private static LauncherSlot Slot(Tile tile, int index, string kind, string? half, string? legend, bool numbered) => new()
     {
         Index = index,
         Kind = kind,
@@ -130,6 +130,6 @@ internal static class TileScreenRenderer
         Detail = tile.Detail,
         Alert = tile.Alert,
         Disabled = tile.Disabled,
-        Badge = index < 9 ? (index + 1).ToString() : null,
+        Badge = numbered && index < 9 ? (index + 1).ToString() : null,
     };
 }

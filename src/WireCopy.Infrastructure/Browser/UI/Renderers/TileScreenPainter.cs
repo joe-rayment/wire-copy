@@ -148,7 +148,7 @@ internal static class TileScreenPainter
             return sb.ToString();
         }
 
-        static string Num(Item? i) => i != null && i.Number <= 9 ? $"[{i.Number}]" : string.Empty;
+        string Num(Item? i) => screen.Numbered && i != null && i.Number <= 9 ? $"[{i.Number}]" : string.Empty;
         string PairTitle(Item? i) => i == null ? string.Empty : $"{i.Tile.Title.ToUpperInvariant()} {Num(i)}".TrimEnd();
 
         for (var r = startRow; r < endRow; r++)

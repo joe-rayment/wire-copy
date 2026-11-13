@@ -18,6 +18,9 @@ public sealed record TileScreen
     /// <summary>Header-right, first line.</summary>
     public string CountLabel { get; init; } = "";
 
+    /// <summary>False: tiles carry no digit badge — they cannot be jumped to.</summary>
+    public bool Numbered { get; init; } = true;
+
     /// <summary>Header-right attention line.</summary>
     public string? Badge { get; init; }
 

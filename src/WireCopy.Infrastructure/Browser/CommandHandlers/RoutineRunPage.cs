@@ -33,6 +33,7 @@ internal static class RoutineRunPage
         return new TileScreen
         {
             Screen = "run",
+            Numbered = false,
             Eyebrow = $"Routines › {recipe.Name} › Run",
             Title = progress.CancelRequested ? "Stopping…" : "Running…",
             Tagline = $"Started {started.ToString("HH:mm", CultureInfo.InvariantCulture)} · {elapsed} so far",

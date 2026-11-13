@@ -25,6 +25,7 @@ internal static class TileHelp
             var screen = new TileScreen
             {
                 Screen = "help",
+                Numbered = false,
                 Eyebrow = $"{eyebrow} › Keys",
                 Title = "Keys",
                 Tagline = "What works on this screen",
