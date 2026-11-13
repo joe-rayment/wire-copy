@@ -40,6 +40,9 @@ public sealed record TileScreen
 
     public int Columns { get; init; } = 2;
 
+    /// <summary>Rows per page; null = the launcher's rule. A screen that must never page sets enough rows for all cells.</summary>
+    public int? RowsPerPage { get; init; }
+
     /// <summary>Index into the flattened selectable items (cell order; Top before Bottom); -1 = the bar.</summary>
     public int Selected { get; init; }
 

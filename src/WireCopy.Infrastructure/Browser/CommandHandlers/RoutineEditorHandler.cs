@@ -117,15 +117,89 @@ internal static class RoutineEditorHandler
             }
             else if (command.Type == CommandType.ActivateLink && tile is not null)
             {
-                await ActivateTileAsync(ctx, options, recipe, tile, palette, ct).ConfigureAwait(false);
+                await ActivateTileAsync(ctx, options, recipe, tile, ct).ConfigureAwait(false);
             }
 
             selectedId = TileGrid.ItemAt(screen, selected)?.Id;
         }
     }
 
+    internal static bool IsBarTypingKey(NavigationCommand command, out string seed)
+    {
+        seed = string.Empty;
+        if (command.Type == CommandType.ActivateLink)
+        {
+            return true;
+        }
+
+        if (command.RawKeyChar is { } typed && typed > ' '
+            && command.Type is not (CommandType.MoveDown or CommandType.MoveUp or CommandType.MoveLeft or CommandType.MoveRight
+                or CommandType.ExpandNode or CommandType.CollapseNode or CommandType.GoBack or CommandType.Quit))
+        {
+            seed = typed.ToString();
+            return true;
+        }
+
+        return false;
+    }
+
+    internal static async Task<string?> ReadInBarAsync(
+        CommandContext ctx,
+        RenderOptions options,
+        string label,
+        string? initial,
+        string? hintRow,
+        Func<LauncherUrlTyping?, string?, TileScreen> page,
+        CancellationToken ct)
+    {
+        var typed = initial ?? string.Empty;
+        TileScreen Page(string text, int cursor)
+        {
+            var typing = new LauncherUrlTyping { Buffer = label + text, Cursor = label.Length + cursor };
+            return page(typing, hintRow) with
+            {
+                Selected = TileGrid.Bar,
+                BarTyping = typing,
+                Hints = new List<LauncherHint>
+                {
+                    new() { Key = "Enter", Label = "save" },
+                    new() { Key = "Esc", Label = "keep it as it was" },
+                },
+            };
+        }
+
+        var screen = Page(typed, typed.Length);
+        ctx.Renderer.RenderTileScreen(screen, options, paneOnly: false);
+        var (row, col) = TileScreenPainter.BarInputPosition(screen, options);
+        col += label.Length;
+        if (ctx.InputHandler is TerminalInputHandler terminal)
+        {
+            return await terminal.PromptForInputWithChangeAsync(
+                string.Empty,
+                ct,
+                row,
+                col,
+                typed,
+                (buffer, cursor) => ctx.Renderer.RenderTileScreen(Page(buffer, cursor), options, paneOnly: true)).ConfigureAwait(false);
+        }
+
+        return await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: row, col: col, initialInput: typed).ConfigureAwait(false);
+    }
+
+    internal static async Task<ScheduleRecipe?> LoadAsync(CommandContext ctx, Guid id)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        return await scope.ServiceProvider.GetRequiredService<IScheduleStore>().GetAsync(id).ConfigureAwait(false);
+    }
+
+    internal static async Task SaveAsync(CommandContext ctx, ScheduleRecipe recipe)
+    {
+        using var scope = ctx.ScopeFactory.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IScheduleStore>().SaveAsync(recipe).ConfigureAwait(false);
+    }
+
     private static async Task ActivateTileAsync(
-        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, Tile tile, ThemePalette palette, CancellationToken ct)
+        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, Tile tile, CancellationToken ct)
     {
         if (tile.Id.StartsWith("site:", StringComparison.Ordinal))
         {
@@ -143,8 +217,7 @@ internal static class RoutineEditorHandler
         switch (tile.Id)
         {
             case "schedule":
-                ctx.Renderer.HideLauncherPane();
-                await EditFrequencyAsync(ctx, options, recipe, palette, ct).ConfigureAwait(false);
+                await RoutineSchedulePage.OpenAsync(ctx, recipe.Id, ct).ConfigureAwait(false);
                 break;
             case "lastRun":
                 ctx.Renderer.HideLauncherPane();
@@ -157,71 +230,6 @@ internal static class RoutineEditorHandler
                 await EditPodcastAsync(ctx, options, recipe, ct).ConfigureAwait(false);
                 break;
         }
-    }
-
-    private static async Task EditFrequencyAsync(
-        CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, ThemePalette palette, CancellationToken ct)
-    {
-        var labels = new List<string> { "Every day", "Weekdays (Mon–Fri)", "Weekends (Sat/Sun)", "Pick days…" };
-        var pick = await RoutineEditorCards.PickAsync(ctx, options, palette, "How often?", "↑/↓ move · Enter select · Esc back", labels, ct).ConfigureAwait(false);
-        if (pick is null)
-        {
-            return;
-        }
-
-        IReadOnlyList<DayOfWeek> days;
-        switch (pick.Value)
-        {
-            case 0:
-                days = Enum.GetValues<DayOfWeek>();
-                break;
-            case 1:
-                days = new[] { DayOfWeek.Monday, DayOfWeek.Tuesday, DayOfWeek.Wednesday, DayOfWeek.Thursday, DayOfWeek.Friday };
-                break;
-            case 2:
-                days = new[] { DayOfWeek.Saturday, DayOfWeek.Sunday };
-                break;
-            default:
-                var picked = await RoutineEditorCards.PickDaysAsync(ctx, options, palette, recipe.Cadence.Days, ct).ConfigureAwait(false);
-                if (picked is null || picked.Count == 0)
-                {
-                    return;
-                }
-
-                days = picked;
-                break;
-        }
-
-        var text = await EditInRowAsync(
-            ctx,
-            options,
-            recipe,
-            RoutineRowKind.Frequency,
-            RoutineText.TimeEditHint,
-            recipe.Cadence.LocalTime.ToString("HH:mm"),
-            v => TimeOnly.TryParse(v, out _) ? null : RoutineText.TimeInvalid,
-            ct).ConfigureAwait(false);
-        if (text is null)
-        {
-            return;
-        }
-
-        if (!TimeOnly.TryParse(text, out var time))
-        {
-            return;
-        }
-
-        try
-        {
-            recipe.SetCadence(ScheduleEditing.BuildCadence(days, time));
-        }
-        catch (ArgumentException ex)
-        {
-            ctx.NavigationService.SetStatusMessage($"Invalid cadence: {ex.Message}", TimeSpan.FromSeconds(6), StatusSeverity.Error);
-            return;
-        }
-
-        await SaveAsync(ctx, recipe).ConfigureAwait(false);
     }
 
     private static async Task AddSiteAsync(
@@ -380,7 +388,7 @@ internal static class RoutineEditorHandler
         var hintRow = hint;
         while (!ct.IsCancellationRequested)
         {
-            var value = await ReadInBarAsync(ctx, options, recipe, label, initial, hintRow, ct).ConfigureAwait(false);
+            var value = await ReadInRoutineBarAsync(ctx, options, recipe, label, initial, hintRow, ct).ConfigureAwait(false);
             if (value is null)
             {
                 return null;
@@ -399,30 +407,11 @@ internal static class RoutineEditorHandler
         return null;
     }
 
-    private static bool IsBarTypingKey(NavigationCommand command, out string seed)
-    {
-        seed = string.Empty;
-        if (command.Type == CommandType.ActivateLink)
-        {
-            return true;
-        }
-
-        if (command.RawKeyChar is { } typed && typed > ' '
-            && command.Type is not (CommandType.MoveDown or CommandType.MoveUp or CommandType.MoveLeft or CommandType.MoveRight
-                or CommandType.ExpandNode or CommandType.CollapseNode or CommandType.GoBack or CommandType.Quit))
-        {
-            seed = typed.ToString();
-            return true;
-        }
-
-        return false;
-    }
-
     /// <summary>Types a site's address in the bar; opens its section picker. Returns an error for the next paint, else null.</summary>
     private static async Task<string?> AddSiteFromBarAsync(
         CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, string seed, CancellationToken ct)
     {
-        var input = await ReadInBarAsync(ctx, options, recipe, string.Empty, seed, "Type a site's address, Enter to pick its sections", ct).ConfigureAwait(false);
+        var input = await ReadInRoutineBarAsync(ctx, options, recipe, string.Empty, seed, "Type a site's address, Enter to pick its sections", ct).ConfigureAwait(false);
         if (string.IsNullOrWhiteSpace(input))
         {
             return null;
@@ -437,40 +426,19 @@ internal static class RoutineEditorHandler
         return null;
     }
 
-    private static async Task<string?> ReadInBarAsync(
+    private static async Task<string?> ReadInRoutineBarAsync(
         CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, string label, string? initial, string? hintRow, CancellationToken ct)
     {
         var lastRun = await LoadLastRunAsync(ctx, recipe.Id).ConfigureAwait(false);
         var bookmarks = ctx.Bookmarks?.ToList() ?? new List<Bookmark>();
-        var typed = initial ?? string.Empty;
-        TileScreen Page(string text, int cursor) =>
-            RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, bookmarks, TileGrid.Bar, hintRow) with
-            {
-                Selected = TileGrid.Bar,
-                BarTyping = new LauncherUrlTyping { Buffer = label + text, Cursor = label.Length + cursor },
-                Hints = new List<LauncherHint>
-                {
-                    new() { Key = "Enter", Label = "save" },
-                    new() { Key = "Esc", Label = "keep it as it was" },
-                },
-            };
-
-        var screen = Page(typed, typed.Length);
-        ctx.Renderer.RenderTileScreen(screen, options, paneOnly: false);
-        var (row, col) = TileScreenPainter.BarInputPosition(screen, options);
-        col += label.Length;
-        if (ctx.InputHandler is TerminalInputHandler terminal)
-        {
-            return await terminal.PromptForInputWithChangeAsync(
-                string.Empty,
-                ct,
-                row,
-                col,
-                typed,
-                (buffer, cursor) => ctx.Renderer.RenderTileScreen(Page(buffer, cursor), options, paneOnly: true)).ConfigureAwait(false);
-        }
-
-        return await ctx.InputHandler.PromptForInputAsync(string.Empty, ct, row: row, col: col, initialInput: typed).ConfigureAwait(false);
+        return await ReadInBarAsync(
+            ctx,
+            options,
+            label,
+            initial,
+            hintRow,
+            (_, hint) => RoutinePage.Build(recipe, lastRun, DateTimeOffset.Now, bookmarks, TileGrid.Bar, hint),
+            ct).ConfigureAwait(false);
     }
 
     private static string? NameProblem(string value, List<string> taken)
@@ -508,21 +476,9 @@ internal static class RoutineEditorHandler
         ScheduleRecipe.Rehydrate(
             r.Id, r.Name, r.Enabled, r.Cadence, r.Steps, outputCollectionName, r.RunState, r.Version);
 
-    private static async Task<ScheduleRecipe?> LoadAsync(CommandContext ctx, Guid id)
-    {
-        using var scope = ctx.ScopeFactory.CreateScope();
-        return await scope.ServiceProvider.GetRequiredService<IScheduleStore>().GetAsync(id).ConfigureAwait(false);
-    }
-
     private static async Task<IReadOnlyList<ScheduleRecipe>> GetAllAsync(CommandContext ctx)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         return await scope.ServiceProvider.GetRequiredService<IScheduleStore>().GetAllAsync().ConfigureAwait(false);
-    }
-
-    private static async Task SaveAsync(CommandContext ctx, ScheduleRecipe recipe)
-    {
-        using var scope = ctx.ScopeFactory.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<IScheduleStore>().SaveAsync(recipe).ConfigureAwait(false);
     }
 }
