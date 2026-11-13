@@ -351,7 +351,7 @@ public static class RoutineText
             ScheduledRunStatus.Completed => "✓",
             ScheduledRunStatus.PartialSuccess => "⚠ partial",
             ScheduledRunStatus.Failed or ScheduledRunStatus.Interrupted => "✗ failed",
-            ScheduledRunStatus.Skipped => "skipped",
+            ScheduledRunStatus.Skipped => run.ErrorClass == "MissedPastGrace" ? "missed" : "skipped",
             _ => "running",
         };
         var text = $"{word} {When(run.StartedAtUtc, nowLocal)}";

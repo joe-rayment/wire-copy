@@ -507,6 +507,11 @@ internal static class RoutineRunDetailsHandler
             return palette.GetWarningFg().AnsiFg;
         }
 
+        if (headline.StartsWith("missed", StringComparison.Ordinal))
+        {
+            return palette.GetDimFg().AnsiFg;
+        }
+
         return headline.StartsWith('✓') ? palette.GetSuccessFg().AnsiFg : palette.GetDimFg().AnsiFg;
     }
 

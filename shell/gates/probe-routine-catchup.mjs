@@ -56,7 +56,7 @@ const schedules = {
   version: 1,
   recipes: [
     rec(1, 'A late catch-up', ALL, at(-2)),
-    rec(2, 'B on time', ALL, at(2)),
+    rec(2, 'B on time', ALL, at(8)),
     // history + a cadence day before today with no row; only that weekday is scheduled
     rec(3, 'C missed yesterday', [yesterday], '06:00',
       { lastStatus: 'Success', lastRunOccurrenceKey: '2020-01-01@06:00', lastRunLocalDate: '2020-01-01', lastRunStartedAtUtc: oldStart }),
@@ -65,7 +65,7 @@ const schedules = {
   ]
 }
 fs.writeFileSync(path.join(dataDir, 'schedules.json'), JSON.stringify(schedules, null, 2))
-console.log('seeded: late', at(-2), 'ontime', at(2), 'missed day', yesterday)
+console.log('seeded: late', at(-2), 'ontime', at(8), 'missed day', yesterday)
 const fixture = spawn('python3', [path.join(ROOT, 'scripts', 'routine_fixture_site.py'),
   '--port', String(FPORT), '--write-config', xdg], { stdio: 'ignore' })
 
