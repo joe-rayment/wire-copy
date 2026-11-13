@@ -17,6 +17,8 @@ internal static class TileHelp
         var cells = keys
             .Select((k, i) => new TileCell { Tile = new Tile { Id = $"key:{i}", Title = k.Key, Hint = k.What } })
             .ToList();
+        var renderOptions = ctx.GetCurrentRenderOptions();
+        var wide = renderOptions.ShellPane || renderOptions.TerminalWidth >= 100;
         var selected = 0;
         while (!ct.IsCancellationRequested)
         {
@@ -28,8 +30,8 @@ internal static class TileHelp
                 Tagline = "What works on this screen",
                 BarPlaceholder = null,
                 Cells = cells,
-                Columns = ctx.GetCurrentRenderOptions().TerminalWidth >= 100 ? 3 : 2,
-                RowsPerPage = 4,
+                Columns = wide ? 3 : 2,
+                RowsPerPage = 3,
                 Selected = selected,
                 AppLabel = "Keys",
                 Hints = new List<LauncherHint> { new() { Key = "Esc", Label = "back" } },

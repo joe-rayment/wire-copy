@@ -202,12 +202,12 @@ internal static class RoutinesHomeHandler
                         await store.SaveAsync(current).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         break;
-                    case CommandType.ActivateLink when current != null && alerts.ContainsKey(current.Id):
+                    case CommandType.ActivateLink when current != null && (alerts.ContainsKey(current.Id) || running.ContainsKey(current.Id)):
                         await RoutineRunDetailsHandler.OpenAsync(ctx, options, current.Id, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         break;
-                    case CommandType.ActivateLink:
-                        await RoutineEditorHandler.OpenAsync(ctx, options, current!.Id, ct).ConfigureAwait(false);
+                    case CommandType.ActivateLink when current != null:
+                        await RoutineEditorHandler.OpenAsync(ctx, options, current.Id, ct).ConfigureAwait(false);
                         recipes = (await store.GetAllAsync().ConfigureAwait(false)).ToList();
                         break;
                     default:
