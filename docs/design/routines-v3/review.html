@@ -94,81 +94,13 @@ td:first-child { font: 500 13px var(--mono); color: var(--amber); white-space: n
 td:first-child small { font-size: 11px; }
 td small { color: var(--dim); display: block; font-size: 12.5px; }
 
-/* ── Mock screens: every size is in cqw so a screen scales with its box ── */
-.mockwrap { overflow-x: auto; }
-.scr {
-  container-type: inline-size; min-width: 720px; background: #000; border: 1px solid var(--line);
-  font-family: var(--mono); color: var(--tr-green);
-}
-.scr > .in { padding: 3.4cqw 4cqw 2.4cqw; display: flex; flex-direction: column; gap: 2.2cqw; min-height: 56cqw; }
-.mast { display: flex; justify-content: space-between; align-items: flex-start; gap: 3cqw; }
-.m-eyebrow { color: var(--tr-bright); font-size: 1cqw; letter-spacing: .28em; text-transform: uppercase; margin-bottom: 1.3cqw; }
-.m-eyebrow em { font-style: normal; color: var(--tr-muted); }
-.m-title {
-  font-size: 4.6cqw; font-weight: 700; line-height: 1; letter-spacing: -0.015em;
-  text-shadow: 0 0 .8cqw rgba(255, 175, 0, .55), 0 0 2.2cqw rgba(255, 175, 0, .3);
-}
-.m-sub { margin-top: 1.4cqw; font-size: 1.3cqw; color: var(--tr-med); }
-.m-sub b { color: var(--tr-green); font-weight: 500; }
-.pill { font-size: 1.15cqw; padding: .35cqw .9cqw; border: 1px solid currentColor; white-space: nowrap; }
-.pill.on { color: var(--tr-success); }
-.pill.off { color: var(--tr-muted); }
-.pill.bad { color: var(--tr-red); }
-.pill.run { color: var(--tr-cyan); }
-.mgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 3cqw; }
-.mcard { position: relative; padding: 1.3cqw 1cqw 1.5cqw 1.2cqw; border-bottom: 1px solid var(--tr-dim); min-width: 0; }
-.mcard.sel { background: var(--tr-sel-bg); color: var(--tr-white); }
-.mcard.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: .32cqw; background: var(--tr-green); box-shadow: 0 0 .8cqw var(--tr-green); }
-.mcard.off { opacity: .55; }
-.mcard.new { border: 1px dashed var(--tr-dim); margin-top: 1cqw; }
-.mrow { display: flex; justify-content: space-between; align-items: baseline; gap: 1cqw; }
-.mname { font-size: 2.05cqw; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mline { font-size: 1.2cqw; margin-top: .6cqw; color: var(--tr-med); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.mcard.sel .mline { color: var(--tr-white); }
-.mline.alert { color: var(--tr-red); }
-.bar { height: .5cqw; background: var(--tr-dim); margin-top: .9cqw; }
-.bar i { display: block; height: 100%; background: var(--tr-cyan); }
-.mfoot { margin-top: auto; border-top: 1px solid var(--tr-dim); padding-top: 1.2cqw; display: flex; justify-content: space-between; gap: 2cqw; font-size: 1.15cqw; color: var(--tr-muted); }
-.mfoot .app { color: var(--tr-green); font-weight: 700; margin-right: 1.4cqw; }
-.mfoot .k { margin-right: 1.4cqw; white-space: nowrap; }
-.mfoot .k i { font-style: normal; color: var(--tr-cyan); }
-.cols { display: grid; grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr); gap: 3.4cqw; }
-.lab { font-size: 1cqw; letter-spacing: .24em; text-transform: uppercase; color: var(--tr-muted); display: flex; justify-content: space-between; margin-bottom: .9cqw; }
-.site { font-size: 1.7cqw; font-weight: 700; letter-spacing: .05em; text-transform: uppercase; margin-top: 1.1cqw; }
-.site small { font-size: 1.1cqw; font-weight: 400; letter-spacing: 0; text-transform: none; color: var(--tr-med); margin-left: 1cqw; }
-.sec { position: relative; display: flex; justify-content: space-between; font-size: 1.45cqw; padding: .55cqw 1cqw .55cqw 2.2cqw; }
-.sec.sel { background: var(--tr-sel-bg); color: var(--tr-white); }
-.sec.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: .32cqw; background: var(--tr-green); box-shadow: 0 0 .8cqw var(--tr-green); }
-.sec span { color: var(--tr-med); }
-.sec.sel span { color: var(--tr-white); }
-.add { font-size: 1.45cqw; padding: .9cqw 1cqw; margin-top: 1.1cqw; border: 1px dashed var(--tr-dim); }
-.panel { border: 1px solid var(--tr-dim); padding: 1.2cqw 1.4cqw 1.3cqw; margin-bottom: 1.4cqw; }
-.panel.sel { border-color: var(--tr-green); box-shadow: 0 0 1cqw rgba(255, 175, 0, .25); }
-.panel .big { font-size: 1.7cqw; font-weight: 700; }
-.panel .sm { font-size: 1.15cqw; color: var(--tr-med); margin-top: .5cqw; }
-.ok { color: var(--tr-success); }
-.bad { color: var(--tr-red); }
-.cy { color: var(--tr-cyan); }
-.seg { display: flex; flex-wrap: wrap; gap: .7cqw; margin-top: .3cqw; }
-.seg b { font-size: 1.2cqw; font-weight: 500; padding: .4cqw .9cqw; border: 1px solid var(--tr-dim); color: var(--tr-med); }
-.seg b.on { background: var(--tr-sel-bg); color: var(--tr-white); border-color: var(--tr-green); }
-.days { display: flex; gap: .6cqw; margin-top: 1cqw; }
-.days b { font-size: 1.2cqw; width: 2.3cqw; text-align: center; padding: .35cqw 0; border: 1px solid var(--tr-dim); color: var(--tr-muted); font-weight: 500; }
-.days b.on { color: #000; background: var(--tr-green); border-color: var(--tr-green); }
-.time { font-size: 1.7cqw; font-weight: 700; margin-top: 1cqw; }
-.time i { font-style: normal; background: var(--tr-green); color: #000; }
-.stage { display: grid; grid-template-columns: 2.4cqw minmax(0, 1.1fr) minmax(0, 2fr); gap: 1cqw; font-size: 1.45cqw; padding: .7cqw 0; border-bottom: 1px solid var(--tr-dim); align-items: center; }
-.stage .d { color: var(--tr-med); font-size: 1.2cqw; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.stage.todo { color: var(--tr-muted); }
-.act { position: relative; font-size: 1.55cqw; padding: .7cqw 1cqw .7cqw 1.4cqw; display: flex; justify-content: space-between; }
-.act.sel { background: var(--tr-sel-bg); color: var(--tr-white); }
-.act.sel::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: .32cqw; background: var(--tr-green); box-shadow: 0 0 .8cqw var(--tr-green); }
-.steps3 { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2cqw; }
-.steps3 div { border-top: 1px solid var(--tr-dim); padding-top: 1cqw; font-size: 1.3cqw; color: var(--tr-med); }
-.steps3 b { display: block; font-size: 1.6cqw; color: var(--tr-green); margin-bottom: .4cqw; }
-.mockcap { font-size: 13.5px; color: var(--dim); margin-top: 8px; }
-.mockcap b { color: var(--fg); font-weight: 500; }
-.mocks { display: flex; flex-direction: column; gap: 34px; }
+/* Proposed screens: renders of the real launcher pane, full width; secondary states two-up */
+.targets { display: flex; flex-direction: column; gap: 30px; }
+.targets figure img { border-color: var(--tr-dim); }
+.pair2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); gap: 24px; }
+.map { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 250px), 1fr)); gap: 14px 28px; }
+.map div { border-top: 1px solid var(--line); padding-top: 10px; font-size: 14.5px; min-width: 0; }
+.map b { display: block; font: 500 12px var(--mono); letter-spacing: .12em; text-transform: uppercase; color: var(--amber); margin-bottom: 4px; }
 </style>
 
 <div class="wrap">
@@ -176,8 +108,8 @@ td small { color: var(--dim); display: block; font-size: 12.5px; }
 <section class="read">
   <div class="eyebrow">▌ Wire Copy · design review</div>
   <h1>Routines UX review</h1>
-  <p class="lede">Routines work, but they are built from two different apps. The home, the site picker and the story picker are designed panes. The editor, the schedule cards, run details and every confirm are raw terminal text in the top-left corner of an empty window. Making one routine crosses that line three times and ends in the terminal. The plan puts every routines screen on the designed surface, shortens the path, and makes a run something you can watch, stop and listen to.</p>
-  <p class="dim">Every screenshot below is the real app, driven with real keys on 12 Nov 2026. The proposed screens are mocks built from the app’s own tokens.</p>
+  <p class="lede">Routines work, but they are built from two different apps. The home, the site picker and the story picker are designed panes. The editor, the schedule cards, run details and every confirm are raw terminal text in the top-left corner of an empty window. Making one routine crosses that line three times and ends in the terminal. The plan rebuilds every routines screen from the launcher’s own tile, bar and boxes, shortens the path, and makes a run something you can watch, stop and listen to.</p>
+  <p class="dim">Every screenshot below is the real app, driven with real keys on 12 Nov 2026. The proposed screens are the app’s own launcher pane rendering routine data.</p>
 </section>
 
 <section>
@@ -256,170 +188,38 @@ td small { color: var(--dim); display: block; font-size: 12.5px; }
 
 <section>
   <div class="read">
-    <h2>Proposed: one surface, one path</h2>
-    <p class="dim">Every routines screen is drawn by the launcher pane, in the launcher’s type and card language, in amber. The terminal keeps all keys and logic, as it does for the launcher today. A breadcrumb replaces the ad-hoc headings. One footer format, keys in cyan.</p>
+    <h2>Proposed: the launcher’s own elements, nothing new</h2>
+    <p>Every routines screen is the launcher with different content: the same masthead, the same bar, the same tile, the same boxed half-tiles, the same footer. No pills, panels or list rows.</p>
+    <p class="dim">The screens below are not drawings. They are the app’s real launcher pane, with its stylesheet untouched, rendering routine data. The terminal keeps all keys and logic, as it does for the launcher.</p>
+  </div>
+  <div class="map">
+    <div><b>The bar</b>“Go to URL…” becomes “New routine: type a name…” on the home and “Add a site: type an address…” on a routine. Renaming and the time are typed there too.</div>
+    <div><b>The tile</b>A routine is a tile: name in capitals, jump digit, schedule line, contents line. On a routine’s page each site is the same tile it is on the launcher.</div>
+    <div><b>The boxed halves</b>The “Yours” box becomes “This routine” (Name, Schedule) and “Output” (Podcast, Last run).</div>
+    <div><b>Masthead and footer</b>The tagline line carries the summary, the right corner the count, the footer the same <code>[key]:label</code> hints with cyan keys.</div>
   </div>
   <div class="flow">
     <div class="step pane"><b>Launcher tile</b><span>pane</span></div>
-    <div class="step pane"><b>Routines home</b><span>pane</span></div>
-    <div class="step pane"><b>Name it</b><span>in place</span></div>
-    <div class="step pane"><b>Add a site</b><span>pane</span></div>
+    <div class="step pane"><b>Routines home</b><span>name typed in the bar</span></div>
+    <div class="step pane"><b>Add a site</b><span>site tiles</span></div>
     <div class="step pane"><b>Pick stories</b><span>pane</span></div>
-    <div class="step pane"><b>Routine page</b><span>schedule in place</span></div>
-    <div class="step pane"><b>Run view</b><span>live, cancellable</span></div>
+    <div class="step pane"><b>Routine</b><span>site tiles + boxes</span></div>
+    <div class="step pane"><b>Schedule</b><span>one tile screen</span></div>
+    <div class="step pane"><b>Run</b><span>live, cancellable</span></div>
   </div>
 
-  <div class="mocks">
-
-  <div>
-    <div class="mockwrap"><div class="scr"><div class="in">
-      <div class="mast">
-        <div>
-          <div class="m-eyebrow">▌ Routines</div>
-          <div class="m-title">Routines</div>
-          <div class="m-sub">3 on · next <b>Morning brief</b> today 07:00</div>
-        </div>
-        <span class="pill bad">⚠ 1 needs attention</span>
-      </div>
-      <div class="mgrid">
-        <div class="mcard sel"><div class="mrow"><span class="mname">Morning brief</span><span class="pill on">● on</span></div><div class="mline">Weekdays · 07:00 · next today 07:00</div><div class="mline">2 sections · 1 site · last ✓ today 07:02</div></div>
-        <div class="mcard"><div class="mrow"><span class="mname">Weekend long reads</span><span class="pill bad">✗ failed</span></div><div class="mline">Sat, Sun · 09:30 · next Sat 09:30</div><div class="mline alert">audio-engine isn’t running · Enter to fix</div></div>
-        <div class="mcard"><div class="mrow"><span class="mname">Tech digest</span><span class="pill run">⟳ 4 / 12</span></div><div class="mline">Narrating “Dynamite used to stop the fires”</div><div class="bar"><i style="width:34%"></i></div></div>
-        <div class="mcard off"><div class="mrow"><span class="mname">Disaster watch</span><span class="pill off">○ off</span></div><div class="mline">Daily · 18:00</div><div class="mline">1 section · 1 site · last ✓ Mon 18:01</div></div>
-        <div class="mcard new"><div class="mrow"><span class="mname">+ New routine</span><span class="cy" style="font-size:1.3cqw">[n]</span></div><div class="mline">Pick sites and sections, choose when, get a podcast</div></div>
-      </div>
-      <div class="mfoot"><div><span class="app">Routines</span><span class="k">[<i>Enter</i>]:open</span><span class="k">[<i>n</i>]:new</span><span class="k">[<i>r</i>]:run now</span><span class="k">[<i>Space</i>]:on/off</span><span class="k">[<i>d</i>]:delete</span><span class="k">[<i>?</i>]:all keys</span></div><div>4 routines</div></div>
-    </div></div></div>
-    <p class="mockcap"><b>Routines home.</b> A summary line where the tagline was. Each card carries its state as a pill. Next-to-run first, off last, “+ New routine” at the end. A running card shows progress. A failed card says why, and Enter goes to the fix.</p>
-  </div>
-
-  <div>
-    <div class="mockwrap"><div class="scr"><div class="in">
-      <div class="mast">
-        <div>
-          <div class="m-eyebrow">▌ Routines <em>›</em> Morning brief</div>
-          <div class="m-title">Morning brief</div>
-          <div class="m-sub">Weekdays at 07:00 · next <b>today 07:00</b></div>
-        </div>
-        <span class="pill on">● on</span>
-      </div>
-      <div class="cols">
-        <div>
-          <div class="lab"><span>Reads from</span><span>3 sections · 2 sites</span></div>
-          <div class="site">Routine Fixture Gazette<small>127.0.0.1</small></div>
-          <div class="sec sel">World<span>● all 9</span></div>
-          <div class="sec">Science<span>● top 3</span></div>
-          <div class="site">The Guardian<small>theguardian.com/international</small></div>
-          <div class="sec">Headlines<span>● #1, #3</span></div>
-          <div class="add">+ Add a site</div>
-        </div>
-        <div>
-          <div class="lab"><span>When</span></div>
-          <div class="panel"><div class="big">Weekdays · 07:00</div><div class="sm">Runs while Wire Copy is open. A missed run starts when you next open it.</div></div>
-          <div class="lab"><span>Last run</span></div>
-          <div class="panel"><div class="big ok">✓ Published today 07:02</div><div class="sm">12 stories · took 3m 10s</div></div>
-          <div class="lab"><span>Podcast</span></div>
-          <div class="panel"><div class="big">Morning brief</div><div class="sm">Episodes go to this feed</div></div>
-        </div>
-      </div>
-      <div class="mfoot"><div><span class="app">Routine</span><span class="k">[<i>Enter</i>]:change</span><span class="k">[<i>r</i>]:run now</span><span class="k">[<i>Space</i>]:on/off</span><span class="k">[<i>d</i>]:remove</span><span class="k">[<i>J</i>/<i>K</i>]:reorder</span><span class="k">[<i>Esc</i>]:back</span></div><div></div></div>
-    </div></div></div>
-    <p class="mockcap"><b>Routine page</b> (replaces the editor). What it reads on the left, when it runs and how it last went on the right. Arrows move within a column and across. Enter on a section reopens the story picker; Enter on a panel edits it in place.</p>
-  </div>
-
-  <div>
-    <div class="mockwrap"><div class="scr"><div class="in" style="min-height:0">
-      <div class="cols">
-        <div>
-          <div class="lab"><span>When · editing</span></div>
-          <div class="panel sel">
-            <div class="seg"><b>Every day</b><b class="on">Weekdays</b><b>Weekends</b><b>Custom</b></div>
-            <div class="days"><b class="on">M</b><b class="on">T</b><b class="on">W</b><b class="on">T</b><b class="on">F</b><b>S</b><b>S</b></div>
-            <div class="time">at 07:0<i>0</i></div>
-          </div>
-        </div>
-        <div>
-          <div class="lab"><span>&nbsp;</span></div>
-          <div class="sm" style="font-size:1.2cqw;color:var(--tr-muted);line-height:1.7"><span class="cy">←/→</span> preset · <span class="cy">Space</span> toggle a day · type the time<br><span class="cy">Enter</span> save · <span class="cy">Esc</span> cancel</div>
-        </div>
-      </div>
-    </div></div></div>
-    <p class="mockcap"><b>Schedule, edited in place.</b> One panel instead of three screens. Presets, day toggles and the time are all visible at once.</p>
-  </div>
-
-  <div>
-    <div class="mockwrap"><div class="scr"><div class="in">
-      <div class="mast">
-        <div>
-          <div class="m-eyebrow">▌ Routines <em>›</em> Morning brief <em>›</em> Run</div>
-          <div class="m-title">Running…</div>
-          <div class="m-sub">Narrating story <b>4 of 12</b></div>
-        </div>
-        <span class="pill run">⟳ 1m 12s</span>
-      </div>
-      <div>
-        <div class="stage"><span class="ok">✓</span><span>Narration ready</span><span class="d">audio-engine at 127.0.0.1:8080</span></div>
-        <div class="stage"><span class="ok">✓</span><span>World</span><span class="d">9 stories · Routine Fixture Gazette</span></div>
-        <div class="stage"><span class="ok">✓</span><span>Science</span><span class="d">3 stories · Routine Fixture Gazette</span></div>
-        <div class="stage"><span class="cy">⟳</span><span>Narrate</span><span><div class="d">4 / 12 · “Dynamite used to stop the fires”</div><div class="bar"><i style="width:34%"></i></div></span></div>
-        <div class="stage todo"><span>·</span><span>Publish</span><span class="d">feed “Morning brief”</span></div>
-      </div>
-      <div class="mfoot"><div><span class="app">Run</span><span class="k">[<i>x</i>]:cancel</span><span class="k">[<i>Esc</i>]:leave it running</span><span class="k">[<i>l</i>]:log</span></div><div></div></div>
-    </div></div></div>
-    <p class="mockcap"><b>Run view, running.</b> <code>r</code> opens this from home, the routine page or a finished run. Stages tick as they finish. <code>x</code> cancels, Esc leaves it running, the same grammar as the podcast screen.</p>
-  </div>
-
-  <div>
-    <div class="mockwrap"><div class="scr"><div class="in">
-      <div class="mast">
-        <div>
-          <div class="m-eyebrow">▌ Routines <em>›</em> Weekend long reads <em>›</em> Last run</div>
-          <div class="m-title">Couldn’t narrate</div>
-          <div class="m-sub">audio-engine isn’t running, so nothing could read the stories aloud.</div>
-        </div>
-        <span class="pill bad">✗ failed · today 23:05</span>
-      </div>
-      <div>
-        <div class="act sel"><span>Start audio-engine</span><span>Enter</span></div>
-        <div class="act"><span>Run again</span><span class="cy">r</span></div>
-        <div class="act"><span>Open the log</span><span class="cy">l</span></div>
-      </div>
-      <div class="cols">
-        <div>
-          <div class="lab"><span>Sections</span></div>
-          <div class="sec"><span class="ok">✓ Arts</span><span>6 stories · Routine Fixture Gazette</span></div>
-        </div>
-        <div>
-          <div class="lab"><span>Earlier runs</span><span>Enter opens one</span></div>
-          <div class="sec"><span class="ok">✓ Sun 09:30</span><span>6 stories · 2m 41s</span></div>
-          <div class="sec"><span class="ok">✓ Sat 09:31</span><span>7 stories · 3m 02s</span></div>
-        </div>
-      </div>
-      <div class="mfoot"><div><span class="app">Run</span><span class="k">[<i>Enter</i>]:fix it</span><span class="k">[<i>r</i>]:run again</span><span class="k">[<i>l</i>]:log</span><span class="k">[<i>Esc</i>]:back</span></div><div></div></div>
-    </div></div></div>
-    <p class="mockcap"><b>Run view, finished.</b> The reason is the headline and the fix is the first row. A good run leads with Play episode, Copy feed URL and Show file. Earlier runs open. The footer lists only keys that apply.</p>
-  </div>
-
-  <div>
-    <div class="mockwrap"><div class="scr"><div class="in">
-      <div class="mast">
-        <div>
-          <div class="m-eyebrow">▌ Routines</div>
-          <div class="m-title">Routines</div>
-          <div class="m-sub">A routine reads the sections you pick and turns them into a podcast on a schedule.</div>
-        </div>
-      </div>
-      <div class="steps3">
-        <div><b>1 · Pick</b>Sites and the sections you want from each</div>
-        <div><b>2 · Schedule</b>Every day, weekdays, or the days you choose</div>
-        <div><b>3 · Listen</b>Episodes land in your podcast feed</div>
-      </div>
-      <div class="mgrid"><div class="mcard sel new" style="margin-top:0"><div class="mrow"><span class="mname">+ New routine</span><span style="font-size:1.3cqw">Enter</span></div><div class="mline">Name it, then pick what it reads</div></div></div>
-      <div class="mfoot"><div><span class="app">Routines</span><span class="k">[<i>Enter</i>]:new routine</span><span class="k">[<i>Esc</i>]:back</span></div><div></div></div>
-    </div></div></div>
-    <p class="mockcap"><b>Empty home.</b> Says what a routine is and what the three steps are. Nothing is saved until the routine has a name.</p>
-  </div>
-
+  <div class="targets">
+    <figure><img src="shots/proposed-home.png" alt="Proposed Routines home, rendered by the launcher pane" loading="lazy"><figcaption><b>Routines home.</b> Routine tiles are the launcher’s site tiles. The summary sits where the tagline was. A routine that is off is dimmed; one that failed says why in red and Enter goes to the fix. <code>n</code> puts the cursor in the bar; a routine exists once it has a name.</figcaption></figure>
+    <figure><img src="shots/proposed-routine.png" alt="Proposed routine page, rendered by the launcher pane" loading="lazy"><figcaption><b>A routine</b> (replaces the editor). Its sites are the same tiles as on the launcher, each listing the sections taken from it. Its own settings sit in boxed halves, the way Reading List and Routines do on the launcher. Arrows and digits move exactly as they do there. Enter on a site reopens the story picker.</figcaption></figure>
+    <figure><img src="shots/proposed-schedule.png" alt="Proposed schedule screen, rendered by the launcher pane" loading="lazy"><figcaption><b>Schedule.</b> One screen of tiles instead of three terminal cards. Enter on a preset sets the days, Space flips a single day, <code>t</code> edits the time in the bar. The title is the result, updated as you go.</figcaption></figure>
+    <div class="pair2">
+      <figure><img src="shots/proposed-home-empty.png" alt="Proposed empty Routines home" loading="lazy"><figcaption><b>Empty home.</b> The bar is focused and the hint row says what happens next.</figcaption></figure>
+      <figure><img src="shots/proposed-routine-rename.png" alt="Proposed rename in the bar" loading="lazy"><figcaption><b>Renaming.</b> Typed in the bar, as a URL is on the launcher.</figcaption></figure>
+      <figure><img src="shots/proposed-add-site.png" alt="Proposed Add a site screen" loading="lazy"><figcaption><b>Add a site.</b> Only sites, under its own title.</figcaption></figure>
+      <figure><img src="shots/proposed-run-running.png" alt="Proposed run view while running" loading="lazy"><figcaption><b>Running.</b> One tile per stage; the lit one is where it is. <code>x</code> cancels, Esc leaves it running.</figcaption></figure>
+      <figure><img src="shots/proposed-run-failed.png" alt="Proposed run view after a failure" loading="lazy"><figcaption><b>A failed run.</b> The reason is the title, the fix is tile 1, earlier runs open.</figcaption></figure>
+      <figure><img src="shots/proposed-run-ok.png" alt="Proposed run view after a good run" loading="lazy"><figcaption><b>A good run.</b> Play, copy the feed URL, show the file.</figcaption></figure>
+    </div>
   </div>
 </section>
 
@@ -430,11 +230,11 @@ td small { color: var(--dim); display: block; font-size: 12.5px; }
     <thead><tr><th>Slice</th><th>What changes</th><th>Fixes</th><th>Closed when</th></tr></thead>
     <tbody id="plan">
       <tr><td>R0<small>g5xz3</small></td><td>Screen atlas probe<small>Seeds four routines, walks every routines screen, shoots each.</small></td><td>—</td><td>Done. 62 shots, all read; the before shots above come from it.</td></tr>
-      <tr><td>R1<small>6ifpp.1</small></td><td>Routine page in the pane<small>Replaces the terminal editor. Breadcrumb, two columns, one selection style, shared key-hint footer, in-pane confirm, sites by name. Same state drives a plain-terminal fallback.</small></td><td>L1 L2 L3 L6 L8 W7 K1</td><td>Open a routine, move through both columns, rename, remove and reorder a section; each visible in the pane shot.</td></tr>
-      <tr><td>R2<small>6ifpp.2</small></td><td>Schedule edited in place<small>Presets, day toggles and time in one panel. The three card screens go.</small></td><td>W1</td><td>Change weekdays 07:00 to Sat+Sun 09:30 without leaving the page; card and page show the new next run.</td></tr>
-      <tr><td>R3<small>6ifpp.3</small></td><td>Run view: watch, stop, listen<small>Step-level progress and cancellation in the run pipeline. <code>r</code> behaves the same everywhere. Result actions. Earlier runs open. Episodes titled by date.</small></td><td>W3 W5 W6 W9 K2 K3</td><td>Run with the fake engine: stages tick, <code>x</code> stops it, Esc leaves it running and the home card shows progress; a finished run plays and copies its feed URL.</td></tr>
-      <tr><td>R4<small>6ifpp.4</small></td><td>Home that reports<small>Summary line, state pills, next-to-run order, “+ New” last, tighter cards, real empty state.</small></td><td>L4 L5 W8</td><td>Atlas home shots with 0 and 4 routines match the mocks; Enter on a failed card lands on its fix.</td></tr>
-      <tr><td>R5<small>6ifpp.5</small></td><td>Create without leftovers<small>Name in place, nothing saved until named, then straight to an Add a site screen that shows only sites.</small></td><td>L7 W1 W2</td><td>Esc at the name leaves no routine; a full create is five screens, all pane.</td></tr>
+      <tr><td>R1<small>6ifpp.1</small></td><td>A routine, built from launcher tiles<small>Replaces the terminal editor. Site tiles, “This routine” and “Output” boxes, the bar for typing, breadcrumb, launcher footer, in-pane confirm. Same slots drive the plain-terminal grid.</small></td><td>L1 L2 L3 L6 L8 W7 K1</td><td>Open a routine: the shot matches the target render. Move with arrows and digits, rename in the bar, remove and reorder a site; each visible in the next shot.</td></tr>
+      <tr><td>R2<small>6ifpp.2</small></td><td>Schedule as one tile screen<small>Preset tiles, day tiles, time in the bar. The three terminal cards go.</small></td><td>W1</td><td>Change weekdays 07:00 to Sat+Sun 09:30 on that one screen; the title, the routine and its home tile show the new next run.</td></tr>
+      <tr><td>R3<small>6ifpp.3</small></td><td>Run view: watch, stop, listen<small>Stage tiles, action tiles, earlier runs in a box. Step-level progress and cancellation in the run pipeline. <code>r</code> behaves the same everywhere. Episodes titled by date.</small></td><td>W3 W5 W6 W9 K2 K3</td><td>Run with the fake engine: stages tick, <code>x</code> stops it, Esc leaves it running and the home card shows progress; a finished run plays and copies its feed URL.</td></tr>
+      <tr><td>R4<small>6ifpp.4</small></td><td>Home as launcher tiles<small>Routine tiles in capitals with jump digits, summary in the tagline, count top right, next-to-run order, the bar for new, launcher footer, real empty state.</small></td><td>L4 L5 W8</td><td>Atlas home shots with 0 and 4 routines match the target renders; Enter on a failed tile lands on its fix.</td></tr>
+      <tr><td>R5<small>6ifpp.5</small></td><td>Create without leftovers<small>Name typed in the bar, nothing saved until Enter, then straight to an Add a site screen that shows only sites.</small></td><td>L7 W1 W2</td><td>Esc at the name leaves no routine; a full create is five screens, all pane.</td></tr>
       <tr><td>R6<small>6ifpp.6</small></td><td>Missed runs catch up<small>A slot missed while the app was closed runs at next open, once, same day. Copy says so. A miss that could not be caught up is flagged.</small></td><td>W4</td><td>Start the app after a due slot: the run starts, and the card reads “ran late”.</td></tr>
       <tr><td>R7<small>6ifpp.7</small></td><td>Keys, help, <code>g s</code><small><code>d</code> removes everywhere, <code>x</code> cancels a run, <code>?</code> lists the keys of the screen you are on. The <code>g s</code> chooser draws in the story pane.</small></td><td>K1 K4 K5</td><td><code>?</code> on each routines screen lists that screen’s keys; <code>g s</code> chooser visible over the stories.</td></tr>
     </tbody>
