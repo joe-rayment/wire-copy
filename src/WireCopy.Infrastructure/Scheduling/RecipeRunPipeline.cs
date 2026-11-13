@@ -427,6 +427,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 LastRunLocalDate = localDate,
                 LastRunOccurrenceKey = run.OccurrenceKey,
                 LastStatus = cacheStatus,
+                LastRunStartedAtUtc = run.StartedAtUtc,
             }).ConfigureAwait(false);
         }
         catch (Exception ex)

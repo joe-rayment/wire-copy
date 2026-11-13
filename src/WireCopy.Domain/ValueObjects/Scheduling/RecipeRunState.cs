@@ -16,6 +16,12 @@ public sealed record RecipeRunState
 
     public string? LastRunOccurrenceKey { get; init; }
 
+    /// <summary>When the last run actually started (UTC). Null on state written before catch-up existed.</summary>
+    public DateTime? LastRunStartedAtUtc { get; init; }
+
+    /// <summary>True when the last "run" is a slot Wire Copy never got to (it was closed) — shown as "missed".</summary>
+    public bool LastRunMissed { get; init; }
+
     public RunStatus LastStatus { get; init; } = RunStatus.Never;
 
     /// <summary>When the user dismissed the last-result badge (B11), else null.</summary>

@@ -103,6 +103,8 @@ internal sealed class ScheduleStore : IScheduleStore
                 target.LastRunLocalDate = runState.LastRunLocalDate?.ToString("yyyy-MM-dd");
                 target.LastRunOccurrenceKey = runState.LastRunOccurrenceKey;
                 target.LastStatus = runState.LastStatus;
+                target.LastRunStartedAtUtc = runState.LastRunStartedAtUtc;
+                target.LastRunMissed = runState.LastRunMissed;
                 target.AcknowledgedAtUtc = runState.AcknowledgedAtUtc;
                 Write(all);
             }
@@ -124,6 +126,8 @@ internal sealed class ScheduleStore : IScheduleStore
         LastRunLocalDate = r.RunState.LastRunLocalDate?.ToString("yyyy-MM-dd"),
         LastRunOccurrenceKey = r.RunState.LastRunOccurrenceKey,
         LastStatus = r.RunState.LastStatus,
+        LastRunStartedAtUtc = r.RunState.LastRunStartedAtUtc,
+        LastRunMissed = r.RunState.LastRunMissed,
         AcknowledgedAtUtc = r.RunState.AcknowledgedAtUtc,
         Steps = r.Steps.Select(s => new PersistedStep
         {
@@ -172,6 +176,8 @@ internal sealed class ScheduleStore : IScheduleStore
             LastRunLocalDate = p.LastRunLocalDate is null ? null : DateOnly.ParseExact(p.LastRunLocalDate, "yyyy-MM-dd"),
             LastRunOccurrenceKey = p.LastRunOccurrenceKey,
             LastStatus = p.LastStatus,
+            LastRunStartedAtUtc = p.LastRunStartedAtUtc,
+            LastRunMissed = p.LastRunMissed,
             AcknowledgedAtUtc = p.AcknowledgedAtUtc,
         };
 
@@ -240,6 +246,10 @@ internal sealed class ScheduleStore : IScheduleStore
         public string? LastRunOccurrenceKey { get; set; }
 
         public RunStatus LastStatus { get; set; } = RunStatus.Never;
+
+        public DateTime? LastRunStartedAtUtc { get; set; }
+
+        public bool LastRunMissed { get; set; }
 
         public DateTimeOffset? AcknowledgedAtUtc { get; set; }
     }
