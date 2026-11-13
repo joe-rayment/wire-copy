@@ -94,7 +94,7 @@ internal static class RoutinesHomeHandler
                         sel = TileGrid.Bar;
                         continue;
                     case >= '1' and <= '9' when command.Type != CommandType.JumpToIndex:
-                        sel = TileGrid.Jump(screen, key - '0');
+                        sel = TileGrid.Jump(screen, (key ?? '0') - '0');
                         continue;
                     case 'r' when current != null:
                         if (running.Add(current.Id))
@@ -150,7 +150,7 @@ internal static class RoutinesHomeHandler
                         });
                         break;
                     case CommandType.JumpToIndex:
-                        sel = TileGrid.Jump(screen, command.Count ?? 0);
+                        sel = TileGrid.Jump(screen, command.Count);
                         break;
                     case CommandType.ToggleSelection when current != null:
                         if (current.Enabled)
