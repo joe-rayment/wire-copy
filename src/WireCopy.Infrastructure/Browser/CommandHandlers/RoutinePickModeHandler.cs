@@ -26,7 +26,14 @@ internal static class RoutinePickModeHandler
     private static readonly TimeSpan LoadTimeout = TimeSpan.FromSeconds(45);
 
     /// <summary>True = the routine's steps changed.</summary>
-    public static async Task<bool> OpenAsync(CommandContext ctx, RenderOptions options, RoutinePickRequest request, CancellationToken ct)
+    public static async Task<bool> OpenAsync(CommandContext ctx, RenderOptions options, RoutinePickRequest request, CancellationToken ct) =>
+        (await OpenCoreAsync(ctx, options, request, ct).ConfigureAwait(false)).Changed;
+
+    /// <summary>Null = pick mode opened (whatever was then picked); else one plain sentence saying why it did not.</summary>
+    public static async Task<string?> OpenReportingAsync(CommandContext ctx, RenderOptions options, RoutinePickRequest request, CancellationToken ct) =>
+        (await OpenCoreAsync(ctx, options, request, ct).ConfigureAwait(false)).Failure;
+
+    private static async Task<(bool Changed, string? Failure)> OpenCoreAsync(CommandContext ctx, RenderOptions options, RoutinePickRequest request, CancellationToken ct)
     {
         using var scope = ctx.ScopeFactory.CreateScope();
         var sp = scope.ServiceProvider;
@@ -38,7 +45,7 @@ internal static class RoutinePickModeHandler
         var recipe = await scheduleStore.GetAsync(request.RoutineId).ConfigureAwait(false);
         if (recipe is null)
         {
-            return false;
+            return (false, null);
         }
 
         // S1: whoever turns routine colours on turns them off.
@@ -62,7 +69,18 @@ internal static class RoutinePickModeHandler
             if (tree is null)
             {
                 ctx.NavigationService.SetStatusMessage("Couldn't load " + request.SiteUrl, TimeSpan.FromSeconds(6), StatusSeverity.Error);
-                return false;
+                if (carry.Cancelled)
+                {
+                    return (false, null);
+                }
+
+                var why = carry.TimedOut ? "took too long to answer" : "check the address";
+                return (false, CouldNotLoad(request.SiteUrl, why));
+            }
+
+            if (tree.TotalLinks == 0)
+            {
+                return (false, CouldNotLoad(request.SiteUrl, "the page has no links to pick"));
             }
 
             // R7: positions are counted on today's page, so the visible story order must be today's too -
@@ -147,7 +165,7 @@ internal static class RoutinePickModeHandler
 
             await LoopAsync(ctx, options, session, carry, ct).ConfigureAwait(false);
             RestoreUntouchedLegacy(session, legacy);
-            return await SaveAsync(ctx, scheduleStore, configStore, session, recipe).ConfigureAwait(false);
+            return (await SaveAsync(ctx, scheduleStore, configStore, session, recipe).ConfigureAwait(false), null);
         }
         finally
         {
@@ -175,6 +193,12 @@ internal static class RoutinePickModeHandler
                 modeService.Set(UiMode.Normal);
             }
         }
+    }
+
+    private static string CouldNotLoad(string siteUrl, string reason)
+    {
+        var host = Uri.TryCreate(siteUrl, UriKind.Absolute, out var u) ? u.Authority : siteUrl;
+        return "Couldn’t load " + host + " — " + reason;
     }
 
     private static async Task LoopAsync(
@@ -493,11 +517,14 @@ internal static class RoutinePickModeHandler
                 carry.Pending = null;
                 if (command.Type is CommandType.GoBack or CommandType.Quit)
                 {
+                    carry.Cancelled = true;
                     return null;
                 }
             }
         }
 
+        carry.TimedOut = !ct.IsCancellationRequested;
+        carry.Cancelled = ct.IsCancellationRequested;
         return null;
     }
 
@@ -505,5 +532,9 @@ internal static class RoutinePickModeHandler
     private sealed class InputCarry
     {
         public Task<NavigationCommand>? Pending { get; set; }
+
+        public bool Cancelled { get; set; }
+
+        public bool TimedOut { get; set; }
     }
 }

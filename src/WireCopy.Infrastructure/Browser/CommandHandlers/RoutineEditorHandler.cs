@@ -22,11 +22,11 @@ namespace WireCopy.Infrastructure.Browser.CommandHandlers;
 /// </summary>
 internal static class RoutineEditorHandler
 {
-    public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid routineId, CancellationToken ct, string? firstHint = null)
+    public static async Task OpenAsync(CommandContext ctx, RenderOptions options, Guid routineId, CancellationToken ct, string? firstHint = null, string? openingProblem = null)
     {
         var selected = 0;
         string? selectedId = null;
-        string? barError = null;
+        string? barError = openingProblem;
         using var trackerScope = ctx.ScopeFactory.CreateScope();
         var tracker = trackerScope.ServiceProvider.GetRequiredService<IRoutineRunTracker>();
         Task<NavigationCommand>? inputTask = null;
@@ -120,7 +120,7 @@ internal static class RoutineEditorHandler
             else if (command.RawKeyChar == 'a')
             {
                 var before = SiteIds(screen);
-                await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
+                barError = await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
                 if (await NewSiteIdAsync(ctx, routineId, before, tracker).ConfigureAwait(false) is { } added)
                 {
                     selectedId = added;
@@ -290,7 +290,7 @@ internal static class RoutineEditorHandler
 
         if (tile.Id == "addSite")
         {
-            await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
+            _ = await AddSiteAsync(ctx, options, recipe, ct).ConfigureAwait(false);
             return;
         }
 
@@ -311,16 +311,16 @@ internal static class RoutineEditorHandler
         }
     }
 
-    private static async Task AddSiteAsync(
+    private static async Task<string?> AddSiteAsync(
         CommandContext ctx, RenderOptions options, ScheduleRecipe recipe, CancellationToken ct)
     {
         var url = await RoutineSitePicker.PickAsync(ctx, recipe.Name, ct, recipe).ConfigureAwait(false);
         if (url is null)
         {
-            return;
+            return null;
         }
 
-        await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
+        return await RoutinePickModeHandler.OpenReportingAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
     }
 
     private static async Task RemoveAsync(
@@ -476,8 +476,7 @@ internal static class RoutineEditorHandler
             return urlError;
         }
 
-        await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
-        return null;
+        return await RoutinePickModeHandler.OpenReportingAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
     }
 
     private static async Task<string?> ReadInRoutineBarAsync(

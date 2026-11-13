@@ -299,12 +299,13 @@ internal static class RoutinesHomeHandler
         var recipe = ScheduleRecipe.Create(name, Cadence.Daily(new TimeOnly(5, 0)), Array.Empty<RecipeStep>(), name, true);
         await store.SaveAsync(recipe).ConfigureAwait(false);
         var url = await RoutineSitePicker.PickAsync(ctx, name, ct, recipe).ConfigureAwait(false);
+        string? openProblem = null;
         if (url is not null)
         {
-            await RoutinePickModeHandler.OpenAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
+            openProblem = await RoutinePickModeHandler.OpenReportingAsync(ctx, options, new RoutinePickRequest(recipe.Id, url, null), ct).ConfigureAwait(false);
         }
 
-        await RoutineEditorHandler.OpenAsync(ctx, options, recipe.Id, ct, "Run now to hear it — press r").ConfigureAwait(false);
+        await RoutineEditorHandler.OpenAsync(ctx, options, recipe.Id, ct, "Run now to hear it — press r", openProblem).ConfigureAwait(false);
         return recipe.Id;
     }
 }
