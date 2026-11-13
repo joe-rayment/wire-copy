@@ -299,6 +299,12 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             runCts);
     }
 
+    private string NarratedHint(Guid recipeId, int reportedStories)
+    {
+        var stories = reportedStories > 0 ? reportedStories : (_tracker?.Get(recipeId)?.StoriesTotal ?? 0);
+        return stories > 0 ? $"{stories} stories" : "narrated";
+    }
+
     private void ReportStage(Guid recipeId, PodcastProgress p)
     {
         if (_tracker is null)
@@ -328,6 +334,15 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                     _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"narrating story {p.CurrentArticle} of {p.TotalArticles}", narratingTitle);
                     _tracker.Update(recipeId, r => r with { StoriesDone = p.CurrentArticle, StoriesTotal = p.TotalArticles });
                 }
+                else if (p.CurrentArticleChunkTotal > 0)
+                {
+                    var part = Math.Clamp(p.CurrentArticleChunkIndex, 1, p.CurrentArticleChunkTotal);
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"narrating · part {part} of {p.CurrentArticleChunkTotal}");
+                }
+                else if (p.PercentComplete > 0)
+                {
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"narrating · {p.PercentComplete}%");
+                }
                 else
                 {
                     _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "narrating the stories");
@@ -338,7 +353,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "putting the episode together");
                 break;
             case PodcastPhase.Publishing:
-                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Done, $"{p.TotalArticles} stories");
+                _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Done, NarratedHint(recipeId, p.TotalArticles));
                 _tracker.SetStage(recipeId, "publish", RoutineRunStageState.Running, "uploading");
                 break;
             default:
@@ -505,7 +520,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
         // Past the quality floor every Required step resolved, so any degraded
         // (optional) step makes this a PartialSuccess; otherwise a clean Completed.
-        _tracker?.SetStage(recipe.Id, "narrate", RoutineRunStageState.Done);
+        _tracker?.SetStage(recipe.Id, "narrate", RoutineRunStageState.Done, NarratedHint(recipe.Id, 0));
         _tracker?.SetStage(recipe.Id, "publish", RoutineRunStageState.Done, result.FeedUrl is null ? "saved on this computer" : "published");
         var degraded = outcomes.Any(o => o.Status != ResolutionStatus.Resolved.ToString());
         var scheduledStatus = degraded ? ScheduledRunStatus.PartialSuccess : ScheduledRunStatus.Completed;
