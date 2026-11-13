@@ -28,6 +28,7 @@ LOCK = threading.Lock()
 LOGF = None
 NO_DEFAULT_FEED = False
 PUBLISH_DELAY = 2.0
+CHUNK_SECONDS = 0.0  # --chunk-seconds: >0 makes a job take chunks*S seconds, one chunk per S
 FEED = dict(name="wire-copy", title="Wire Copy", description=None, author=None, language="en", category=None,
             explicit=False, subscribeUrl="https://example.invalid/feeds/fake-token/feed.xml", episodeCount=0,
             pendingCount=0, createdAt="2026-01-01T00:00:00Z", updatedAt="2026-01-01T00:00:00Z", isDefault=True)
@@ -39,18 +40,31 @@ def log(line):
 
 def now(): return datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
+def state(j):
+    """(status, phase, chunksDone, finishedAt-or-None). Instant mode: always succeeded."""
+    if CHUNK_SECONDS <= 0: return "succeeded", "done", j["chunks"], j["created"]
+    if j.get("cancelled"): return "cancelled", "cancelled", min(j["chunks"], int((j["cancelled"] - j["created"]) / CHUNK_SECONDS)), j["cancelled"]
+    total = j["chunks"] * CHUNK_SECONDS; el = time.time() - j["created"]
+    if el >= total: return "succeeded", "done", j["chunks"], j["created"] + total
+    return "running", "synthesizing", min(j["chunks"], int(el / CHUNK_SECONDS)), None
+
+def stamp(t): return datetime.datetime.fromtimestamp(t, datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+
 def publication(j):
     if not j.get("feed"): return None
-    done = time.time() - j["created"] >= PUBLISH_DELAY
+    st, _, _, fin = state(j)
+    if st == "cancelled": return None
+    done = st == "succeeded" and time.time() - fin >= PUBLISH_DELAY
     return dict(feed=j["feed"], status="published" if done else "pending",
                 audioUrl=f"{FEED['subscribeUrl'].rsplit('/', 1)[0]}/{j['id']}.m4b" if done else None,
                 error=None, publishedAt=now() if done else None, removedAt=None)
 
 def job_json(j):
-    return dict(id=j["id"], status="succeeded", phase="done", progress=1, chunksDone=j["chunks"],
+    st, ph, cd, fin = state(j)
+    return dict(id=j["id"], status=st, phase=ph, progress=cd / j["chunks"], chunksDone=cd,
                 chunksTotal=j["chunks"], title=j["title"], engine="fake", voice="fake", format="m4b",
                 priority=0, attempts=1, estCostUsd=0, durationSeconds=DURATION, bytes=len(M4B),
-                createdAt=j["createdAt"], startedAt=j["createdAt"], finishedAt=j["createdAt"],
+                createdAt=j["createdAt"], startedAt=j["createdAt"], finishedAt=stamp(fin) if fin else None,
                 updatedAt=j["createdAt"], metadata=j["metadata"], audioUrl=f"/v1/jobs/{j['id']}/audio",
                 publication=publication(j))
 
@@ -96,6 +110,11 @@ class H(BaseHTTPRequestHandler):
         if m:
             j = JOBS.get(m.group(1))
             if m.group(2) == "events":   # never 404: the client rethrows it
+                if CHUNK_SECONDS > 0 and j:
+                    st, ph, cd, _ = state(j)
+                    ev = dict(jobId=j["id"], type={"running": "job.progress", "succeeded": "job.succeeded", "cancelled": "job.cancelled"}[st],
+                              status=st, phase=ph, progress=cd / j["chunks"], chunksDone=cd, chunksTotal=j["chunks"])
+                    return self.send(200, f"data: {json.dumps(ev)}\n\n".encode(), "text/event-stream")
                 ev = dict(jobId=m.group(1), type="job.completed", status="succeeded", progress=1)
                 return self.send(200, f"data: {json.dumps(ev)}\n\n".encode(), "text/event-stream")
             if not j: return self.send(404, {"error": "not found"})
@@ -103,7 +122,11 @@ class H(BaseHTTPRequestHandler):
             return self.send(200, job_json(j))
         self.send(404, {"error": "not found"})
     def do_DELETE(self):
-        log(f"DELETE {self.path}"); self.send(204, b"", "text/plain")
+        log(f"DELETE {self.path}")
+        m = re.fullmatch(r"/v1/jobs/([^/]+)", self.path.split("?")[0])
+        j = JOBS.get(m.group(1)) if m else None
+        if j and CHUNK_SECONDS > 0 and state(j)[0] == "running": j["cancelled"] = time.time()
+        self.send(204, b"", "text/plain")
     def do_POST(self):
         p = self.path.split("?")[0]; log(f"POST {p}"); b = self.body()
         if p == "/v1/jobs":
@@ -119,7 +142,7 @@ class H(BaseHTTPRequestHandler):
             feed = b.get("feed")
             if feed == "@default": feed = None if NO_DEFAULT_FEED else FEED["name"]
             JOBS[jid] = dict(id=jid, feed=feed, created=time.time(), title=b.get("title"), chunks=max(1, len(chs)), createdAt=now(), metadata=md or None)
-            return self.send(202, dict(id=jid, status="succeeded", createdAt=JOBS[jid]["createdAt"],
+            return self.send(202, dict(id=jid, status=state(JOBS[jid])[0], createdAt=JOBS[jid]["createdAt"],
                                        publication=publication(JOBS[jid])))
         if p == "/v1/jobs/estimate":
             chs = b.get("chapters") or []
@@ -130,11 +153,14 @@ class H(BaseHTTPRequestHandler):
                                        budget=dict(allowed=True)))
         if p == "/v1/audio/speech": return self.send(200, MP3, "audio/mpeg")
         m = re.fullmatch(r"/v1/jobs/([^/]+)/(cancel|retry)", p)
-        if m and m.group(1) in JOBS: return self.send(200, job_json(JOBS[m.group(1)]))
+        if m and m.group(1) in JOBS:
+            j = JOBS[m.group(1)]
+            if m.group(2) == "cancel" and CHUNK_SECONDS > 0 and state(j)[0] == "running": j["cancelled"] = time.time()
+            return self.send(200, job_json(JOBS[m.group(1)]))
         self.send(404, {"error": "not found"})
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8090)
-    ap.add_argument("--log"); ap.add_argument("--no-default-feed", action="store_true")
-    a = ap.parse_args(); LOGF = a.log; NO_DEFAULT_FEED = a.no_default_feed
+    ap.add_argument("--log"); ap.add_argument("--chunk-seconds", type=float, default=0.0); ap.add_argument("--no-default-feed", action="store_true")
+    a = ap.parse_args(); LOGF = a.log; NO_DEFAULT_FEED = a.no_default_feed; CHUNK_SECONDS = a.chunk_seconds
     ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
