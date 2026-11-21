@@ -45,4 +45,16 @@ public interface IPodcastNarrator
     /// <param name="ct">Cancellation token.</param>
     /// <returns>The default feed; null when none is set or audio-engine is unreachable.</returns>
     Task<NarrationFeed?> GetDefaultFeedAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Cancels the narrations of earlier episodes of a series that audio-engine has not finished
+    /// (workspace-wxll0.5): nothing is waiting for them any more, and on a single narration lane
+    /// they keep the new episode waiting for hours. When <see cref="NarrationSeries.ListId"/> is
+    /// given, the series is also written on that episode's job so a later run can recognise it.
+    /// Jobs that belong to anything else are left alone.
+    /// </summary>
+    /// <param name="series">The series and the episode about to be narrated.</param>
+    /// <param name="ct">Cancellation token.</param>
+    /// <returns>How many earlier narrations were cancelled; 0 when audio-engine can't be asked.</returns>
+    Task<int> SupersedeEarlierEpisodesAsync(NarrationSeries series, CancellationToken ct = default) => Task.FromResult(0);
 }

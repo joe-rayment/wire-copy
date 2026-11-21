@@ -30,6 +30,12 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
 
     private const string PublicationPending = "pending";
 
+    /// <summary>Job metadata: the reading list an episode was made from.</summary>
+    private const string ListMetadataKey = "readingListId";
+
+    /// <summary>Job metadata: the series (routine) an episode belongs to (workspace-wxll0.5).</summary>
+    private const string SeriesMetadataKey = "wirecopySeries";
+
     private static readonly TimeSpan PublicationPoll = TimeSpan.FromSeconds(2);
     private static readonly TimeSpan PublicationTimeout = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(8);
@@ -44,6 +50,12 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     /// <summary>How long a local audio-engine may stay silent before WireCopy starts it again itself.</summary>
     private static readonly TimeSpan OutageRestartAfter = TimeSpan.FromSeconds(45);
 
+    /// <summary>How often a job that waits its turn looks at the jobs ahead of it (workspace-wxll0.5).</summary>
+    private static readonly TimeSpan QueuePoll = TimeSpan.FromSeconds(15);
+
+    /// <summary>How long a cancelled job is given to leave audio-engine's lane.</summary>
+    private static readonly TimeSpan SupersedeSettle = TimeSpan.FromSeconds(15);
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -55,6 +67,9 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private readonly ILogger<AudioEngineNarrator> _logger;
     private readonly Func<string, string?> _getEnv;
     private readonly IAudioEngineLauncher? _launcher;
+
+    /// <summary>Reading list id to the series its episode belongs to, until that episode has been narrated.</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, string> _seriesByList = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AudioEngineNarrator"/> class that can start a
@@ -354,6 +369,86 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     }
 
     /// <inheritdoc />
+    public async Task<int> SupersedeEarlierEpisodesAsync(NarrationSeries series, CancellationToken ct = default)
+    {
+        ArgumentNullException.ThrowIfNull(series);
+        if (string.IsNullOrWhiteSpace(series.Key))
+        {
+            return 0;
+        }
+
+        if (!string.IsNullOrWhiteSpace(series.ListId))
+        {
+            _seriesByList[series.ListId] = series.Key;
+        }
+
+        var s = CurrentSettings();
+        if (!IsReady(s))
+        {
+            return 0;
+        }
+
+        var cancelled = new List<string>();
+        try
+        {
+            using var session = OpenSession(s);
+            foreach (var status in new[] { JobStatuses.Running, JobStatuses.Pending })
+            {
+                var page = await session.Client.ListAsync(status: status, limit: 50, ct: ct).ConfigureAwait(false);
+                foreach (var job in page.Items ?? [])
+                {
+                    if (!IsEarlierEpisode(job, series))
+                    {
+                        continue;
+                    }
+
+                    try
+                    {
+                        await session.Client.CancelAsync(job.Id, ct).ConfigureAwait(false);
+                        cancelled.Add(job.Id);
+                        _logger.LogInformation(
+                            "audio-engine was still narrating an earlier episode of this routine (“{Title:l}”, {Done} of {Total} parts, sent {Sent:u}): cancelled it, because this run replaces it",
+                            job.Title,
+                            job.ChunksDone,
+                            job.ChunksTotal,
+                            job.CreatedAt.UtcDateTime);
+                    }
+                    catch (AudioEngineApiException ex) when (ex.StatusCode == (int)HttpStatusCode.Conflict)
+                    {
+                        // It finished in the meantime: nothing to cancel.
+                    }
+                }
+            }
+
+            // A running job leaves the lane a moment after it is told to: wait for that, so what
+            // comes next (the check for an older engine, this run's own job) finds the lane free.
+            var settle = System.Diagnostics.Stopwatch.StartNew();
+            while (cancelled.Count > 0 && settle.Elapsed < SupersedeSettle)
+            {
+                var busy = false;
+                foreach (var id in cancelled)
+                {
+                    busy |= !(await session.Client.GetAsync(id, ct).ConfigureAwait(false)).IsTerminal;
+                }
+
+                if (!busy)
+                {
+                    break;
+                }
+
+                await Task.Delay(TimeSpan.FromMilliseconds(500), ct).ConfigureAwait(false);
+            }
+        }
+        catch (Exception ex) when (!IsCallerCancel(ex, ct))
+        {
+            // Not running, or not answering: there is nothing of ours in its lane that this run can reach.
+            _logger.LogDebug(ex, "Could not look in audio-engine for earlier episodes of {Series}", series.Key);
+        }
+
+        return cancelled.Count;
+    }
+
+    /// <inheritdoc />
     public async Task<NarrationResult> NarrateAsync(
         NarrationRequest request,
         IProgress<NarrationProgress>? progress = null,
@@ -434,7 +529,42 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         finally
         {
             session?.Dispose();
+            if (!string.IsNullOrEmpty(request.ListId))
+            {
+                _seriesByList.TryRemove(request.ListId, out _);
+            }
         }
+    }
+
+    /// <summary>
+    /// Whether an unfinished audio-engine job is an earlier episode of a series: a job WireCopy sent
+    /// (it carries a reading list id) for another reading list, marked with the same series - or,
+    /// when it was sent before jobs carried the series, titled like one of the series' episodes.
+    /// </summary>
+    /// <param name="job">The job as audio-engine lists it.</param>
+    /// <param name="series">The series and the episode about to be narrated.</param>
+    /// <returns>True when the job may be cancelled in favour of the new episode.</returns>
+    internal static bool IsEarlierEpisode(Job job, NarrationSeries series)
+    {
+        ArgumentNullException.ThrowIfNull(job);
+        ArgumentNullException.ThrowIfNull(series);
+        var metadata = job.Metadata;
+        if (metadata is null
+            || !metadata.TryGetValue(ListMetadataKey, out var list)
+            || string.Equals(list, series.ListId, StringComparison.OrdinalIgnoreCase))
+        {
+            // Not sent by WireCopy, or the very episode this run is about to narrate.
+            return false;
+        }
+
+        if (metadata.TryGetValue(SeriesMetadataKey, out var key))
+        {
+            return string.Equals(key, series.Key, StringComparison.Ordinal);
+        }
+
+        return !string.IsNullOrWhiteSpace(series.EpisodeNamePrefix)
+            && job.Title is { } title
+            && title.Contains(": " + series.EpisodeNamePrefix, StringComparison.Ordinal);
     }
 
     /// <summary>
@@ -468,9 +598,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             Genre = request.Genre,
             CoverArt = coverArt,
             OnChapterError = "skip",
-            Metadata = string.IsNullOrEmpty(request.ListId)
-                ? null
-                : new Dictionary<string, string> { ["readingListId"] = request.ListId },
+            Metadata = BuildMetadata(request.ListId),
             IdempotencyKey = BuildIdempotencyKey(request, engineFingerprint, coverHash),
         };
     }
@@ -803,6 +931,31 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         AudioEngineClient client, string jobId, string? url, IProgress<NarrationProgress>? progress, CancellationToken ct)
     {
         var sink = new ProgressSink(progress);
+
+        // While the job waits its turn, the jobs ahead of it are what moves (workspace-wxll0.5).
+        using var queueWatch = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        var queue = WatchQueueAsync(client, jobId, sink, queueWatch.Token);
+        try
+        {
+            return await WaitForJobAsync(client, jobId, url, sink, ct).ConfigureAwait(false);
+        }
+        finally
+        {
+            await queueWatch.CancelAsync().ConfigureAwait(false);
+            try
+            {
+                await queue.ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Stopped with the wait.
+            }
+        }
+    }
+
+    private async Task<Job> WaitForJobAsync(
+        AudioEngineClient client, string jobId, string? url, ProgressSink sink, CancellationToken ct)
+    {
         System.Diagnostics.Stopwatch? silentFor = null;
         var restartAsked = false;
         while (true)
@@ -876,6 +1029,87 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         }
     }
 
+    private Dictionary<string, string>? BuildMetadata(string? listId)
+    {
+        if (string.IsNullOrEmpty(listId))
+        {
+            return null;
+        }
+
+        var metadata = new Dictionary<string, string> { [ListMetadataKey] = listId };
+        if (_seriesByList.TryGetValue(listId, out var series))
+        {
+            metadata[SeriesMetadataKey] = series;
+        }
+
+        return metadata;
+    }
+
+    /// <summary>
+    /// While a job is pending because audio-engine's lane is busy with other jobs, reports those
+    /// jobs' progress as this job's "waiting its turn" state: the run view can say so, and a queue
+    /// that moves is not mistaken for a run that stands still.
+    /// </summary>
+    private async Task WatchQueueAsync(AudioEngineClient client, string jobId, ProgressSink sink, CancellationToken ct)
+    {
+        string? behind = null;
+        var waiting = System.Diagnostics.Stopwatch.StartNew();
+        while (true)
+        {
+            try
+            {
+                var job = await client.GetAsync(jobId, ct).ConfigureAwait(false);
+                if (job.IsTerminal)
+                {
+                    return;
+                }
+
+                var ahead = string.Equals(job.Status, JobStatuses.Pending, StringComparison.OrdinalIgnoreCase)
+                    ? ((await client.ListAsync(status: JobStatuses.Running, limit: 20, ct: ct).ConfigureAwait(false)).Items ?? [])
+                        .Where(j => !string.Equals(j.Id, jobId, StringComparison.Ordinal))
+                        .ToList()
+                    : [];
+                if (ahead.Count > 0)
+                {
+                    var title = string.IsNullOrWhiteSpace(ahead[0].Title) ? "another job" : ahead[0].Title!;
+                    var done = ahead.Sum(j => j.ChunksDone);
+                    var total = ahead.Sum(j => j.ChunksTotal);
+                    if (!string.Equals(behind, title, StringComparison.Ordinal))
+                    {
+                        _logger.LogInformation(
+                            "audio-engine is narrating “{Title:l}” first ({Done} of {Total} parts done): this run's narration waits its turn",
+                            title,
+                            done,
+                            total);
+                        behind = title;
+                    }
+
+                    sink.ReportQueue(title, done, total);
+                }
+                else
+                {
+                    if (behind is not null)
+                    {
+                        _logger.LogInformation(
+                            "This run's narration waited {Minutes:F0} min for its turn in audio-engine; it is being narrated now",
+                            waiting.Elapsed.TotalMinutes);
+                        behind = null;
+                    }
+
+                    sink.ReportQueue(null, 0, 0);
+                    waiting.Restart();
+                }
+            }
+            catch (Exception ex) when (!ct.IsCancellationRequested)
+            {
+                // The wait itself notices an engine that stopped answering; here it only means no news.
+                _logger.LogDebug(ex, "Could not look at audio-engine's queue for job {JobId}", jobId);
+            }
+
+            await Task.Delay(QueuePoll, ct).ConfigureAwait(false);
+        }
+    }
+
     private async Task TryCancelJobAsync(AudioEngineClient client, string jobId)
     {
         try
@@ -902,20 +1136,50 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private sealed class ProgressSink : IProgress<JobEvent>
     {
         private readonly IProgress<NarrationProgress>? _target;
+        private readonly Lock _gate = new();
 
         private NarrationProgress? _last;
+        private (string Title, int Done, int Total)? _queue;
 
         public ProgressSink(IProgress<NarrationProgress>? target) => _target = target;
 
         public void Report(JobEvent value)
         {
-            _last = Map(value);
-            _target?.Report(_last);
+            lock (_gate)
+            {
+                // The job's own turn has come as soon as it is no longer pending.
+                if (value.Status.Length > 0 && !string.Equals(value.Status, JobStatuses.Pending, StringComparison.OrdinalIgnoreCase))
+                {
+                    _queue = null;
+                }
+
+                _last = Map(value);
+                _target?.Report(WithQueue(_last));
+            }
         }
 
         /// <summary>Says audio-engine went quiet, keeping the numbers it last reported.</summary>
-        public void ReportNotAnswering() => _target?.Report(
-            (_last ?? new NarrationProgress { Phase = NarrationPhase.Synthesizing }) with { EngineNotAnswering = true });
+        public void ReportNotAnswering()
+        {
+            lock (_gate)
+            {
+                _target?.Report(WithQueue(Last()) with { EngineNotAnswering = true });
+            }
+        }
+
+        /// <summary>Says which job is being narrated ahead of this one and how far it is; a null title ends the wait.</summary>
+        public void ReportQueue(string? title, int done, int total)
+        {
+            lock (_gate)
+            {
+                var before = _queue;
+                _queue = title is null ? null : (title, done, total);
+                if (_queue != before)
+                {
+                    _target?.Report(WithQueue(Last()));
+                }
+            }
+        }
 
         private static NarrationProgress Map(JobEvent e) => new()
         {
@@ -931,6 +1195,12 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             Message = e.Message,
             Remaining = e.EtaSeconds is > 0 and < 7 * 24 * 3600 ? TimeSpan.FromSeconds(e.EtaSeconds.Value) : null,
         };
+
+        private NarrationProgress Last() => _last ?? new NarrationProgress { Phase = NarrationPhase.Synthesizing };
+
+        private NarrationProgress WithQueue(NarrationProgress p) => _queue is { } q
+            ? p with { WaitingBehind = q.Title, QueueDone = q.Done, QueueTotal = q.Total }
+            : p;
     }
 
     /// <summary>One call's HTTP client plus the audio-engine client wrapped around it; disposes both.</summary>

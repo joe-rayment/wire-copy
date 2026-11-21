@@ -250,6 +250,9 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             PhaseElapsed = elapsed,
             EngineNotAnswering = p.EngineNotAnswering,
             Remaining = p.Remaining,
+            WaitingBehind = p.WaitingBehind,
+            QueueDone = p.QueueDone,
+            QueueTotal = p.QueueTotal,
         };
     }
 

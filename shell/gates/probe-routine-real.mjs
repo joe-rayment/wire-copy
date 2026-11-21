@@ -25,6 +25,18 @@
 //                   and started at that older commit in a second clone, then the clone is moved to the
 //                   newest commit - the state of a machine whose engine has run for days)
 //                   --busy: the engine is in the middle of someone else's narration at that moment
+//   --case orphan [--stale]
+//                   the engine still holds unfinished jobs of earlier runs of this routine (one
+//                   narrating, one waiting; one marked as this build marks them, one as an older
+//                   build sent it) and one of another routine, which must be left alone and waited
+//                   for. --stale: only this routine's leftovers, and the engine's code has changed
+//                   since it started - the state of the Mac in logs/audio-engine.log
+//   --case behind   the engine is in the middle of someone else's narration when the run starts;
+//                   with --stall-seconds N shorter than that narration, the run must not be
+//                   stopped for standing still while the job ahead advances
+//                   --freeze-other: once this run's job is waiting, the job ahead stops getting
+//                   anywhere (its worker is frozen) - the run must then be stopped for standing still
+//   --stall-seconds N  WIRECOPY_ROUTINE_STALL_SECONDS for the app
 //   --case engine-restart
 //                   the engine is stopped in the middle of narration and nothing starts it again
 //                   except WireCopy itself
@@ -51,6 +63,7 @@ const WAIT_S = Math.round(Number(opt('--wait-hours', '1')) * 3600)
 const CASE = opt('--case', 'plain')
 const FAKE_WORKER = opt('--worker', 'real') === 'fake'
 const FROM_COMMIT = opt('--from-commit', null)
+const STALL_S = opt('--stall-seconds', null)
 const SITE = 'https://www.nytimes.com/section/todayspaper'
 const SECTIONS = ['Highlights', 'The Front Page', 'Business Day']
 
@@ -99,6 +112,9 @@ const http = async (method, p, body) => {
   const t = await r.text()
   try { return { status: r.status, json: JSON.parse(t) } } catch { return { status: r.status, text: t.slice(0, 300) } }
 }
+const engineJobsBrief = async () => {
+  try { return ((await http('GET', '/v1/jobs?limit=10')).json?.items || []).map(j => `${j.title} = ${j.status} ${j.chunksDone}/${j.chunksTotal}`) } catch (e) { return [String(e.message).slice(0, 80)] }
+}
 const engineUp = async () => { try { return (await http('GET', '/healthz')).status === 200 } catch { return false } }
 const stopEngine = () => { try { return execFileSync(path.join(AE_HOME, 'run'), ['stop', String(EPORT)], { env: process.env }).toString().trim() } catch (e) { return `stop failed: ${String(e.stderr || e.message).split('\n')[0]}` } }
 
@@ -106,7 +122,9 @@ const enginePids = () => { try { return execFileSync('pgrep', ['-f', 'AudioEngin
 const startEngineByHand = () => spawn(path.join(AE_HOME, 'dotnet'), ['run', '--project', 'src/AudioEngine.Server', '-c', 'Release'],
   { cwd: AE_HOME, stdio: 'ignore', detached: true, env: { ...process.env, ...engineEnv, ASPNETCORE_URLS: EURL, AUTH_DISABLED: '1' } })
 if (await engineUp()) { console.log(`[real] something already answers on ${EURL}: ${stopEngine()}`) }
-if (CASE === 'stale-engine') {
+const ROUTINE_ID = 'b2000000-0000-4000-8000-0000000000aa'
+const filler = (n, what) => Array.from({ length: n }, (_, i) => `Sentence number ${i + 1} of ${what}.`).join(' ')
+if (CASE === 'stale-engine' || CASE === 'orphan' || CASE === 'behind') {
   // Someone started the engine earlier; its code moves on while it keeps running.
   startEngineByHand().unref()
   let up = false
@@ -114,17 +132,31 @@ if (CASE === 'stale-engine') {
   if (!up) { console.error('[real] the engine did not come up'); process.exit(1) }
   if (MODEL) console.log(`[real] engine setting ChatterboxModel=${MODEL}: HTTP ${(await http('PUT', '/v1/settings', { ChatterboxModel: MODEL })).status}`)
   console.log(`[real] an engine is running before the app starts: pid ${enginePids()} at ${git('log', '-1', '--format=%h %ad', '--date=short')}; POST /v1/shutdown exists: ${(await http('GET', '/v1/storage')).status !== 404}`)
-  if (argv.includes('--busy')) {
+  if (argv.includes('--busy') || CASE === 'behind') {
     // Someone else's narration is in progress on that engine when the run starts.
-    const text = Array.from({ length: 120 }, (_, i) => `Sentence number ${i + 1} of a narration that another program asked this engine for before the routine began.`).join(' ')
+    const text = filler(120, 'a narration that another program asked this engine for before the routine began')
     const sub = await http('POST', '/v1/jobs', { title: 'Probe: somebody else\'s narration', text })
     console.log(`[real] another job was submitted first: HTTP ${sub.status} ${sub.json?.id || sub.text || ''}`)
   }
+  if (CASE === 'orphan') {
+    // What runs of this routine that were cut off (the app died) leave in the engine: their jobs,
+    // one being narrated and one waiting. The first is marked the way this build marks its jobs,
+    // the second is what an older build sent (a reading list id and the episode's title, no more).
+    for (const [title, metadata] of [
+      ['WireCopy Podcast: NYT daily · Thu 19 Nov', { readingListId: 'a1000000-0000-4000-8000-000000000001', wirecopySeries: `routine:${ROUTINE_ID}` }],
+      ['WireCopy Podcast: NYT daily · Fri 20 Nov', { readingListId: 'a1000000-0000-4000-8000-000000000002' }],
+      ...(argv.includes('--stale') ? [] : [['WireCopy Podcast: Long reads · Fri 20 Nov', { readingListId: 'a1000000-0000-4000-8000-000000000003', wirecopySeries: 'routine:another-routine' }]])
+    ]) {
+      const sub = await http('POST', '/v1/jobs', { title, metadata, author: 'WireCopy', text: filler(title.includes('Long reads') ? 24 : 400, `an earlier episode, ${title}`) })
+      console.log(`[real] left in the engine by an earlier run: "${title}" HTTP ${sub.status} ${sub.json?.id || sub.text || ''}`)
+    }
+  }
   await sleep(2500)
-  if (FROM_COMMIT) {
+  if (CASE !== 'stale-engine') console.log(`[real] the engine's jobs before the app starts: ${JSON.stringify((await engineJobsBrief()))}`)
+  if (CASE === 'stale-engine' && FROM_COMMIT) {
     execFileSync('git', ['-C', AE_HOME, 'checkout', '--quiet', '--force', NEWEST])
     console.log(`[real] its checkout is now at ${git('log', '-1', '--format=%h %ad', '--date=short')} (the process is still the old build)`)
-  } else {
+  } else if (CASE === 'stale-engine' || argv.includes('--stale')) {
     const f = path.join(AE_HOME, 'src', 'AudioEngine.Server', 'Program.cs')
     const now = new Date(); fs.utimesSync(f, now, now)
     console.log(`[real] bumped the time of ${f} (the process started before that)`)
@@ -147,7 +179,8 @@ fs.writeFileSync(wrapper, '#!/bin/sh\ncd "$WC_PROBE_CWD" || exit 1\nexec "$WC_PR
 Object.assign(env.extraEnv, {
   WIRECOPY_SHELL_DOTNET: wrapper, WC_PROBE_CWD: appCwd, WC_PROBE_REAL_DOTNET: path.join(ROOT, 'dotnet'),
   ...(process.env.PROBE_DLL ? { WIRECOPY_SHELL_TUI_DLL: process.env.PROBE_DLL } : {}),
-  AUDIO_ENGINE_URL: EURL, AUDIO_ENGINE_HOME: AE_HOME, ...engineEnv
+  AUDIO_ENGINE_URL: EURL, AUDIO_ENGINE_HOME: AE_HOME, ...engineEnv,
+  ...(STALL_S ? { WIRECOPY_ROUTINE_STALL_SECONDS: STALL_S } : {})
 })
 
 // What the app writes when a section of an unconfigured page is added to a routine
@@ -167,7 +200,7 @@ const slot = SCHEDULED ? hm(new Date(Date.now() - 2 * 60000)) : hm(new Date(Date
 fs.writeFileSync(path.join(dataDir, 'schedules.json'), JSON.stringify({
   version: 1,
   recipes: [{
-    id: 'b2000000-0000-4000-8000-0000000000aa', name: 'NYT daily', enabled: true, days: ALL, localTime: slot,
+    id: ROUTINE_ID, name: 'NYT daily', enabled: true, days: ALL, localTime: slot,
     steps: SECTIONS.map((sectionName, i) => ({
       sourceUrl: SITE, domain: 'nytimes.com', configUrlPattern: pattern, sectionName, scope: 'PinnedSection',
       sortOrderFallback: i, headingAliases: [], takeMode: TAKE ? 'TopN' : 'WholeSection', ...(TAKE ? { takeCount: TAKE } : {}), positions: [], required: false
@@ -214,7 +247,7 @@ const count = (text, needle) => text.split(needle).length - 1
 // The engine's own view of its jobs: status, chunks, what it is doing, skipped chapters.
 const engineJobs = async () => {
   try {
-    const r = await http('GET', '/v1/jobs?limit=5')
+    const r = await http('GET', '/v1/jobs?limit=8')
     const items = (r.json && (r.json.items || r.json.jobs || r.json)) || []
     return (Array.isArray(items) ? items : []).map(j => ({
       id: j.id, status: j.status, title: j.title, engine: j.engine, chunks: `${j.progress?.chunksDone ?? j.chunksDone ?? '?'}/${j.progress?.chunksTotal ?? j.chunksTotal ?? '?'}`,
@@ -226,6 +259,14 @@ const engineJobs = async () => {
 let wid = null
 let shots = 0
 let movedDotnet = false
+const frozen = []
+// This engine's narration worker processes: they carry the engine's data folder in their environment.
+const workerPids = () => {
+  try {
+    return execFileSync('pgrep', ['-f', 'chatterbox_worker']).toString().trim().split('\n').filter(Boolean).map(Number)
+      .filter(pid => { try { return fs.readFileSync(`/proc/${pid}/environ`, 'utf8').includes(engineData) } catch { return false } })
+  } catch { return [] }
+}
 const tag = (CASE === 'plain' ? '' : CASE + '-') + (TAKE ? `take${TAKE}` : 'whole')
 const shot = name => { try { env.shotWindow(`real-${tag}-${String(++shots).padStart(2, '0')}-${name}`, wid) } catch (e) { console.log('      shot failed:', String(e.message).split('\n')[0]) } }
 await env.up()
@@ -299,10 +340,19 @@ try {
         actedAt = Date.now()
       }
     }
+    if (argv.includes('--freeze-other') && !acted && rows.length) {
+      // The job ahead stops getting anywhere: its narration worker is frozen (SIGSTOP), as a hung model would be.
+      const jobs = await engineJobs()
+      if (jobs.some(j => j.status === 'pending' && /NYT daily/.test(j.title || ''))) {
+        acted = true; actedAt = Date.now()
+        for (const pid of workerPids()) { try { process.kill(pid, 'SIGSTOP'); frozen.push(pid) } catch {} }
+        console.log(`[real] ${since()} this run's job is waiting; froze the narration worker of the job ahead (pid ${frozen.join(',') || 'none found'}): ${JSON.stringify(await engineJobsBrief())}`)
+      }
+    }
     if (acted && !shotOutage && Date.now() - actedAt > 20000) {
       shotOutage = true
-      console.log(`[real] ${since()} 20 s after the engine stopped, pane: ${brief(await pane())}; engine pid ${enginePids()}`)
-      shot('engine-down')
+      console.log(`[real] ${since()} 20 s after ${frozen.length ? 'the job ahead froze' : 'the engine stopped'}, pane: ${brief(await pane())}; engine pid ${enginePids()}`)
+      shot(frozen.length ? 'job-ahead-frozen' : 'engine-down')
     }
     if (rows.length && rows.every(r => !isRunning(r.status))) break
   }
@@ -322,7 +372,7 @@ try {
     console.log(`   ${String(count(log, needle)).padStart(3)}  × "${needle}"`)
   console.log('===== app log, the run')
   for (const l of log.split('\n')) {
-    if (/Routine run|Scheduler:|Extracted |Generating podcast|Starting podcast|Loading http|: (Resolved|Recovered|LoadFailed|Blocked|ZeroMatch|SectionNotFound)|Semantic recovery|Skipping|timed out|Bot challenge|fall|audio-engine|Narration|narrat|[Pp]ublish|Saved|\[WRN\]|\[ERR\]|progress for|awake|sleep|links while|Couldn't load/i.test(l) &&
+    if (/Routine run|Scheduler:|Extracted |earlier episode|waits its turn|for its turn|Generating podcast|Starting podcast|Loading http|: (Resolved|Recovered|LoadFailed|Blocked|ZeroMatch|SectionNotFound)|Semantic recovery|Skipping|timed out|Bot challenge|fall|audio-engine|Narration|narrat|[Pp]ublish|Saved|\[WRN\]|\[ERR\]|progress for|awake|sleep|links while|Couldn't load/i.test(l) &&
         !/^\s+at |No XML encryptor|Successfully loaded page/.test(l)) console.log('   ' + l.slice(0, 330))
   }
   console.log('===== engine: its jobs')
@@ -352,6 +402,7 @@ try {
   finishing = true
   env.down()
   if (movedDotnet) { try { fs.renameSync(path.join(AE_HOME, 'dotnet.off'), path.join(AE_HOME, 'dotnet')) } catch {} }
+  for (const pid of frozen) { try { process.kill(pid, 'SIGKILL') } catch {} }
   console.log('[real] ' + stopEngine())
   console.log(`[real] run directory left in place: ${base}`)
   process.exit(0)

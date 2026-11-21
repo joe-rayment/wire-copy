@@ -179,6 +179,18 @@ public record PodcastProgress
     /// waiting for it to come back.
     /// </summary>
     public bool EngineNotAnswering { get; init; }
+
+    /// <summary>
+    /// Gets the title of the job the narration service is narrating ahead of this run's while this
+    /// run's waits its turn; null when it is not waiting (workspace-wxll0.5).
+    /// </summary>
+    public string? WaitingBehind { get; init; }
+
+    /// <summary>Gets how many parts the jobs ahead have narrated so far (with <see cref="WaitingBehind"/>).</summary>
+    public int QueueDone { get; init; }
+
+    /// <summary>Gets how many parts the jobs ahead have in all (with <see cref="WaitingBehind"/>).</summary>
+    public int QueueTotal { get; init; }
 }
 
 /// <summary>

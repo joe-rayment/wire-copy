@@ -43,6 +43,9 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     /// <summary>How many times a page that fails for a network reason is tried before its step is given up.</summary>
     private const int LoadAttempts = 3;
 
+    /// <summary>What the narrate tile says while audio-engine narrates another job first (the tile shows about 34 characters).</summary>
+    private const string WaitingTurnHint = "another narration first";
+
     private readonly IUnattendedSectionLoader _loader;
     private readonly ISectionResolver _resolver;
     private readonly IPodcastOrchestrator _orchestrator;
@@ -130,6 +133,9 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             _tracker?.SetStage(recipe.Id, "narration", RoutineRunStageState.Running);
             if (_narrator != null)
             {
+                // workspace-wxll0.5: before the preflight looks at the engine - one that is busy only
+                // with this routine's leftover can then be replaced when its code has moved on.
+                await SupersedeEarlierEpisodesAsync(recipe, null, ct).ConfigureAwait(false);
                 var narration = await NarratorPreflight.EnsureReadyAsync(_narrator, _launcher, ct).ConfigureAwait(false);
                 if (!narration.Ready)
                 {
@@ -321,7 +327,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
     private static string ProgressPicture(PodcastProgress p) => string.Create(
         System.Globalization.CultureInfo.InvariantCulture,
-        $"{p.Phase} {p.CurrentArticle}/{p.TotalArticles} {p.IsArticleComplete} {p.CurrentArticleChunkIndex}/{p.CurrentArticleChunkTotal} {p.PercentComplete}% {p.AssembledSegments} {p.UploadedEpisodes} {p.UploadedBytes}");
+        $"{p.Phase} {p.CurrentArticle}/{p.TotalArticles} {p.IsArticleComplete} {p.CurrentArticleChunkIndex}/{p.CurrentArticleChunkTotal} {p.PercentComplete}% {p.AssembledSegments} {p.UploadedEpisodes} {p.UploadedBytes} {p.WaitingBehind} {p.QueueDone}");
 
     // Warnings and worse always; Information only from the scheduler and podcast code, so the drill-down
     // is not buried in unrelated prefetch chatter from the same seconds.
@@ -404,6 +410,16 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                     // workspace-wxll0.4: the narrator waits out an engine that went quiet; say so.
                     _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "audio-engine is not answering");
                 }
+                else if (p.WaitingBehind is not null)
+                {
+                    // workspace-wxll0.5: the engine's one lane is on another job; this run's waits its turn.
+                    _tracker.SetStage(
+                        recipeId,
+                        "narrate",
+                        RoutineRunStageState.Running,
+                        p.QueueTotal > 0 ? $"{WaitingTurnHint} · {p.QueueDone}/{p.QueueTotal}" : WaitingTurnHint,
+                        $"“{p.WaitingBehind}”");
+                }
                 else if (p.TotalArticles > 0 && p.CurrentArticle > 0)
                 {
                     var narratingTitle = string.IsNullOrWhiteSpace(p.ArticleTitle) ? null : $"“{p.ArticleTitle}”";
@@ -440,6 +456,30 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 break;
             default:
                 break;
+        }
+    }
+
+    /// <summary>
+    /// workspace-wxll0.5 — a run replaces the routine's earlier episodes that audio-engine is still
+    /// narrating. A run that was cut off (the app quit or died, the engine was restarted) leaves its
+    /// job behind; the engine narrates one job at a time, so the new episode would wait hours for
+    /// an old one nobody collects. Other jobs in the engine are not touched. Never fails the run.
+    /// </summary>
+    private async Task SupersedeEarlierEpisodesAsync(ScheduleRecipe recipe, string? listId, CancellationToken cancellationToken)
+    {
+        if (_narrator is null)
+        {
+            return;
+        }
+
+        try
+        {
+            var series = new NarrationSeries($"routine:{recipe.Id}", listId, recipe.OutputCollectionName + " · ");
+            await _narrator.SupersedeEarlierEpisodesAsync(series, cancellationToken).ConfigureAwait(false);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogDebug(ex, "Could not clear this routine's earlier narrations out of audio-engine");
         }
     }
 
@@ -601,6 +641,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         var collection = Collection.Create(await EpisodeNameAsync(recipe, run, cancellationToken).ConfigureAwait(false));
         collection.AddItemsAtEnd(assembled);
 
+        // Again now that the episode has its id: an engine this run had to start has picked its
+        // unfinished jobs back up, and this episode's own job is marked with the routine.
+        await SupersedeEarlierEpisodesAsync(recipe, collection.Id.ToString(), cancellationToken).ConfigureAwait(false);
+
         _logger.LogInformation("Generating podcast from {Count} articles", assembled.Count);
         var targets = await _orchestrator.ResolveTargetsAsync(collection, cancellationToken).ConfigureAwait(false);
 
@@ -678,6 +722,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             else if (stage.Key == "narration")
             {
                 doing = "checking audio-engine";
+            }
+            else if (stage.Key == "narrate" && (stage.Hint?.StartsWith(WaitingTurnHint, StringComparison.Ordinal) ?? false))
+            {
+                doing = $"waiting for audio-engine to finish another narration ({stage.Detail ?? "another job"}), which was not getting anywhere";
             }
             else
             {

@@ -170,7 +170,28 @@ public sealed record NarrationProgress
     /// come back is still on (the other values are the last ones it reported).
     /// </summary>
     public bool EngineNotAnswering { get; init; }
+
+    /// <summary>
+    /// Gets the title of the job audio-engine is narrating ahead of this one while this one waits
+    /// its turn; null when it is not waiting (workspace-wxll0.5).
+    /// </summary>
+    public string? WaitingBehind { get; init; }
+
+    /// <summary>Gets how many parts the jobs ahead have narrated so far (with <see cref="WaitingBehind"/>).</summary>
+    public int QueueDone { get; init; }
+
+    /// <summary>Gets how many parts the jobs ahead have in all (with <see cref="WaitingBehind"/>).</summary>
+    public int QueueTotal { get; init; }
 }
+
+/// <summary>
+/// The series an episode belongs to, such as a routine (workspace-wxll0.5): a new episode replaces
+/// an earlier one of the same series that the narration service has not finished.
+/// </summary>
+/// <param name="Key">A stable id of the series, for example <c>routine:&lt;id&gt;</c>.</param>
+/// <param name="ListId">The reading list id of the episode about to be narrated; null to only cancel earlier ones.</param>
+/// <param name="EpisodeNamePrefix">How the series' episode names start ("NYT daily · "): recognises jobs sent before the series was written on them.</param>
+public sealed record NarrationSeries(string Key, string? ListId, string? EpisodeNamePrefix);
 
 /// <summary>A chapter audio-engine skipped because narrating it failed.</summary>
 public sealed record NarrationSkippedChapter(int Index, string? Title, string? Error);
