@@ -293,8 +293,11 @@ internal sealed class ReadingListContentProvider
             reportMethod?.Invoke(_pageCache.Contains(item.Url) ? "cache" : "browser");
             var request = new PageLoadRequest { Url = item.Url, PreferBrowser = true };
 
+            // The loader takes the page itself for a browser fetch; CoverCallees tells it
+            // this call already holds it, or it queues behind us for 30s (workspace-q06ia.1).
             using (var lease = await _pageAccessQueue.AcquireAsync(
                 PageAccessPriority.Background, cancellationToken).ConfigureAwait(false))
+            using (lease.CoverCallees())
             {
                 lastLoadResult = await _pageLoader.LoadAsync(request, cancellationToken).ConfigureAwait(false);
             }
@@ -333,6 +336,7 @@ internal sealed class ReadingListContentProvider
 
                 using (var lease = await _pageAccessQueue.AcquireAsync(
                     PageAccessPriority.Background, cancellationToken).ConfigureAwait(false))
+                using (lease.CoverCallees())
                 {
                     lastLoadResult = await _pageLoader.LoadAsync(
                         new PageLoadRequest
@@ -387,6 +391,7 @@ internal sealed class ReadingListContentProvider
 
                     using (var lease = await _pageAccessQueue.AcquireAsync(
                         PageAccessPriority.Background, cancellationToken).ConfigureAwait(false))
+                    using (lease.CoverCallees())
                     {
                         lastLoadResult = await _pageLoader.LoadAsync(
                             new PageLoadRequest

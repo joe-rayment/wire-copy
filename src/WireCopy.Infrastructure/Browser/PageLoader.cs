@@ -690,7 +690,14 @@ public class PageLoader : IPageLoader
                 // workspace-u4o9: hold the Foreground lease for the WHOLE fetch
                 // (navigation through content read) so nothing else can navigate the
                 // fetch page out from under us mid-load.
-                if (_pageAccessQueue != null)
+                // workspace-q06ia.1: unless the caller already holds the page and said so.
+                // The queue is not re-entrant, so asking again here waited 30s on our own
+                // caller and then gave up on the browser: every podcast article did that.
+                if (PageLease.HeldByCaller)
+                {
+                    page = await _browserSession.GetOrCreatePageAsync().WaitAsync(pageCts.Token).ConfigureAwait(false);
+                }
+                else if (_pageAccessQueue != null)
                 {
                     lease = await _pageAccessQueue
                         .AcquireAsync(PageAccessPriority.Foreground, pageCts.Token)

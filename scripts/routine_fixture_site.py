@@ -2,13 +2,21 @@
 """Fixture news site for the Routines harness (workspace-wyvga.9). stdlib only.
 
   routine_fixture_site.py --port 8123 [--write-config <XDG_DATA_HOME>]
+                           [--browser-only-articles] [--log FILE]
 
 GET /        front page: nav + footer chrome, four sections in name markup
 GET /flat    same stories, one flat list, same order
 POST /_rotate  shift every section's order by one (first goes last)
 GET /_state  JSON {section: [absolute urls in current order]}
+
+--browser-only-articles: an article answers 403 to anything but a real browser
+  navigation, the way a paywalled site now treats a scripted HTTP client however well it
+  copies a browser's headers. "Real" = the Accept header is the one Chromium itself sends
+  for a navigation (it offers application/signed-exchange); the app's HTTP fallback copies
+  most browser headers but not that one.
+--log FILE: one line per article request: "<unix time> <browser|plain> <status> <path>".
 """
-import argparse, json, os, re, datetime, html
+import argparse, json, os, re, datetime, html, time
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
 ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "demo", "site")
@@ -23,6 +31,8 @@ def slug_files(d, n):
     fs = sorted(f for f in os.listdir(p) if f.endswith(".html"))
     return fs[:n] if n else fs
 
+BROWSER_ONLY = False
+LOGF = None
 ARTICLES = {}   # url path -> (title, file path)
 ORDER = {}      # section name -> [url paths]
 for name, prefix, srcs in SECTIONS:
@@ -74,7 +84,13 @@ class H(BaseHTTPRequestHandler):
         elif path == "/gazette.css":
             self.send(200, open(os.path.join(ROOT, "gazette.css"), "rb").read(), "text/css")
         elif path in ARTICLES:
-            self.send(200, open(ARTICLES[path][1], "rb").read())
+            real = "application/signed-exchange" in (self.headers.get("Accept") or "")
+            code = 200 if (real or not BROWSER_ONLY) else 403
+            if LOGF:
+                with open(LOGF, "a", encoding="utf-8") as f:
+                    f.write(f"{time.time():.3f} {'browser' if real else 'plain'} {code} {path}\n")
+            if code == 200: self.send(200, open(ARTICLES[path][1], "rb").read())
+            else: self.send(403, b"<html><body><h1>403 Forbidden</h1></body></html>")
         else: self.send(404, b"not found", "text/plain")
     def do_POST(self):
         if self.path.split("?")[0] == "/_rotate":
@@ -101,6 +117,7 @@ def write_config(xdg, port):
 
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8123)
-    ap.add_argument("--write-config"); a = ap.parse_args()
+    ap.add_argument("--write-config"); ap.add_argument("--browser-only-articles", action="store_true")
+    ap.add_argument("--log"); a = ap.parse_args(); BROWSER_ONLY = a.browser_only_articles; LOGF = a.log
     if a.write_config: write_config(a.write_config, a.port)
     ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()
