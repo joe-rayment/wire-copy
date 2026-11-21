@@ -1362,8 +1362,12 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private async Task<IPage?> AdoptTaggedPageAsync(string tag)
     {
         var marker = "#wc-" + tag;
-        var deadline = DateTime.UtcNow + TimeSpan.FromSeconds(10);
-        while (DateTime.UtcNow < deadline)
+
+        // workspace-wxll0.3: counted on a clock that stands still while the computer sleeps. The
+        // wall clock jumps over a sleep, so a run caught mid-load by one gave up here at once and
+        // reported "the browser isn't available" (the Mac, 17-20 Nov 2026).
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        while (waited.Elapsed < TimeSpan.FromSeconds(10))
         {
             var browser = _attachedBrowser;
             if (browser == null)

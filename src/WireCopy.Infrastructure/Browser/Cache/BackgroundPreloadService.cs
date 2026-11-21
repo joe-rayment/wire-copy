@@ -563,6 +563,8 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
                 _logger.LogDebug("Scheduled load render wait failed for {Url}", url);
             }
 
+            await WaitForLinksToSettleAsync(page, url, cancellationToken).ConfigureAwait(false);
+
             await PageLoader.DismissOverlaysAsync(page, _logger).ConfigureAwait(false);
 
             var html = await page.ContentAsync().ConfigureAwait(false);
@@ -706,6 +708,56 @@ internal sealed partial class BackgroundPreloadService : IPreloadService
         }
 
         return line.Length <= max ? line : line[..max];
+    }
+
+    /// <summary>
+    /// workspace-wxll0.1: a section page is read for its LINKS, and a news front fills them in after
+    /// the first paint (the real Today's Paper gave 104, 55 and 373 links on three loads seconds
+    /// apart). Waits for the page's own load to finish, then until the number of links has stopped
+    /// changing, within fixed bounds; says what it saw when the page was still growing.
+    /// </summary>
+    private async Task WaitForLinksToSettleAsync(Microsoft.Playwright.IPage page, string url, CancellationToken cancellationToken)
+    {
+        const string CountLinks = "() => document.querySelectorAll('a[href]').length";
+        var waited = System.Diagnostics.Stopwatch.StartNew();
+        try
+        {
+            var first = await page.EvaluateAsync<int>(CountLinks).ConfigureAwait(false);
+            try
+            {
+                await page.WaitForLoadStateAsync(
+                    Microsoft.Playwright.LoadState.Load,
+                    new Microsoft.Playwright.PageWaitForLoadStateOptions { Timeout = 10000 }).ConfigureAwait(false);
+            }
+            catch (TimeoutException)
+            {
+                // A page whose trackers never finish still has its links; the count check below decides.
+            }
+
+            var last = await page.EvaluateAsync<int>(CountLinks).ConfigureAwait(false);
+            var unchanged = 0;
+            while (unchanged < 4 && waited.Elapsed < TimeSpan.FromSeconds(20))
+            {
+                await Task.Delay(500, cancellationToken).ConfigureAwait(false);
+                var now = await page.EvaluateAsync<int>(CountLinks).ConfigureAwait(false);
+                unchanged = now == last ? unchanged + 1 : 0;
+                last = now;
+            }
+
+            if (last != first)
+            {
+                _logger.LogInformation(
+                    "{Url:l} went from {First} to {Last} links while it finished loading ({Ms} ms)",
+                    url,
+                    first,
+                    last,
+                    waited.ElapsedMilliseconds);
+            }
+        }
+        catch (Microsoft.Playwright.PlaywrightException ex)
+        {
+            _logger.LogDebug(ex, "Waiting for {Url} to settle failed; reading it as it is", url);
+        }
     }
 
     /// <summary>

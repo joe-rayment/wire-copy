@@ -40,6 +40,9 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     /// <summary>The assembled-item floor below which we refuse to publish (an empty/near-empty episode is never useful).</summary>
     private const int MinimumItems = 1;
 
+    /// <summary>How many times a page that fails for a network reason is tried before its step is given up.</summary>
+    private const int LoadAttempts = 3;
+
     private readonly IUnattendedSectionLoader _loader;
     private readonly ISectionResolver _resolver;
     private readonly IPodcastOrchestrator _orchestrator;
@@ -94,6 +97,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
         var tracked = false;
         RunStallWatchdog? stall = null;
+        RunKeepAwake? awake = null;
         try
         {
             if (recipe.Steps.Count == 0)
@@ -115,6 +119,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
             // workspace-q06ia.4: the run is stopped for standing still, never for taking long.
             stall = new RunStallWatchdog(runCts, RunStallWatchdog.ResolveWindow(_logger));
+
+            // workspace-wxll0.3: a run lasts minutes to hours with nobody at the machine; a computer
+            // that goes to sleep under it freezes it.
+            awake = RunKeepAwake.Start(_logger);
 
             _logger.LogInformation("Routine run {Recipe:l} ({Occurrence:l}) started with {Steps} section(s)", recipe.Name, run.OccurrenceKey, recipe.Steps.Count);
 
@@ -139,6 +147,14 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 }
 
                 _logger.LogInformation("Narration preflight: audio-engine ready");
+
+                // workspace-wxll0.1: audio-engine publishes to ITS default feed. With none set the
+                // episode only lands on this computer — say so now, not after hours of narration.
+                if (await _narrator.GetDefaultFeedAsync(ct).ConfigureAwait(false) is null)
+                {
+                    _logger.LogInformation("audio-engine has no default feed: this run's episode will be saved on this computer, not published");
+                    _tracker?.SetStage(recipe.Id, "publish", RoutineRunStageState.Waiting, "no feed set: saved here");
+                }
             }
 
             _tracker?.SetStage(recipe.Id, "narration", RoutineRunStageState.Done, "audio-engine is ready");
@@ -148,6 +164,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             var outcomes = new List<RunStepOutcome>();
 
+            // workspace-wxll0.1: sections of one page are read from ONE load of it — three steps on
+            // Today's Paper used to load it three times, seconds apart, and each could see a different page.
+            var pages = new Dictionary<string, UnattendedSectionLoad>(StringComparer.OrdinalIgnoreCase);
+
             var stepIndex = 0;
             foreach (var step in recipe.Steps)
             {
@@ -155,10 +175,14 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 var stageKey = $"step:{stepIndex++}";
                 _tracker?.SetStage(recipe.Id, stageKey, RoutineRunStageState.Running, HostOf(step.SourceUrl));
                 var before = assembled.Count;
-                _logger.LogInformation("Loading {Url:l}", step.SourceUrl);
+                if (!pages.ContainsKey(step.SourceUrl))
+                {
+                    _logger.LogInformation("Loading {Url:l}", step.SourceUrl);
+                }
+
                 stall.Report(stageKey + " loading");
                 var (status, matchCount, diagnostic) =
-                    await ResolveStepAsync(step, assembled, seen, ct).ConfigureAwait(false);
+                    await ResolveStepAsync(step, assembled, seen, pages, stall, ct).ConfigureAwait(false);
                 stall.Report(stageKey + " " + status);
                 _logger.LogInformation(
                     "{Section:l}: {Status:l}, {Count} stories{Diagnostic:l}",
@@ -243,6 +267,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         finally
         {
             stall?.Dispose();
+            awake?.Dispose();
             if (tracked)
             {
                 _tracker?.End(recipe.Id);
@@ -267,6 +292,33 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     /// phase, the story, the narrated part, the percentage, assembled segments, uploaded
     /// bytes. Elapsed time, messages and retry counters change without anything advancing.
     /// </summary>
+    /// <summary>The narration service's estimate in words ("3 h 20 min", "45 min"); empty without one.</summary>
+    private static string TimeLeft(TimeSpan? remaining)
+    {
+        if (remaining is not { } left || left < TimeSpan.FromSeconds(45))
+        {
+            return string.Empty;
+        }
+
+        var minutes = (int)Math.Round(left.TotalMinutes);
+        return minutes < 60 ? $"{minutes} min" : $"{minutes / 60} h {minutes % 60:00} min";
+    }
+
+    /// <summary>A page load fails for a network reason when the browser says so: its own error code or a timeout.</summary>
+    private static bool LooksLikeNetworkTrouble(string? reason) =>
+        reason is not null
+        && (reason.Contains("net::ERR_", StringComparison.OrdinalIgnoreCase) || reason.Contains("Timeout", StringComparison.OrdinalIgnoreCase));
+
+    /// <summary>The pause between tries of a page that would not load; <c>WIRECOPY_ROUTINE_LOAD_RETRY_SECONDS</c> overrides it.</summary>
+    private static TimeSpan LoadRetryDelay() =>
+        double.TryParse(
+            Environment.GetEnvironmentVariable("WIRECOPY_ROUTINE_LOAD_RETRY_SECONDS"),
+            System.Globalization.NumberStyles.Float,
+            System.Globalization.CultureInfo.InvariantCulture,
+            out var seconds) && seconds >= 0
+            ? TimeSpan.FromSeconds(seconds)
+            : TimeSpan.FromSeconds(20);
+
     private static string ProgressPicture(PodcastProgress p) => string.Create(
         System.Globalization.CultureInfo.InvariantCulture,
         $"{p.Phase} {p.CurrentArticle}/{p.TotalArticles} {p.IsArticleComplete} {p.CurrentArticleChunkIndex}/{p.CurrentArticleChunkTotal} {p.PercentComplete}% {p.AssembledSegments} {p.UploadedEpisodes} {p.UploadedBytes}");
@@ -347,10 +399,21 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
                 break;
             case PodcastPhase.GeneratingAudio:
-                if (p.TotalArticles > 0 && p.CurrentArticle > 0)
+                if (p.EngineNotAnswering)
+                {
+                    // workspace-wxll0.4: the narrator waits out an engine that went quiet; say so.
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, "audio-engine is not answering");
+                }
+                else if (p.TotalArticles > 0 && p.CurrentArticle > 0)
                 {
                     var narratingTitle = string.IsNullOrWhiteSpace(p.ArticleTitle) ? null : $"“{p.ArticleTitle}”";
-                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, $"narrating story {p.CurrentArticle} of {p.TotalArticles}", narratingTitle);
+
+                    // The tile shows about 34 characters: with the engine's estimate the line drops "narrating".
+                    var left = TimeLeft(p.Remaining);
+                    var narrating = left.Length == 0
+                        ? $"narrating story {p.CurrentArticle} of {p.TotalArticles}"
+                        : $"story {p.CurrentArticle} of {p.TotalArticles} · {left} left";
+                    _tracker.SetStage(recipeId, "narrate", RoutineRunStageState.Running, narrating, narratingTitle);
                     _tracker.Update(recipeId, r => r with { StoriesDone = p.CurrentArticle, StoriesTotal = p.TotalArticles });
                 }
                 else if (p.CurrentArticleChunkTotal > 0)
@@ -393,6 +456,48 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     }
 
     /// <summary>
+    /// The run's one load of a page. A good load is kept for the other steps that read the same
+    /// page; a load that failed for a network reason (the machine just woke, the connection is not
+    /// up yet) is tried again a few times before the step is given up (workspace-wxll0.3).
+    /// </summary>
+    private async Task<UnattendedSectionLoad> LoadPageOnceAsync(
+        string url, Dictionary<string, UnattendedSectionLoad> pages, RunStallWatchdog stall, CancellationToken cancellationToken)
+    {
+        if (pages.TryGetValue(url, out var kept))
+        {
+            return kept;
+        }
+
+        var retryDelay = LoadRetryDelay();
+        var load = await _loader.LoadLinksAndConfigAsync(url, cancellationToken).ConfigureAwait(false);
+        for (var attempt = 1; attempt < LoadAttempts; attempt++)
+        {
+            if (load.Outcome != LoadOutcome.LoadFailed || !LooksLikeNetworkTrouble(load.FailureReason))
+            {
+                break;
+            }
+
+            _logger.LogInformation(
+                "Couldn't load {Host:l} (try {Attempt} of {Attempts}): {Reason:l} - trying again in {Seconds:F0} s",
+                HostOf(url),
+                attempt,
+                LoadAttempts,
+                load.FailureReason,
+                retryDelay.TotalSeconds);
+            stall.Report($"load retry {url} {attempt}");
+            await Task.Delay(retryDelay, cancellationToken).ConfigureAwait(false);
+            load = await _loader.LoadLinksAndConfigAsync(url, cancellationToken).ConfigureAwait(false);
+        }
+
+        if (load.Outcome == LoadOutcome.Ok)
+        {
+            pages[url] = load;
+        }
+
+        return load;
+    }
+
+    /// <summary>
     /// Loads + resolves one step, appending its (deduped) items to <paramref name="assembled"/>.
     /// Returns the run-time status string, the section match count, and a diagnostic.
     /// </summary>
@@ -400,9 +505,11 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         RecipeStep step,
         List<(string Url, string Title)> assembled,
         HashSet<string> seen,
+        Dictionary<string, UnattendedSectionLoad> pages,
+        RunStallWatchdog stall,
         CancellationToken cancellationToken)
     {
-        var load = await _loader.LoadLinksAndConfigAsync(step.SourceUrl, cancellationToken).ConfigureAwait(false);
+        var load = await LoadPageOnceAsync(step.SourceUrl, pages, stall, cancellationToken).ConfigureAwait(false);
         if (load.Outcome != LoadOutcome.Ok)
         {
             // workspace-frpl.11 (B8): a Blocked load is a logged-out/paywalled session,
