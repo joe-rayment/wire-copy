@@ -91,6 +91,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
     private readonly IShellChannel _shell;
     private readonly string _userDataDir;
     private readonly SemaphoreSlim _lock = new(1, 1);
+
+    // One re-attach at a time when a background-page caller finds the attach dead (workspace-q06ia.5).
+    private readonly SemaphoreSlim _reattachGate = new(1, 1);
     private IPlaywright? _playwright;
     private IBrowserContext? _context;
     private IPage? _page;
@@ -334,6 +337,13 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // Verify the existing page is still alive
                 try
                 {
+                    // _page.Url is a cached property and never notices a dropped connection,
+                    // so ask the attach itself (workspace-q06ia.5).
+                    if (_attachedBrowser is { IsConnected: false })
+                    {
+                        throw new PlaywrightException("the connection to the shell's browser was closed");
+                    }
+
                     _ = _page.Url;
                     _logger.LogDebug("Reusing existing Playwright page");
                     await RevealSidecarIfWantedAsync().ConfigureAwait(false);
@@ -801,20 +811,43 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
                 // Single-window shell: hidden pages are created BY the shell (invisible views
                 // of the one headful window — quiet by construction, nothing can pop or steal
                 // focus) and adopted here over CDP.
-                var tag = $"bg-{Interlocked.Increment(ref _shellPageCounter)}";
-                if (!await _shell.CreatePageAsync(tag).ConfigureAwait(false))
+                var attachUsed = _attachedBrowser;
+                var (shellPage, problem, attachIsDead, orphanTag) = await TryCreateShellBackgroundPageAsync(null).ConfigureAwait(false);
+                if (shellPage == null && attachIsDead && !_disposed)
                 {
-                    return null;
+                    // workspace-q06ia.5: the shell is fine but our connection to its browser is
+                    // not — nothing else on this path ever rebuilt it, so in a long-lived
+                    // session every scheduled load failed "the browser isn't available" for
+                    // days. Drop the attach, make a fresh one, and try once more. One caller
+                    // at a time: a second one finds the attach already replaced and only retries.
+                    await _reattachGate.WaitAsync().ConfigureAwait(false);
+                    try
+                    {
+                        if (ReferenceEquals(_attachedBrowser, attachUsed))
+                        {
+                            _logger.LogInformation(
+                                "The connection to the shell's browser is dead ({Problem:l}); re-attaching",
+                                problem);
+                            await InvalidatePageAsync().ConfigureAwait(false);
+                            await GetOrCreatePageAsync().ConfigureAwait(false);
+                            _logger.LogInformation("Re-attached to the shell's browser");
+                        }
+                    }
+                    finally
+                    {
+                        _reattachGate.Release();
+                    }
+
+                    // The page the shell already made is still there; the new connection can
+                    // see it, so take that one rather than leaving it behind.
+                    (shellPage, problem, _, _) = await TryCreateShellBackgroundPageAsync(orphanTag).ConfigureAwait(false);
                 }
 
-                var shellPage = await AdoptTaggedPageAsync(tag).ConfigureAwait(false);
                 if (shellPage == null)
                 {
-                    return null;
+                    _logger.LogWarning("No background page from the shell: {Problem:l}", problem);
                 }
 
-                await ApplyFetchViewportAsync(shellPage).ConfigureAwait(false);
-                _logger.LogDebug("Created hidden shell page {Tag} (total pages: {Count})", tag, ctx.Pages.Count);
                 return shellPage;
             }
 
@@ -859,7 +892,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         }
         catch (Exception ex)
         {
-            _logger.LogDebug(ex, "Failed to create background tab");
+            // Warning, not Debug: the caller only learns "no page", and a routine run that
+            // fails on it has nothing else to say why (workspace-q06ia.5).
+            _logger.LogWarning(ex, "Failed to create a background page");
             return null;
         }
     }
@@ -1276,6 +1311,48 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         // it at 46/55). The reveal now belongs to GetOrCreatePageAsync — "the app has
         // taken the browser for a page" — which is true on the first navigation whether or
         // not the attach already happened.
+    }
+
+    /// <summary>
+    /// One attempt at a hidden shell page: the shell creates it, this client adopts it over
+    /// CDP. On failure says what went wrong and whether it means OUR connection to the shell's
+    /// browser is dead (worth re-attaching) rather than the shell itself not answering.
+    /// </summary>
+    /// <param name="existingTag">A page the shell already created on an earlier attempt, to adopt instead of asking for another.</param>
+    private async Task<(IPage? Page, string? Problem, bool AttachIsDead, string? CreatedTag)> TryCreateShellBackgroundPageAsync(string? existingTag)
+    {
+        if (_attachedBrowser is { IsConnected: false })
+        {
+            return (null, "the connection was closed", true, existingTag);
+        }
+
+        var tag = existingTag;
+        if (tag == null)
+        {
+            tag = $"bg-{Interlocked.Increment(ref _shellPageCounter)}";
+            if (!await _shell.CreatePageAsync(tag).ConfigureAwait(false))
+            {
+                return (null, $"the shell did not create page {tag}", false, null);
+            }
+        }
+
+        try
+        {
+            var shellPage = await AdoptTaggedPageAsync(tag).ConfigureAwait(false);
+            if (shellPage == null)
+            {
+                // The shell made the page and said so; a live connection would have seen it.
+                return (null, $"page {tag} was created by the shell but never appeared over the connection", true, tag);
+            }
+
+            await ApplyFetchViewportAsync(shellPage).ConfigureAwait(false);
+            _logger.LogDebug("Created hidden shell page {Tag}", tag);
+            return (shellPage, null, false, tag);
+        }
+        catch (PlaywrightException ex)
+        {
+            return (null, $"page {tag} could not be used: {ex.Message}", true, tag);
+        }
     }
 
     /// <summary>
