@@ -574,9 +574,12 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     /// </summary>
     private async Task PersistAsync(ScheduleRecipe recipe, ScheduledRun run, RunStatus cacheStatus)
     {
+        // The status goes in as a string: ":l" on the enum itself reaches Enum.ToString("l"),
+        // which throws inside the log sink after "Routine run finished: " is already written,
+        // so the line said nothing and never ended (workspace-q06ia.2).
         _logger.LogInformation(
             "Routine run finished: {Status:l}{Error:l}",
-            run.Status,
+            run.Status.ToString(),
             string.IsNullOrEmpty(run.ErrorMessage) ? string.Empty : " - " + run.ErrorMessage);
         WriteRunLog(run);
         await _runRepository.UpdateAsync(run, CancellationToken.None).ConfigureAwait(false);
