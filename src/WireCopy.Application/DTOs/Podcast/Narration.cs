@@ -161,6 +161,15 @@ public sealed record NarrationProgress
 
     /// <summary>Gets a free-text status line from audio-engine.</summary>
     public string? Message { get; init; }
+
+    /// <summary>Gets audio-engine's own estimate of the time left, when it gives one.</summary>
+    public TimeSpan? Remaining { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether audio-engine has stopped answering and the wait for it to
+    /// come back is still on (the other values are the last ones it reported).
+    /// </summary>
+    public bool EngineNotAnswering { get; init; }
 }
 
 /// <summary>A chapter audio-engine skipped because narrating it failed.</summary>

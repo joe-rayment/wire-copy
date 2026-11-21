@@ -248,6 +248,8 @@ internal sealed class PodcastOrchestrator : IPodcastOrchestrator
             CurrentArticleChunkPercent = p.ChunksTotal > 0 ? p.ChunksDone * 100.0 / p.ChunksTotal : 0,
             Message = p.Message,
             PhaseElapsed = elapsed,
+            EngineNotAnswering = p.EngineNotAnswering,
+            Remaining = p.Remaining,
         };
     }
 

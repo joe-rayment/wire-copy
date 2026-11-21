@@ -35,6 +35,15 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private static readonly TimeSpan CheckTimeout = TimeSpan.FromSeconds(8);
     private static readonly TimeSpan CancelTimeout = TimeSpan.FromSeconds(10);
 
+    /// <summary>How long audio-engine may stay silent mid-job before the narration is given up.</summary>
+    private static readonly TimeSpan OutageLimit = TimeSpan.FromMinutes(5);
+
+    /// <summary>Pause between tries while audio-engine is not answering.</summary>
+    private static readonly TimeSpan OutageRetryDelay = TimeSpan.FromSeconds(5);
+
+    /// <summary>How long a local audio-engine may stay silent before WireCopy starts it again itself.</summary>
+    private static readonly TimeSpan OutageRestartAfter = TimeSpan.FromSeconds(45);
+
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web)
     {
         DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
@@ -45,6 +54,27 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     private readonly IHttpClientFactory _httpClientFactory;
     private readonly ILogger<AudioEngineNarrator> _logger;
     private readonly Func<string, string?> _getEnv;
+    private readonly IAudioEngineLauncher? _launcher;
+
+    /// <summary>
+    /// Initializes a new instance of the <see cref="AudioEngineNarrator"/> class that can start a
+    /// local audio-engine again when it goes quiet in the middle of a job.
+    /// </summary>
+    /// <param name="store">The user settings store (address, key and voice settings).</param>
+    /// <param name="options">The configured defaults.</param>
+    /// <param name="httpClientFactory">Creates the "AudioEngine" HTTP client.</param>
+    /// <param name="logger">The logger.</param>
+    /// <param name="launcher">Starts a local audio-engine.</param>
+    public AudioEngineNarrator(
+        IUserSettingsStore store,
+        IOptions<AudioEngineConfiguration> options,
+        IHttpClientFactory httpClientFactory,
+        ILogger<AudioEngineNarrator> logger,
+        IAudioEngineLauncher launcher)
+        : this(store, options, httpClientFactory, logger, Environment.GetEnvironmentVariable)
+    {
+        _launcher = launcher;
+    }
 
     /// <summary>
     /// Initializes a new instance of the <see cref="AudioEngineNarrator"/> class.
@@ -359,7 +389,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
                 }
             }
 
-            var job = await client.WaitAsync(jobId, new ProgressSink(progress), ct).ConfigureAwait(false);
+            var job = await WaitThroughOutagesAsync(client, jobId, s.Url, progress, ct).ConfigureAwait(false);
             if (!job.Succeeded)
             {
                 return JobFailureResult(job);
@@ -576,6 +606,20 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         return message;
     }
 
+    /// <summary>
+    /// Whether a failure means "audio-engine is not answering right now" (refused, reset, dropped,
+    /// a 5xx) rather than an answer about the job itself.
+    /// </summary>
+    /// <param name="ex">The failure.</param>
+    /// <returns>True when waiting and trying again is the right response.</returns>
+    private static bool IsOutage(Exception ex) => ex switch
+    {
+        AudioEngineApiException api => api.StatusCode >= 500,
+        HttpRequestException or IOException or TimeoutException => true,
+        OperationCanceledException => true, // a timed-out request; the caller rules out its own cancellation
+        _ => false,
+    };
+
     private static NarrationResult JobFailureResult(Job job)
     {
         var (kind, message) = job.Status switch
@@ -743,6 +787,95 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
         }
     }
 
+    /// <summary>
+    /// Waits for the job to end, riding out an audio-engine that stops answering (workspace-wxll0.4).
+    /// Narration takes hours, the engine is a separate program that can be restarted under it, and it
+    /// picks an unfinished job up again when it comes back — so one failed read must not end the run.
+    /// The wait is given up only after <see cref="OutageLimit"/> of unbroken silence.
+    /// </summary>
+    /// <param name="client">The audio-engine client.</param>
+    /// <param name="jobId">The job being waited on.</param>
+    /// <param name="url">The audio-engine base address (to start a local one again).</param>
+    /// <param name="progress">Receives progress and the "not answering" notice.</param>
+    /// <param name="ct">Cancels the wait.</param>
+    /// <returns>The job in its final state.</returns>
+    private async Task<Job> WaitThroughOutagesAsync(
+        AudioEngineClient client, string jobId, string? url, IProgress<NarrationProgress>? progress, CancellationToken ct)
+    {
+        var sink = new ProgressSink(progress);
+        System.Diagnostics.Stopwatch? silentFor = null;
+        var restartAsked = false;
+        while (true)
+        {
+            try
+            {
+                // A plain read first: it tells an engine that is back from one that is still gone,
+                // and returns at once a job that finished while nobody was listening.
+                var job = await client.GetAsync(jobId, ct).ConfigureAwait(false);
+                if (silentFor is not null)
+                {
+                    _logger.LogInformation(
+                        "audio-engine is answering again after {Seconds:F0} s; carrying on with job {JobId} ({Status:l})",
+                        silentFor.Elapsed.TotalSeconds,
+                        jobId,
+                        job.Status);
+                    silentFor = null;
+                    restartAsked = false;
+                }
+
+                if (job.IsTerminal)
+                {
+                    return job;
+                }
+
+                return await client.WaitAsync(jobId, sink, ct).ConfigureAwait(false);
+            }
+            catch (Exception ex) when (IsOutage(ex) && !ct.IsCancellationRequested)
+            {
+                if (silentFor is null)
+                {
+                    silentFor = System.Diagnostics.Stopwatch.StartNew();
+                    _logger.LogWarning(
+                        "audio-engine stopped answering while narrating job {JobId} ({Message:l}); waiting up to {Minutes:F0} minutes for it",
+                        jobId,
+                        ex.Message,
+                        OutageLimit.TotalMinutes);
+                }
+                else if (silentFor.Elapsed >= OutageLimit)
+                {
+                    _logger.LogWarning(
+                        "audio-engine has not answered for {Minutes:F0} minutes; giving up on job {JobId}",
+                        silentFor.Elapsed.TotalMinutes,
+                        jobId);
+                    throw;
+                }
+
+                sink.ReportNotAnswering();
+                if (!restartAsked && silentFor.Elapsed >= OutageRestartAfter && _launcher is not null && AudioEngineLauncher.IsLocal(url))
+                {
+                    restartAsked = true;
+                    _logger.LogInformation("audio-engine has not answered for {Seconds:F0} s; starting it", silentFor.Elapsed.TotalSeconds);
+                    var launcher = _launcher;
+                    _ = Task.Run(
+                        async () =>
+                        {
+                            try
+                            {
+                                await launcher.StartAndWaitAsync(url!, CancellationToken.None).ConfigureAwait(false);
+                            }
+                            catch (Exception startEx)
+                            {
+                                _logger.LogDebug(startEx, "Starting audio-engine again failed");
+                            }
+                        },
+                        CancellationToken.None);
+                }
+
+                await Task.Delay(OutageRetryDelay, ct).ConfigureAwait(false);
+            }
+        }
+    }
+
     private async Task TryCancelJobAsync(AudioEngineClient client, string jobId)
     {
         try
@@ -770,9 +903,19 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
     {
         private readonly IProgress<NarrationProgress>? _target;
 
+        private NarrationProgress? _last;
+
         public ProgressSink(IProgress<NarrationProgress>? target) => _target = target;
 
-        public void Report(JobEvent value) => _target?.Report(Map(value));
+        public void Report(JobEvent value)
+        {
+            _last = Map(value);
+            _target?.Report(_last);
+        }
+
+        /// <summary>Says audio-engine went quiet, keeping the numbers it last reported.</summary>
+        public void ReportNotAnswering() => _target?.Report(
+            (_last ?? new NarrationProgress { Phase = NarrationPhase.Synthesizing }) with { EngineNotAnswering = true });
 
         private static NarrationProgress Map(JobEvent e) => new()
         {
@@ -786,6 +929,7 @@ public sealed class AudioEngineNarrator : IPodcastNarrator
             ChunksDone = e.ChunksDone,
             ChunksTotal = e.ChunksTotal,
             Message = e.Message,
+            Remaining = e.EtaSeconds is > 0 and < 7 * 24 * 3600 ? TimeSpan.FromSeconds(e.EtaSeconds.Value) : null,
         };
     }
 

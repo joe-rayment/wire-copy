@@ -170,6 +170,15 @@ public record PodcastProgress
     /// progress screen so the bar doesn't appear frozen.
     /// </summary>
     public int RetryDelaySeconds { get; init; }
+
+    /// <summary>Gets the narration service's own estimate of the time left, when it gives one.</summary>
+    public TimeSpan? Remaining { get; init; }
+
+    /// <summary>
+    /// Gets a value indicating whether the narration service has stopped answering and the run is
+    /// waiting for it to come back.
+    /// </summary>
+    public bool EngineNotAnswering { get; init; }
 }
 
 /// <summary>

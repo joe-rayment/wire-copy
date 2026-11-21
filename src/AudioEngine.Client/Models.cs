@@ -179,6 +179,12 @@ public sealed record JobEvent
     public int? ChaptersTotal { get; init; }
     public DateTimeOffset? Timestamp { get; init; }
 
+    /// <summary>What the job is doing or waiting for right now (see <see cref="Job.Activity"/>); null when the event carries none.</summary>
+    public string? Activity { get; init; }
+
+    /// <summary>The server's estimate of the seconds left; null when it has none.</summary>
+    public double? EtaSeconds { get; init; }
+
     [JsonIgnore]
     public bool IsTerminal => JobStatuses.IsTerminal(Status);
 }
