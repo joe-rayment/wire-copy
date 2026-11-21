@@ -129,11 +129,15 @@ print(json.dumps([dict(r) for r in c.execute('select * from '+sys.argv[2])]))`, 
 const journalMode = () => fs.existsSync(dbPath)
   ? py("import sqlite3,sys\nprint(sqlite3.connect('file:'+sys.argv[1]+'?mode=ro',uri=True).execute('pragma journal_mode').fetchone()[0])", dbPath)
   : '(no database yet)'
+// The enums are stored as numbers (ScheduledRunStatus, PodcastJobStatus): print the names.
+const RUN_STATUS = ['Pending', 'Running', 'Completed', 'PartialSuccess', 'Failed', 'Skipped', 'Interrupted']
+const JOB_STATUS = ['Pending', 'Running', 'Cancelled', 'FullSuccess', 'PartialSuccess', 'TotalFailure', 'Interrupted']
+const named = (names, v) => (typeof v === 'number' && names[v]) || v
 const runRows = () => table('ScheduledRuns').map(r => ({
-  occurrence: r.OccurrenceKey, status: r.Status, items: r.ItemCount, errorClass: r.ErrorClass, error: r.ErrorMessage,
-  started: r.StartedAtUtc, finished: r.FinishedAtUtc ?? r.CompletedAtUtc ?? null
+  occurrence: r.OccurrenceKey, status: named(RUN_STATUS, r.Status), items: r.ItemCount, errorClass: r.ErrorClass, error: r.ErrorMessage,
+  started: r.StartedAtUtc, finished: r.FinishedAtUtc ?? null
 }))
-const isRunning = s => s === 'Running' || s === 'Pending' || s === 0 || s === 1
+const isRunning = s => s === 'Running' || s === 'Pending'
 const appLog = () => {
   const dir = path.join(appCwd, 'logs')
   if (!fs.existsSync(dir)) return ''
@@ -221,7 +225,7 @@ try {
   console.log('\n===== ScheduledRuns')
   for (const r of runRows()) console.log('  ', JSON.stringify(r))
   console.log('===== PodcastJobs')
-  for (const j of table('PodcastJobs')) console.log('  ', JSON.stringify({ status: j.Status, collection: j.CollectionName, phase: j.LastPhase ?? j.Phase, errorClass: j.ErrorClass, error: j.ErrorMessage, started: j.StartedAtUtc, finished: j.FinishedAtUtc ?? j.CompletedAtUtc ?? null }))
+  for (const j of table('PodcastJobs')) console.log('  ', JSON.stringify({ status: named(JOB_STATUS, j.Status), title: j.CollectionTitle, errorClass: j.ErrorClass, error: j.ErrorMessage, started: j.StartedAtUtc, lastProgress: j.LastProgressAtUtc }))
   console.log(`===== database journal mode: ${journalMode()}`)
   console.log('===== app log, counted')
   for (const needle of ['Browser session creation timed out', 'Article extraction timed out', 'Successfully loaded page via browser',

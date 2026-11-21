@@ -3,6 +3,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Migrations;
+using Microsoft.Extensions.Logging;
 using WireCopy.Domain.Entities.Bookmarks;
 using WireCopy.Domain.Entities.Collections;
 using WireCopy.Domain.Entities.Credentials;
@@ -57,6 +58,55 @@ public class AppDbContext : DbContext
         await StampLegacyDatabaseIfNeeded(cancellationToken);
 
         await Database.MigrateAsync(cancellationToken);
+
+        await UseWriteAheadLogAsync(cancellationToken);
+    }
+
+    /// <summary>
+    /// Puts the database file in write-ahead-log mode (workspace-q06ia.3). The setting lives
+    /// in the file, so this is a no-op on every start after the first.
+    /// </summary>
+    /// <remarks>
+    /// EF Core only turns the write-ahead log on when IT creates the file, and here the
+    /// legacy-stamp query above always opens the connection first — so every database this
+    /// app ever made is in rollback-journal mode. There a save commits when its statement is
+    /// reset, needs every reader out of the file at that instant, and is not retried: with
+    /// the run view re-reading the run row on the same progress report that makes the job
+    /// journal write, saves failed with "database is locked" about once every ten seconds of
+    /// narration. In write-ahead-log mode readers never block a commit.
+    /// </remarks>
+    private async Task UseWriteAheadLogAsync(CancellationToken cancellationToken)
+    {
+        var logger = this.GetService<ILoggerFactory>().CreateLogger<AppDbContext>();
+        try
+        {
+            await Database.OpenConnectionAsync(cancellationToken);
+            try
+            {
+                await using var command = Database.GetDbConnection().CreateCommand();
+                command.CommandText = "PRAGMA journal_mode = 'wal';";
+                var mode = (await command.ExecuteScalarAsync(cancellationToken))?.ToString();
+
+                // "memory" is an in-memory database: there is no file to journal.
+                if (!string.Equals(mode, "wal", StringComparison.OrdinalIgnoreCase)
+                    && !string.Equals(mode, "memory", StringComparison.OrdinalIgnoreCase))
+                {
+                    logger.LogWarning(
+                        "The database stayed in '{Mode:l}' journal mode instead of the write-ahead log; saves can fail with 'database is locked' while a routine runs",
+                        mode ?? "unknown");
+                }
+            }
+            finally
+            {
+                await Database.CloseConnectionAsync();
+            }
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning(
+                ex,
+                "Could not switch the database to the write-ahead log; saves can fail with 'database is locked' while a routine runs");
+        }
     }
 
     private async Task StampLegacyDatabaseIfNeeded(CancellationToken cancellationToken)
