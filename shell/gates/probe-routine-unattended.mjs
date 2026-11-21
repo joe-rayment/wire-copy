@@ -19,7 +19,8 @@
 //
 // Env: PROBE_DISPLAY (:96), PROBE_CDP (9316), FIXTURE_PORT (8124), ENGINE_PORT (8091),
 //      PROBE_DLL (run this WireCopy.API.dll instead of the repo's Release build — a frozen
-//      copy, so a long case survives a rebuild).
+//      copy, so a long case survives a rebuild), PROBE_SEED_DB (start on a copy of this
+//      existing wirecopy.db instead of a fresh one - an older database with rows in it).
 // The app runs with its working directory inside the run directory, so its logs/ never
 // mix with the real ones in <repo>/logs.
 import fs from 'node:fs'
@@ -96,6 +97,7 @@ fs.writeFileSync(path.join(dataDir, 'schedules.json'), JSON.stringify({
   }]
 }, null, 2))
 
+if (process.env.PROBE_SEED_DB) fs.copyFileSync(process.env.PROBE_SEED_DB, path.join(dataDir, 'wirecopy.db'))
 const FLOG = path.join(base, 'fixture-requests.log')
 const ELOG = path.join(base, 'engine.log')
 const fixture = spawn('python3', [path.join(ROOT, 'scripts', 'routine_fixture_site.py'),
@@ -159,6 +161,7 @@ const driverPids = shellPid => {
   return rows.filter(r => /run-driver/.test(r.args) && under(r.pid)).map(r => r.pid)
 }
 
+if (process.env.PROBE_SEED_DB) console.log(`[probe] seeded database: journal mode ${journalMode()}, ${runRows().length} run row(s) before launch`)
 let wid = null
 let shots = 0
 const shot = name => { try { env.shotWindow(`unattended-${CASE}-${String(++shots).padStart(2, '0')}-${name}`, wid) } catch (e) { console.log('      shot failed:', String(e.message).split('\n')[0]) } }
