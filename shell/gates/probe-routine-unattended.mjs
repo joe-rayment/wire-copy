@@ -16,6 +16,14 @@
 //   attach  run-now after the app's Playwright driver process has been killed
 //   e2e     SCHEDULED run, browser-only articles, narration longer than 20 minutes, no
 //           override of anything (takes ~25 minutes)
+//   awake   run-now of ~20 s; prints whether the keep-awake helper is running during the run
+//           and after it (every case prints this; here the run is otherwise plain)
+//   flaky-net  run-now while the site is not there yet (it comes up 15 s later): the page load
+//           fails for a network reason and is tried again
+//
+// Every case sets WIRECOPY_KEEP_AWAKE_COMMAND to a stand-in script (this container has neither
+// caffeinate nor systemd-inhibit), so what is shown is that the helper lives exactly as long
+// as the run - not that a real computer stays awake.
 //
 // Env: PROBE_DISPLAY (:96), PROBE_CDP (9316), FIXTURE_PORT (8124), ENGINE_PORT (8091),
 //      PROBE_DLL (run this WireCopy.API.dll instead of the repo's Release build — a frozen
@@ -39,7 +47,9 @@ const CASES = {
   stall:  { scheduled: true, fixture: [], engine: ['--chunk-seconds', '10', '--stall-after', '2'], appEnv: { WIRECOPY_ROUTINE_STALL_SECONDS: '45' }, take: 6, waitS: 420 },
   stop:   { scheduled: false, fixture: [], engine: ['--chunk-seconds', '30'], appEnv: {}, take: 3, waitS: 300, stopAfterS: 30 },
   attach: { scheduled: false, fixture: [], engine: ['--chunk-seconds', '2'], appEnv: {}, take: 3, waitS: 420, killDriver: true },
-  e2e:    { scheduled: true, fixture: ['--browser-only-articles'], engine: ['--chunk-seconds', '215'], appEnv: {}, take: 6, waitS: 1800 }
+  e2e:    { scheduled: true, fixture: ['--browser-only-articles'], engine: ['--chunk-seconds', '215'], appEnv: {}, take: 6, waitS: 1800 },
+  awake:  { scheduled: false, fixture: [], engine: ['--chunk-seconds', '6'], appEnv: {}, take: 3, waitS: 300 },
+  'flaky-net': { scheduled: false, fixture: [], engine: ['--chunk-seconds', '2'], appEnv: { WIRECOPY_ROUTINE_LOAD_RETRY_SECONDS: '12' }, take: 3, waitS: 300, fixtureDelayS: 15 }
 }
 const C = CASES[CASE]
 if (!C) { console.error(`unknown --case ${CASE}; one of ${Object.keys(CASES).join(', ')}`); process.exit(2) }
@@ -73,6 +83,19 @@ Object.assign(env.extraEnv, {
   AUDIO_ENGINE_URL: `http://127.0.0.1:${EPORT}`,
   ...C.appEnv
 })
+// Stand-in for the program that keeps the computer awake: it notes the app pid it was given
+// and then just stays alive, so the probe can see when it is running.
+const awakeScript = path.join(base, 'keep-awake-standin.sh')
+fs.writeFileSync(awakeScript, '#!/bin/sh\necho "$1 $(date +%s)" >> "$0.started"\nsleep 86400\n', { mode: 0o755 })
+env.extraEnv.WIRECOPY_KEEP_AWAKE_COMMAND = `${awakeScript} {pid}`
+const awakeState = () => {
+  let running = []
+  try { running = execFileSync('ps', ['-eo', 'pid=,args=']).toString().split('\n').filter(l => l.includes(awakeScript)).map(l => l.trim().split(/\s+/)[0]) } catch {}
+  let started = []
+  try { started = fs.readFileSync(awakeScript + '.started', 'utf8').trim().split('\n') } catch {}
+  return `${running.length ? `RUNNING (pid ${running.join(',')})` : 'not running'}; started ${started.length} time(s)${started.length ? ' for app pid ' + started.map(l => l.split(' ')[0]).join(',') : ''}`
+}
+const appPids = () => { try { return execFileSync('pgrep', ['-f', 'WireCopy.API.dll']).toString().trim().split('\n').join(',') } catch { return '?' } }
 
 fs.writeFileSync(path.join(dataDir, 'bookmarks.json'), JSON.stringify({
   version: 1, bookmarks: [{ name: 'Routine Fixture Gazette', url: `http://127.0.0.1:${FPORT}/` }]
@@ -100,8 +123,17 @@ fs.writeFileSync(path.join(dataDir, 'schedules.json'), JSON.stringify({
 if (process.env.PROBE_SEED_DB) fs.copyFileSync(process.env.PROBE_SEED_DB, path.join(dataDir, 'wirecopy.db'))
 const FLOG = path.join(base, 'fixture-requests.log')
 const ELOG = path.join(base, 'engine.log')
-const fixture = spawn('python3', [path.join(ROOT, 'scripts', 'routine_fixture_site.py'),
-  '--port', String(FPORT), '--write-config', xdg, '--log', FLOG, ...C.fixture], { stdio: 'ignore' })
+const fixtureArgs = [path.join(ROOT, 'scripts', 'routine_fixture_site.py'), '--port', String(FPORT), '--write-config', xdg, '--log', FLOG, ...C.fixture]
+let fixture = null
+if (C.fixtureDelayS) {
+  // The site "is not there yet": only its saved layout is written now; it starts answering later.
+  execFileSync('python3', ['-c', `
+import sys, importlib.util
+spec = importlib.util.spec_from_file_location('fx', sys.argv[1]); m = importlib.util.module_from_spec(spec); spec.loader.exec_module(m)
+m.write_config(sys.argv[2], int(sys.argv[3]))`, fixtureArgs[0], xdg, String(FPORT)])
+} else {
+  fixture = spawn('python3', fixtureArgs, { stdio: 'ignore' })
+}
 const engine = spawn('python3', [path.join(ROOT, 'scripts', 'fake_audio_engine.py'),
   '--port', String(EPORT), '--log', ELOG, ...C.engine], { stdio: 'ignore' })
 
@@ -174,7 +206,7 @@ shell.on('exit', code => {
   if (finishing) return
   console.log(`PROBE ERROR: the shell exited (code ${code}) before the run was over`)
   console.log((shell.stderrText || '').slice(-1500))
-  try { engine.kill(); fixture.kill(); env.down() } catch {}
+  try { engine.kill(); fixture?.kill(); env.down() } catch {}
   process.exit(1)
 })
 const t0 = Date.now()
@@ -208,8 +240,12 @@ try {
   if (!C.scheduled) {
     env.type(':routines'); await sleep(300); await k('Return', 2000)
     await k('1', 600)
+    console.log(`[probe] before the run, keep-awake helper: ${awakeState()}`)
     await k('r', 1500)
     console.log(`[probe] pressed r (${since()}); pane: ${brief(await pane())}`)
+    if (C.fixtureDelayS) {
+      setTimeout(() => { fixture = spawn('python3', fixtureArgs, { stdio: 'ignore' }); console.log(`[probe] ${since()} the site is up now`) }, C.fixtureDelayS * 1000)
+    }
   } else {
     console.log(`[probe] waiting for the scheduler to pick up the ${slot} slot (it looks every 45 s)`)
   }
@@ -228,6 +264,7 @@ try {
       if (C.scheduled) { env.type(':routines'); await sleep(300); await k('Return', 2000); await k('1', 600); await k('Return', 1500) }
       console.log(`[probe] ${since()} while running, pane: ${brief(await pane())}`)
       console.log(`[probe] ${since()} while running, terminal: ${(await termText()).slice(0, 500)}`)
+      console.log(`[probe] ${since()} while running, keep-awake helper: ${awakeState()} (app pid ${appPids()})`)
       shot('running')
     }
     if (C.stopAfterS && !stopped && rows.length && waited >= C.stopAfterS) {
@@ -240,6 +277,7 @@ try {
     if (rows.length && rows.every(r => !isRunning(r.status))) break
   }
   await sleep(4000)
+  console.log(`[probe] ${since()} at the end, keep-awake helper: ${awakeState()}`)
   console.log(`[probe] ${since()} at the end, pane: ${brief(await pane())}`)
   console.log(`[probe] ${since()} at the end, terminal: ${(await termText()).slice(0, 700)}`)
   shot('finished')
@@ -256,7 +294,7 @@ try {
     console.log(`   ${String(count(log, needle)).padStart(3)}  × "${needle}"`)
   console.log('===== app log, the run')
   for (const l of log.split('\n')) {
-    if (/Routine run|Scheduler:|Extracted \d+\/\d+|Generating podcast|Loading http|: (Resolved|LoadFailed|Blocked|ZeroMatch)|timed out|Successfully loaded page via browser|fallback|database is locked|\[WRN\]|\[ERR\]|[Aa]ttach|progress for|stall/i.test(l) &&
+    if (/Routine run|Scheduler:|Extracted \d+\/\d+|Generating podcast|Loading http|: (Resolved|LoadFailed|Blocked|ZeroMatch)|timed out|Successfully loaded page via browser|fallback|database is locked|\[WRN\]|\[ERR\]|[Aa]ttach|progress for|stall|awake|sleep|Couldn't load|links while/i.test(l) &&
         !/^\s+at /.test(l)) console.log('   ' + l.slice(0, 300))
   }
   console.log('===== fixture: who asked for each article (browser = real navigation, plain = scripted HTTP)')
@@ -272,7 +310,7 @@ try {
   finishing = true
   engine.kill()
   env.down()
-  fixture.kill()
+  fixture?.kill()
   console.log(`[probe] run directory left in place: ${base}`)
   process.exit(0)
 }
