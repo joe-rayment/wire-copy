@@ -47,6 +47,12 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <summary>Per-probe request budget.</summary>
     private static readonly TimeSpan ProbeTimeout = TimeSpan.FromSeconds(3);
 
+    /// <summary>How often a running engine's age is compared with its code, per URL.</summary>
+    private static readonly TimeSpan StaleCheckInterval = TimeSpan.FromSeconds(60);
+
+    /// <summary>How long a stopped engine may take to stop answering.</summary>
+    private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(40);
+
     private readonly IUserSettingsStore _store;
     private readonly AudioEngineConfiguration _config;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -57,6 +63,12 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
 
     /// <summary>In-flight and finished attempts keyed by URL.</summary>
     private readonly Dictionary<string, Task<AudioEngineStartResult>> _attempts = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>When each URL's running engine was last compared with its code; guarded by <see cref="_gate"/>.</summary>
+    private readonly Dictionary<string, DateTime> _staleChecked = new(StringComparer.OrdinalIgnoreCase);
+
+    /// <summary>The code change each URL's engine was last replaced for, so one change restarts it once; guarded by <see cref="_gate"/>.</summary>
+    private readonly Dictionary<string, DateTime> _replacedFor = new(StringComparer.OrdinalIgnoreCase);
 
     /// <summary>The last not-found discovery and what it saw; guarded by <see cref="_gate"/>.</summary>
     private NotFoundCache? _notFound;
@@ -164,6 +176,128 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
                 _logger.LogDebug(ex, "Could not note where audio-engine is running");
             }
         });
+    }
+
+    /// <inheritdoc/>
+    public async Task<bool> ReplaceIfStaleAsync(string url, CancellationToken ct)
+    {
+        if (!IsLocal(url) || OperatingSystem.IsWindows())
+        {
+            return false;
+        }
+
+        lock (_gate)
+        {
+            if (_staleChecked.TryGetValue(url, out var last) && DateTime.UtcNow - last < StaleCheckInterval)
+            {
+                return false;
+            }
+
+            _staleChecked[url] = DateTime.UtcNow;
+        }
+
+        try
+        {
+            // Which process is behind this address: the one listening on its port when the system
+            // can say, otherwise the only engine running. Several engines and no way to tell: none.
+            var engines = AudioEngineSearch.RunningEngines(p => ProbeFolderQuiet(p));
+            var listeners = AudioEngineSearch.ListenerPids(new Uri(url).Port);
+            RunningEngine? running = null;
+            if (listeners is not null)
+            {
+                running = engines.FirstOrDefault(e => listeners.Contains(e.ProcessId));
+            }
+            else if (engines.Count == 1)
+            {
+                running = engines[0];
+            }
+
+            if (running is null)
+            {
+                if (engines.Count > 1)
+                {
+                    _logger.LogInformation(
+                        "{Count} audio-engine processes are running here and none could be tied to {Url}, so its age was not checked",
+                        engines.Count,
+                        url);
+                }
+
+                return false;
+            }
+
+            // Only the engine WireCopy would itself start: one from another folder is someone else's.
+            var wanted = Discover().Program;
+            if (wanted is null || !SameFolder(wanted.WorkingDirectory, running.Program.WorkingDirectory))
+            {
+                return false;
+            }
+
+            var changed = AudioEngineSearch.CodeChangedUtc(running.Program);
+            if (changed is not { } codeChanged || codeChanged <= running.StartedUtc)
+            {
+                return false;
+            }
+
+            lock (_gate)
+            {
+                if (_replacedFor.TryGetValue(url, out var done) && done >= codeChanged)
+                {
+                    return false;
+                }
+            }
+
+            var client = _httpClientFactory.CreateClient("AudioEngine");
+            var baseUrl = url.TrimEnd('/');
+            var busy = await ActiveJobsAsync(client, baseUrl, ct).ConfigureAwait(false);
+            if (busy is null)
+            {
+                _logger.LogInformation(
+                    "audio-engine at {Url} is older than its code (started {Started:u}, code changed {Changed:u}) but would not say what it is doing - leaving it running",
+                    url,
+                    running.StartedUtc,
+                    codeChanged);
+                return false;
+            }
+
+            if (busy > 0)
+            {
+                _logger.LogInformation(
+                    "audio-engine at {Url} is older than its code (started {Started:u}, code changed {Changed:u}) but is busy with a job - leaving it running",
+                    url,
+                    running.StartedUtc,
+                    codeChanged);
+                return false;
+            }
+
+            _logger.LogInformation(
+                "audio-engine at {Url} was started {Started:u}, before its code last changed ({Changed:u}) - restarting it so this run uses the current build",
+                url,
+                running.StartedUtc,
+                codeChanged);
+            lock (_gate)
+            {
+                _replacedFor[url] = codeChanged;
+            }
+
+            if (!await StopAsync(client, baseUrl, running, ct).ConfigureAwait(false))
+            {
+                _logger.LogWarning("The older audio-engine (process {Pid}) could not be stopped; carrying on with it", running.ProcessId);
+                return false;
+            }
+
+            var start = await StartAndWaitAsync(url, ct).ConfigureAwait(false);
+            if (!start.Ready)
+            {
+                _logger.LogWarning("audio-engine did not come back after the restart: {Message}", start.Message);
+            }
+
+            return true;
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _logger.LogWarning(ex, "Could not tell whether the audio-engine at {Url} is older than its code", url);
+            return false;
+        }
     }
 
     /// <inheritdoc/>
@@ -672,6 +806,15 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <summary>Wraps a Windows command-line token in quotes.</summary>
     /// <param name="token">The token.</param>
     /// <returns>The quoted token.</returns>
+    /// <summary>Whether two folder paths name the same place.</summary>
+    /// <param name="a">One path.</param>
+    /// <param name="b">The other path.</param>
+    /// <returns>True when they are the same folder.</returns>
+    private static bool SameFolder(string a, string b) => string.Equals(
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(a)),
+        Path.TrimEndingDirectorySeparator(Path.GetFullPath(b)),
+        OperatingSystem.IsLinux() ? StringComparison.Ordinal : StringComparison.OrdinalIgnoreCase);
+
     private static string Quote(string token) => "\"" + token + "\"";
 
     /// <summary>Sets an environment variable for the child unless it is already inherited.</summary>
@@ -726,6 +869,171 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
         {
             _store.Set(KeyLastKnown, location);
         }
+    }
+
+    /// <summary>Counts the engine's pending and running jobs.</summary>
+    /// <param name="client">The HTTP client.</param>
+    /// <param name="baseUrl">The audio-engine base address without a trailing slash.</param>
+    /// <param name="ct">Stops waiting.</param>
+    /// <returns>How many jobs are waiting or in progress; null when the engine would not say.</returns>
+    private async Task<int?> ActiveJobsAsync(HttpClient client, string baseUrl, CancellationToken ct)
+    {
+        var total = 0;
+        foreach (var status in new[] { "running", "pending" })
+        {
+            try
+            {
+                using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                cts.CancelAfter(ProbeTimeout);
+                using var request = NewEngineRequest(HttpMethod.Get, $"{baseUrl}/v1/jobs?status={status}&limit=1");
+                using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
+                if (!response.IsSuccessStatusCode)
+                {
+                    return null;
+                }
+
+                using var doc = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(cts.Token).ConfigureAwait(false));
+                if (doc.RootElement.ValueKind != System.Text.Json.JsonValueKind.Object
+                    || !doc.RootElement.TryGetProperty("items", out var items)
+                    || items.ValueKind != System.Text.Json.JsonValueKind.Array)
+                {
+                    return null;
+                }
+
+                total += items.GetArrayLength();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or System.Text.Json.JsonException
+                                       || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+            {
+                return null;
+            }
+        }
+
+        return total;
+    }
+
+    /// <summary>
+    /// Stops a running engine: its own shutdown call, then its <c>run stop</c> script (builds from
+    /// before the shutdown call existed), then the process itself; waits until it stops answering.
+    /// </summary>
+    /// <param name="client">The HTTP client.</param>
+    /// <param name="baseUrl">The audio-engine base address without a trailing slash.</param>
+    /// <param name="running">The process to stop.</param>
+    /// <param name="ct">Stops waiting.</param>
+    /// <returns>True once nothing answers at the address.</returns>
+    private async Task<bool> StopAsync(HttpClient client, string baseUrl, RunningEngine running, CancellationToken ct)
+    {
+        var how = "its shutdown call";
+        var asked = false;
+        try
+        {
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(ProbeTimeout);
+            using var request = NewEngineRequest(HttpMethod.Post, baseUrl + "/v1/shutdown");
+            using var response = await client.SendAsync(request, cts.Token).ConfigureAwait(false);
+            asked = response.IsSuccessStatusCode;
+            if ((int)response.StatusCode == 409)
+            {
+                // A service manager starts it again by itself; stopping it here would not last.
+                _logger.LogInformation("audio-engine says it is restarted automatically when it exits; not stopping it");
+                return false;
+            }
+        }
+        catch (Exception ex) when (ex is HttpRequestException || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            asked = false;
+        }
+
+        if (!asked)
+        {
+            var script = Path.Combine(running.Program.WorkingDirectory, "run");
+            if (File.Exists(script))
+            {
+                how = "its run stop script";
+                asked = await RunStopScriptAsync(script, new Uri(baseUrl).Port, running.Program.WorkingDirectory, ct).ConfigureAwait(false);
+            }
+        }
+
+        if (!asked)
+        {
+            how = "ending the process";
+            try
+            {
+                using var process = Process.GetProcessById(running.ProcessId);
+                process.Kill();
+            }
+            catch (Exception ex) when (ex is ArgumentException or InvalidOperationException or System.ComponentModel.Win32Exception)
+            {
+                _logger.LogDebug(ex, "audio-engine process {Pid} could not be ended", running.ProcessId);
+            }
+        }
+
+        var watch = Stopwatch.StartNew();
+        while (watch.Elapsed < StopTimeout)
+        {
+            if (!await ProbeOnceAsync(client, baseUrl + "/healthz").ConfigureAwait(false))
+            {
+                _logger.LogInformation("The older audio-engine (process {Pid}) was stopped by {How}", running.ProcessId, how);
+                return true;
+            }
+
+            await Task.Delay(PollInterval, ct).ConfigureAwait(false);
+        }
+
+        return false;
+    }
+
+    /// <summary>Runs the engine checkout's own <c>run stop &lt;port&gt;</c>.</summary>
+    /// <param name="script">The script path.</param>
+    /// <param name="port">The port the engine listens on.</param>
+    /// <param name="workingDirectory">The checkout folder.</param>
+    /// <param name="ct">Stops waiting.</param>
+    /// <returns>True when the script reported success.</returns>
+    private async Task<bool> RunStopScriptAsync(string script, int port, string workingDirectory, CancellationToken ct)
+    {
+        try
+        {
+            var psi = new ProcessStartInfo("bash") { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true, WorkingDirectory = workingDirectory };
+            psi.ArgumentList.Add(script);
+            psi.ArgumentList.Add("stop");
+            psi.ArgumentList.Add(port.ToString(System.Globalization.CultureInfo.InvariantCulture));
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return false;
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(StopTimeout);
+            var output = process.StandardOutput.ReadToEndAsync(cts.Token);
+            var error = process.StandardError.ReadToEndAsync(cts.Token);
+            await process.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+            var said = ((await output.ConfigureAwait(false)) + " " + (await error.ConfigureAwait(false))).Trim();
+            _logger.LogInformation("audio-engine's run stop said: {Output:l} (exit code {Code})", said, process.ExitCode);
+            return process.ExitCode == 0;
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException
+                                   || (ex is OperationCanceledException && !ct.IsCancellationRequested))
+        {
+            _logger.LogDebug(ex, "audio-engine's run stop script could not be run");
+            return false;
+        }
+    }
+
+    /// <summary>A request to the engine carrying its API key when one is configured.</summary>
+    /// <param name="method">The HTTP method.</param>
+    /// <param name="requestUrl">The absolute URL.</param>
+    /// <returns>The request.</returns>
+    private HttpRequestMessage NewEngineRequest(HttpMethod method, string requestUrl)
+    {
+        var request = new HttpRequestMessage(method, requestUrl);
+        var apiKey = AudioEngineSettings.Resolve(_store, _config, Environment.GetEnvironmentVariable).ApiKey;
+        if (!string.IsNullOrEmpty(apiKey))
+        {
+            request.Headers.Authorization = new System.Net.Http.Headers.AuthenticationHeaderValue("Bearer", apiKey);
+        }
+
+        return request;
     }
 
     /// <summary>Finds, spawns and waits for audio-engine at <paramref name="url"/>.</summary>

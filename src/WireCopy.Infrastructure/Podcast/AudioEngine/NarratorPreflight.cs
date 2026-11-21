@@ -43,6 +43,14 @@ internal static class NarratorPreflight
         if (status.Reachable && launcher != null && AudioEngineLauncher.IsLocal(status.Url))
         {
             launcher.NoteRunning(status.Url);
+
+            // workspace-wxll0.2: audio-engine outlives the app, so nothing else ever puts a newer
+            // build of it in service — an engine started before its code last changed is replaced
+            // here, while it is idle, before the run depends on it.
+            if (await launcher.ReplaceIfStaleAsync(status.Url, ct).ConfigureAwait(false))
+            {
+                status = await CheckAsync(narrator, ct).ConfigureAwait(false);
+            }
         }
 
         if (!status.Ready

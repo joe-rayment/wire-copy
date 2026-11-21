@@ -45,6 +45,16 @@ public interface IAudioEngineLauncher
     /// <param name="url">The audio-engine base address that just answered.</param>
     void NoteRunning(string url);
 
+    /// <summary>
+    /// Replaces a running local audio-engine that was started before its own code last changed, so a
+    /// run uses the current build (workspace-wxll0.2). Only an engine WireCopy would itself start from
+    /// that folder, and only while it has no pending or running job; never throws.
+    /// </summary>
+    /// <param name="url">The audio-engine base address that just answered.</param>
+    /// <param name="ct">Stops waiting.</param>
+    /// <returns>True when the engine was stopped and a start was attempted.</returns>
+    Task<bool> ReplaceIfStaleAsync(string url, CancellationToken ct) => Task.FromResult(false);
+
     /// <summary>Checks whether a path (file, folder, or a folder near it) holds audio-engine.</summary>
     /// <param name="path">The path as typed or pasted.</param>
     /// <returns>The program found; null when nothing there is an audio-engine.</returns>

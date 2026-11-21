@@ -19,6 +19,12 @@ internal static class AudioEngineSearch
         "Library", "node_modules", "bin", "obj", "Documents", "Desktop", "Downloads", "Pictures", "Music", "Movies",
     };
 
+    /// <summary>Folders that hold build output or dependencies, not the code a build is made from.</summary>
+    private static readonly HashSet<string> CodeSkippedFolders = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "bin", "obj", "node_modules", ".artifacts", "__pycache__", ".venv",
+    };
+
     /// <summary>Lists the real subfolders of a folder, skipping symlinked ones; empty on any error.</summary>
     /// <param name="folder">The folder to list.</param>
     /// <returns>Full paths of subfolders.</returns>
@@ -174,6 +180,191 @@ internal static class AudioEngineSearch
         lock (lines)
         {
             return lines.Where(l => !string.IsNullOrWhiteSpace(l)).Take(50).ToList();
+        }
+    }
+
+    /// <summary>
+    /// Every running AudioEngine process whose executable sits in (or under) a folder that probes OK,
+    /// with when it started (workspace-wxll0.2). Processes that cannot be read are left out.
+    /// </summary>
+    /// <param name="probe">Returns the program when a folder holds audio-engine.</param>
+    /// <returns>The running engines; empty when none can be identified.</returns>
+    internal static IReadOnlyList<RunningEngine> RunningEngines(Func<string, AudioEngineProgram?> probe)
+    {
+        var found = new List<RunningEngine>();
+        Process[] processes;
+        try
+        {
+            processes = Process.GetProcesses();
+        }
+        catch (Exception)
+        {
+            return found;
+        }
+
+        try
+        {
+            foreach (var process in processes)
+            {
+                try
+                {
+                    if (!process.ProcessName.StartsWith("AudioEngine", StringComparison.OrdinalIgnoreCase))
+                    {
+                        continue;
+                    }
+
+                    var dir = Path.GetDirectoryName(process.MainModule?.FileName);
+                    for (var level = 0; !string.IsNullOrEmpty(dir) && level <= 6; level++)
+                    {
+                        if (probe(dir) is { } program)
+                        {
+                            found.Add(new RunningEngine(process.Id, process.StartTime.ToUniversalTime(), program));
+                            break;
+                        }
+
+                        dir = Path.GetDirectoryName(dir);
+                    }
+                }
+                catch (Exception)
+                {
+                    // Access denied or exited: try the next process.
+                }
+            }
+        }
+        finally
+        {
+            foreach (var process in processes)
+            {
+                process.Dispose();
+            }
+        }
+
+        return found;
+    }
+
+    /// <summary>
+    /// The processes listening on a local TCP port, asked of <c>lsof</c> (macOS, most Linux) or
+    /// <c>fuser</c>. Tells which of several running engines is the one behind an address.
+    /// </summary>
+    /// <param name="port">The port.</param>
+    /// <returns>The process ids; null when neither tool is on this machine or it would not answer.</returns>
+    internal static IReadOnlySet<int>? ListenerPids(int port)
+    {
+        var portText = port.ToString(System.Globalization.CultureInfo.InvariantCulture);
+        foreach (var (tool, args) in new[]
+                 {
+                     ("lsof", new[] { "-nP", "-iTCP:" + portText, "-sTCP:LISTEN", "-t" }),
+                     ("fuser", new[] { portText + "/tcp" }),
+                 })
+        {
+            try
+            {
+                var psi = new ProcessStartInfo(tool) { UseShellExecute = false, RedirectStandardOutput = true, RedirectStandardError = true };
+                foreach (var arg in args)
+                {
+                    psi.ArgumentList.Add(arg);
+                }
+
+                using var process = Process.Start(psi);
+                if (process is null)
+                {
+                    continue;
+                }
+
+                var output = process.StandardOutput.ReadToEndAsync();
+                _ = process.StandardError.ReadToEndAsync();
+                if (!process.WaitForExit(3000))
+                {
+                    process.Kill();
+                    continue;
+                }
+
+                var pids = new HashSet<int>();
+                foreach (var token in output.GetAwaiter().GetResult().Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries))
+                {
+                    if (int.TryParse(token, System.Globalization.NumberStyles.None, System.Globalization.CultureInfo.InvariantCulture, out var pid))
+                    {
+                        pids.Add(pid);
+                    }
+                }
+
+                return pids;
+            }
+            catch (Exception ex) when (ex is System.ComponentModel.Win32Exception or InvalidOperationException or IOException)
+            {
+                // This tool is not here: try the next one.
+            }
+        }
+
+        return null;
+    }
+
+    /// <summary>
+    /// When the code a program runs from last changed: for a source checkout the newest file under
+    /// <c>src</c> and <c>tools</c> (build output left out), for a published build its own binaries.
+    /// </summary>
+    /// <param name="program">The program as discovery describes it.</param>
+    /// <returns>The newest change in UTC; null when nothing could be read.</returns>
+    internal static DateTime? CodeChangedUtc(AudioEngineProgram program)
+    {
+        try
+        {
+            DateTime? newest = null;
+            void Note(string file)
+            {
+                var at = File.GetLastWriteTimeUtc(file);
+                if (newest is null || at > newest)
+                {
+                    newest = at;
+                }
+            }
+
+            if (program.Arguments.Count == 0)
+            {
+                Note(program.Executable);
+                var dll = Path.ChangeExtension(program.Executable, null) + ".dll";
+                if (File.Exists(dll))
+                {
+                    Note(dll);
+                }
+
+                return newest;
+            }
+
+            var pending = new Stack<string>();
+            foreach (var top in new[] { "src", "tools" })
+            {
+                var root = Path.Combine(program.WorkingDirectory, top);
+                if (Directory.Exists(root))
+                {
+                    pending.Push(root);
+                }
+            }
+
+            var listed = 0;
+            while (pending.Count > 0 && listed++ < WalkMaxListings)
+            {
+                var folder = pending.Pop();
+                foreach (var file in Directory.EnumerateFiles(folder))
+                {
+                    Note(file);
+                }
+
+                foreach (var sub in Directory.EnumerateDirectories(folder))
+                {
+                    var name = Path.GetFileName(sub);
+                    if (!CodeSkippedFolders.Contains(name))
+                    {
+                        pending.Push(sub);
+                    }
+                }
+            }
+
+            return newest;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
         }
     }
 
