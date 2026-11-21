@@ -60,16 +60,16 @@ fs.mkdirSync(dataDir, { recursive: true })
 fs.mkdirSync(appCwd, { recursive: true })
 console.log(`[probe] case=${CASE} run directory ${base}`)
 
-// The shell starts the TUI as `<dotnet> <repo>/…/WireCopy.API.dll` from the repo root, which
-// puts the app's logs in the real <repo>/logs. This stand-in starts the same thing from the
-// run directory instead (and from PROBE_DLL when given).
+// The shell starts the TUI as `<dotnet> exec <dll>` from the repo root, which puts the app's
+// logs in the real <repo>/logs. This stand-in for <dotnet> starts the same thing from the run
+// directory instead; PROBE_DLL goes in through the shell's own WIRECOPY_SHELL_TUI_DLL.
 const wrapper = path.join(base, 'dotnet-here.sh')
-fs.writeFileSync(wrapper, '#!/bin/sh\ncd "$WC_PROBE_CWD" || exit 1\ndll="${WC_PROBE_DLL:-$1}"; shift\nexec "$WC_PROBE_REAL_DOTNET" "$dll" "$@"\n', { mode: 0o755 })
+fs.writeFileSync(wrapper, '#!/bin/sh\ncd "$WC_PROBE_CWD" || exit 1\nexec "$WC_PROBE_REAL_DOTNET" "$@"\n', { mode: 0o755 })
 Object.assign(env.extraEnv, {
   WIRECOPY_SHELL_DOTNET: wrapper,
   WC_PROBE_CWD: appCwd,
   WC_PROBE_REAL_DOTNET: path.join(ROOT, 'dotnet'),
-  ...(process.env.PROBE_DLL ? { WC_PROBE_DLL: process.env.PROBE_DLL } : {}),
+  ...(process.env.PROBE_DLL ? { WIRECOPY_SHELL_TUI_DLL: process.env.PROBE_DLL } : {}),
   AUDIO_ENGINE_URL: `http://127.0.0.1:${EPORT}`,
   ...C.appEnv
 })
@@ -167,6 +167,16 @@ let shots = 0
 const shot = name => { try { env.shotWindow(`unattended-${CASE}-${String(++shots).padStart(2, '0')}-${name}`, wid) } catch (e) { console.log('      shot failed:', String(e.message).split('\n')[0]) } }
 await env.up()
 const shell = env.launchShell()
+// A shell that dies (the app would not start) must end the probe with what it said, not
+// leave it waiting on a window that will never come.
+let finishing = false
+shell.on('exit', code => {
+  if (finishing) return
+  console.log(`PROBE ERROR: the shell exited (code ${code}) before the run was over`)
+  console.log((shell.stderrText || '').slice(-1500))
+  try { engine.kill(); fixture.kill(); env.down() } catch {}
+  process.exit(1)
+})
 const t0 = Date.now()
 const since = () => `t+${Math.round((Date.now() - t0) / 1000)}s`
 try {
@@ -259,6 +269,7 @@ try {
   console.log('PROBE ERROR', e.stack || e)
   console.log((shell.stderrText || '').slice(-2000))
 } finally {
+  finishing = true
   engine.kill()
   env.down()
   fixture.kill()
