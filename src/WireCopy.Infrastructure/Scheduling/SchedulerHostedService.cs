@@ -27,7 +27,6 @@ namespace WireCopy.Infrastructure.Scheduling;
 internal sealed class SchedulerHostedService : BackgroundService
 {
     private static readonly TimeSpan TickInterval = TimeSpan.FromSeconds(45);
-    private static readonly TimeSpan PerRunTimeout = TimeSpan.FromMinutes(20);
 
     private readonly TimeProvider _timeProvider;
     private readonly IServiceScopeFactory _scopeFactory;
@@ -309,8 +308,12 @@ internal sealed class SchedulerHostedService : BackgroundService
         await scope.ServiceProvider.GetRequiredService<IUnitOfWork>().SaveChangesAsync(stoppingToken).ConfigureAwait(false);
         _owed.Remove(owedKey); // the row is now the dedup
 
+        // No cap on the run's length here (workspace-q06ia.4). There used to be one, 20 minutes,
+        // from when narration took seconds; on a local engine it takes over an hour, and every
+        // scheduled run that reached narration was cut off while it was working. The pipeline
+        // stops a run that shows no progress (RunStallWatchdog); the host's own shutdown still
+        // cancels it through stoppingToken.
         using var runCts = CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
-        runCts.CancelAfter(PerRunTimeout);
         try
         {
             var pipeline = scope.ServiceProvider.GetService<IRecipeRunPipeline>();

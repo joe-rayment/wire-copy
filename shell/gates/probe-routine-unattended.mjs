@@ -12,6 +12,7 @@
 //   long    SCHEDULED run (slot already due at launch); narration takes ~3 min with a part
 //           every 30 s; stall window 45 s
 //   stall   SCHEDULED run; the engine stops making progress after 2 parts; window 45 s
+//   stop    run-now; x then y in the run view while it narrates (the user's own stop)
 //   attach  run-now after the app's Playwright driver process has been killed
 //   e2e     SCHEDULED run, browser-only articles, narration longer than 20 minutes, no
 //           override of anything (takes ~25 minutes)
@@ -35,6 +36,7 @@ const CASES = {
   db:     { scheduled: false, fixture: [], engine: ['--chunk-seconds', '12'], appEnv: {}, take: 9, waitS: 600 },
   long:   { scheduled: true, fixture: [], engine: ['--chunk-seconds', '30'], appEnv: { WIRECOPY_ROUTINE_STALL_SECONDS: '45' }, take: 6, waitS: 600 },
   stall:  { scheduled: true, fixture: [], engine: ['--chunk-seconds', '10', '--stall-after', '2'], appEnv: { WIRECOPY_ROUTINE_STALL_SECONDS: '45' }, take: 6, waitS: 420 },
+  stop:   { scheduled: false, fixture: [], engine: ['--chunk-seconds', '30'], appEnv: {}, take: 3, waitS: 300, stopAfterS: 30 },
   attach: { scheduled: false, fixture: [], engine: ['--chunk-seconds', '2'], appEnv: {}, take: 3, waitS: 420, killDriver: true },
   e2e:    { scheduled: true, fixture: ['--browser-only-articles'], engine: ['--chunk-seconds', '215'], appEnv: {}, take: 6, waitS: 1800 }
 }
@@ -201,6 +203,7 @@ try {
 
   let rows = []
   let shotRunning = false
+  let stopped = false
   let lastLine = ''
   for (let waited = 0; waited < C.waitS; waited += 5) {
     await sleep(5000)
@@ -213,6 +216,13 @@ try {
       console.log(`[probe] ${since()} while running, pane: ${brief(await pane())}`)
       console.log(`[probe] ${since()} while running, terminal: ${(await termText()).slice(0, 500)}`)
       shot('running')
+    }
+    if (C.stopAfterS && !stopped && rows.length && waited >= C.stopAfterS) {
+      stopped = true
+      await k('x', 1200)
+      console.log(`[probe] ${since()} pressed x; terminal: ${(await termText()).slice(0, 300)}`)
+      await k('y', 1500)
+      console.log(`[probe] ${since()} pressed y`)
     }
     if (rows.length && rows.every(r => !isRunning(r.status))) break
   }

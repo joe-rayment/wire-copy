@@ -2,6 +2,7 @@
 """Fake audio-engine for the Routines harness (workspace-wyvga.9). stdlib only.
 
   fake_audio_engine.py --port 8090 [--log FILE] [--no-default-feed]
+                       [--chunk-seconds S] [--stall-after N]
 
 Any bearer key is accepted. Jobs succeed instantly; audio is ~1 s of silent MP3.
 --log: "METHOD path" per request, and per POST /v1/jobs one line per chapter:
@@ -29,6 +30,7 @@ LOGF = None
 NO_DEFAULT_FEED = False
 PUBLISH_DELAY = 2.0
 CHUNK_SECONDS = 0.0  # --chunk-seconds: >0 makes a job take chunks*S seconds, one chunk per S
+STALL_AFTER = 0      # --stall-after N (with --chunk-seconds): a job never gets past N chunks
 FEED = dict(name="wire-copy", title="Wire Copy", description=None, author=None, language="en", category=None,
             explicit=False, subscribeUrl="https://example.invalid/feeds/fake-token/feed.xml", episodeCount=0,
             pendingCount=0, createdAt="2026-01-01T00:00:00Z", updatedAt="2026-01-01T00:00:00Z", isDefault=True)
@@ -45,6 +47,9 @@ def state(j):
     if CHUNK_SECONDS <= 0: return "succeeded", "done", j["chunks"], j["created"]
     if j.get("cancelled"): return "cancelled", "cancelled", min(j["chunks"], int((j["cancelled"] - j["created"]) / CHUNK_SECONDS)), j["cancelled"]
     total = j["chunks"] * CHUNK_SECONDS; el = time.time() - j["created"]
+    # --stall-after N: the job reaches N chunks and then reports the same numbers forever.
+    if STALL_AFTER and el >= STALL_AFTER * CHUNK_SECONDS and STALL_AFTER < j["chunks"]:
+        return "running", "synthesizing", STALL_AFTER, None
     if el >= total: return "succeeded", "done", j["chunks"], j["created"] + total
     return "running", "synthesizing", min(j["chunks"], int(el / CHUNK_SECONDS)), None
 
@@ -162,5 +167,6 @@ class H(BaseHTTPRequestHandler):
 if __name__ == "__main__":
     ap = argparse.ArgumentParser(); ap.add_argument("--port", type=int, default=8090)
     ap.add_argument("--log"); ap.add_argument("--chunk-seconds", type=float, default=0.0); ap.add_argument("--no-default-feed", action="store_true")
-    a = ap.parse_args(); LOGF = a.log; NO_DEFAULT_FEED = a.no_default_feed; CHUNK_SECONDS = a.chunk_seconds
+    ap.add_argument("--stall-after", type=int, default=0)
+    a = ap.parse_args(); LOGF = a.log; NO_DEFAULT_FEED = a.no_default_feed; CHUNK_SECONDS = a.chunk_seconds; STALL_AFTER = a.stall_after
     ThreadingHTTPServer(("127.0.0.1", a.port), H).serve_forever()

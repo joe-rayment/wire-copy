@@ -93,6 +93,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         ArgumentNullException.ThrowIfNull(run);
 
         var tracked = false;
+        RunStallWatchdog? stall = null;
         try
         {
             if (recipe.Steps.Count == 0)
@@ -111,6 +112,9 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             var ct = runCts.Token;
             BeginTracking(recipe, run, runCts);
             tracked = true;
+
+            // workspace-q06ia.4: the run is stopped for standing still, never for taking long.
+            stall = new RunStallWatchdog(runCts, RunStallWatchdog.ResolveWindow(_logger));
 
             _logger.LogInformation("Routine run {Recipe:l} ({Occurrence:l}) started with {Steps} section(s)", recipe.Name, run.OccurrenceKey, recipe.Steps.Count);
 
@@ -138,6 +142,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             }
 
             _tracker?.SetStage(recipe.Id, "narration", RoutineRunStageState.Done, "audio-engine is ready");
+            stall.Report("narration ready");
 
             var assembled = new List<(string Url, string Title)>();
             var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
@@ -151,8 +156,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 _tracker?.SetStage(recipe.Id, stageKey, RoutineRunStageState.Running, HostOf(step.SourceUrl));
                 var before = assembled.Count;
                 _logger.LogInformation("Loading {Url:l}", step.SourceUrl);
+                stall.Report(stageKey + " loading");
                 var (status, matchCount, diagnostic) =
                     await ResolveStepAsync(step, assembled, seen, ct).ConfigureAwait(false);
+                stall.Report(stageKey + " " + status);
                 _logger.LogInformation(
                     "{Section:l}: {Status:l}, {Count} stories{Diagnostic:l}",
                     step.SectionName,
@@ -207,16 +214,18 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 return;
             }
 
-            await GenerateAndFinalizeAsync(recipe, run, assembled, outcomes, outcomesJson, ct)
+            await GenerateAndFinalizeAsync(recipe, run, assembled, outcomes, outcomesJson, stall, ct)
                 .ConfigureAwait(false);
         }
         catch (OperationCanceledException)
         {
-            // Host shutdown or the per-run timeout fired. Mark Interrupted (terminal,
-            // visible) rather than letting a bare OCE bubble up and tear down the
-            // scheduler's tick loop. Best-effort persist on a fresh token.
+            // The user's stop, the app closing, or no progress for the stall window. Mark
+            // Interrupted (terminal, visible) rather than letting a bare OCE bubble up and
+            // tear down the scheduler's tick loop. Best-effort persist on a fresh token.
             var userStopped = _tracker?.Get(recipe.Id)?.CancelRequested == true;
-            await MarkInterruptedAsync(recipe, run, userStopped).ConfigureAwait(false);
+            var stalled = !userStopped && stall is { Fired: true };
+            await MarkInterruptedAsync(recipe, run, userStopped, stalled ? StalledMessage(recipe.Id, stall!.Window) : null)
+                .ConfigureAwait(false);
         }
         catch (Exception ex)
         {
@@ -233,6 +242,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         }
         finally
         {
+            stall?.Dispose();
             if (tracked)
             {
                 _tracker?.End(recipe.Id);
@@ -251,6 +261,15 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
     /// <summary>Best-effort host for a human diagnostic (falls back to the raw url).</summary>
     private static string HostOf(string url) =>
         Uri.TryCreate(url, UriKind.Absolute, out var uri) ? uri.Host : url;
+
+    /// <summary>
+    /// What the stall watchdog compares: only things that mean the run got somewhere — the
+    /// phase, the story, the narrated part, the percentage, assembled segments, uploaded
+    /// bytes. Elapsed time, messages and retry counters change without anything advancing.
+    /// </summary>
+    private static string ProgressPicture(PodcastProgress p) => string.Create(
+        System.Globalization.CultureInfo.InvariantCulture,
+        $"{p.Phase} {p.CurrentArticle}/{p.TotalArticles} {p.IsArticleComplete} {p.CurrentArticleChunkIndex}/{p.CurrentArticleChunkTotal} {p.PercentComplete}% {p.AssembledSegments} {p.UploadedEpisodes} {p.UploadedBytes}");
 
     // Warnings and worse always; Information only from the scheduler and podcast code, so the drill-down
     // is not buried in unrelated prefetch chatter from the same seconds.
@@ -466,6 +485,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         IReadOnlyList<(string Url, string Title)> assembled,
         IReadOnlyList<RunStepOutcome> outcomes,
         string outcomesJson,
+        RunStallWatchdog stall,
         CancellationToken cancellationToken)
     {
         // UNIQUE transient collection name: embed the occurrence so neither the
@@ -485,6 +505,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             {
                 _jobManager.ReportProgress(p);
                 ReportStage(recipe.Id, p);
+                stall.Report(ProgressPicture(p));
             });
             var generationTask = _orchestrator.GeneratePodcastAsync(collection, progress, generationCts.Token);
 
@@ -536,7 +557,34 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         await PersistAsync(recipe, run, runStatus).ConfigureAwait(false);
     }
 
-    private async Task MarkInterruptedAsync(ScheduleRecipe recipe, ScheduledRun run, bool userStopped)
+    /// <summary>Says how long the run stood still and what it was doing, for the run's own record.</summary>
+    private string StalledMessage(Guid recipeId, TimeSpan window)
+    {
+        var stage = _tracker?.Get(recipeId)?.Stages.LastOrDefault(s => s.State == RoutineRunStageState.Running);
+        string? doing = null;
+        if (stage is not null)
+        {
+            if (stage.Key.StartsWith("step:", StringComparison.Ordinal))
+            {
+                doing = $"loading {stage.Hint ?? stage.Title}";
+            }
+            else if (stage.Key == "narration")
+            {
+                doing = "checking audio-engine";
+            }
+            else
+            {
+                doing = string.IsNullOrWhiteSpace(stage.Hint) ? stage.Title.ToLowerInvariant() : stage.Hint;
+            }
+        }
+
+        var howLong = RunStallWatchdog.Describe(window);
+        return doing is null
+            ? $"No progress for {howLong}, so the run was stopped."
+            : $"No progress for {howLong} — stopped while {doing}.";
+    }
+
+    private async Task MarkInterruptedAsync(ScheduleRecipe recipe, ScheduledRun run, bool userStopped, string? stalledMessage)
     {
         if (run.Status is not (ScheduledRunStatus.Running or ScheduledRunStatus.Pending))
         {
@@ -550,7 +598,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         }
         else
         {
-            run.MarkInterrupted("Run cancelled (host shutdown or per-run timeout)");
+            run.MarkInterrupted(stalledMessage ?? "Run cancelled (the app was closing)");
         }
 
         try
