@@ -47,7 +47,7 @@ See [docs/SETUP.md](docs/SETUP.md) for full setup, including credential configur
 
 - **Launcher** — Bookmark grid with numbered quick-jump shortcuts, a URL bar, and a one-key Setup screen (`c`)
 - **Link Tree** — Browse a page's links in a categorized, collapsible tree (content, navigation, external, footer), with aggregator-aware classification
-- **Live browser sidecar** — A phone-width real browser docks beside the terminal, follows your selection, and highlights the story you're on; `y` adopts whatever page you navigated it to
+- **Live browser sidecar** — A real browser docks beside the terminal showing the page zoomed out, in its desktop layout, so a whole run of stories is in view; it follows your selection, and the highlight travels from story to story as you move; `y` adopts whatever page you navigated it to
 - **AI site setup** (`g l`) — A preview-first wizard infers a durable, reusable layout per site; what you confirm is the real rendered tree, not a description of it
 - **Reader View** — Distraction-free article reading with adjustable width, search, speed-reading, and a visual layout tuner (`L`) for stubborn sites
 - **Collections** — Save articles to reading lists with read/unread tracking and per-item caching
@@ -205,7 +205,7 @@ Configuration is loaded from `appsettings.json` and can be overridden with envir
 | `Browser:Sidecar` | Auto-dock the live browser beside the terminal on every page (off = the browser stays parked out of the way; <code>&#124;</code> docks on demand) | `false` |
 | `Browser:ParkMode` | Where the un-docked browser sits — it always keeps rendering, never steals focus, and honors a manual minimize. `Corner` tucks it into a small bottom-right tile; `Offscreen` moves it off-screen and minimizes it; `Auto` picks `Corner` on macOS (which pulls off-screen windows back into view, so hiding them leaves an ugly sliver) and `Offscreen` elsewhere | `Auto` |
 | `Browser:CornerParkWidth` / `Browser:CornerParkHeight` / `Browser:CornerParkMargin` | Size and edge gap (px) of the `Corner` park tile | `800` / `600` / `8` |
-| `Browser:DockSide` / `Browser:DockWidthPx` | Which edge the sidecar docks to, and how wide (iPhone-SE width) | `Right` / `390` |
+| `Browser:DockSide` | Which edge the sidecar docks to | `Right` |
 | `Browser:TileTerminalWithSidecar` | macOS side-by-side: docking also resizes the terminal to the other half; dismiss restores it. Needs Accessibility permission | `false` |
 | `Podcast:Title` | Podcast feed title | `WireCopy Podcast` |
 | `AudioEngineUrl` | audio-engine address | `http://127.0.0.1:8080` |

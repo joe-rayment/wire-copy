@@ -10,8 +10,9 @@ namespace WireCopy.Infrastructure.Browser;
 
 /// <summary>
 /// Concert-view spotlight: while the headed browser is docked (the 'O' switcher),
-/// mirrors the TUI link-tree selection onto the live page — DevTools-style
-/// highlight box plus a scroll that keeps the selected story centered on screen.
+/// mirrors the TUI link-tree selection onto the live page — a DevTools-style
+/// highlight box that travels from story to story, and a page that only moves (as a
+/// glide) when the selected story is not comfortably on screen (workspace-ksdww).
 ///
 /// <para>
 /// Requests arrive synchronously from the render path on every selection change
@@ -517,9 +518,9 @@ public sealed class DockSpotlight : IDisposable, IAsyncDisposable
                 OwnRedirectChain(followResponse);
                 _expandRescuePageUrl = null; // fresh DOM — re-arm the once-per-page rescue
 
-                // workspace-2cz4: mobile-viewport sites tuck content behind
-                // "read more" — proactively expand on OUR navigations so listed
-                // stories have layout when the spotlight looks for them.
+                // workspace-2cz4: sites tuck content behind "read more" (most often,
+                // not only, in narrow layouts) — proactively expand on OUR navigations
+                // so listed stories have layout when the spotlight looks for them.
                 try
                 {
                     var expanded = await page.EvaluateAsync<int>(ExpandScript.ExpandAll).ConfigureAwait(false);
