@@ -25,6 +25,8 @@
 //                   and started at that older commit in a second clone, then the clone is moved to the
 //                   newest commit - the state of a machine whose engine has run for days)
 //                   --busy: the engine is in the middle of someone else's narration at that moment
+//                   --broken-code: the newer code does not build (a file that is not C# is added
+//                   to a scratch copy of the checkout) - the running engine must be kept
 //   --case orphan [--stale]
 //                   the engine still holds unfinished jobs of earlier runs of this routine (one
 //                   narrating, one waiting; one marked as this build marks them, one as an older
@@ -37,6 +39,8 @@
 //                   --freeze-other: once this run's job is waiting, the job ahead stops getting
 //                   anywhere (its worker is frozen) - the run must then be stopped for standing still
 //   --stall-seconds N  WIRECOPY_ROUTINE_STALL_SECONDS for the app
+//   --first-part-seconds N  (with --worker fake) the first narrated part takes N seconds, as when
+//                   the narrator is still loading its model
 //   --case engine-restart
 //                   the engine is stopped in the middle of narration and nothing starts it again
 //                   except WireCopy itself
@@ -64,6 +68,7 @@ const CASE = opt('--case', 'plain')
 const FAKE_WORKER = opt('--worker', 'real') === 'fake'
 const FROM_COMMIT = opt('--from-commit', null)
 const STALL_S = opt('--stall-seconds', null)
+const FIRST_PART_S = opt('--first-part-seconds', null)
 const SITE = 'https://www.nytimes.com/section/todayspaper'
 const SECTIONS = ['Highlights', 'The Front Page', 'Business Day']
 
@@ -85,6 +90,15 @@ if (CASE === 'stale-engine' && FROM_COMMIT) {
   execFileSync('git', ['-C', old, 'checkout', '--quiet', '--force', FROM_COMMIT])
   AE_HOME = old
 }
+let brokenFile = null
+if (CASE === 'stale-engine' && argv.includes('--broken-code')) {
+  // A scratch copy of the checkout: the file that does not compile never touches the real one.
+  const copy = path.join(AE_DIR, 'audio-engine-scratch')
+  fs.rmSync(copy, { recursive: true, force: true })
+  execFileSync('cp', ['-a', AE_HOME, copy])
+  AE_HOME = copy
+  brokenFile = path.join(copy, 'src', 'AudioEngine.Server', 'ProbeDoesNotCompile.cs')
+}
 if (!argv.includes('--no-build') && !process.env.PROBE_DLL) buildTui('Release')
 
 const EPORT = Number(process.env.ENGINE_PORT || 8097)
@@ -100,11 +114,29 @@ for (const d of [dataDir, appCwd, engineData, engineVoices, path.join(dataDir, '
 console.log(`[real] run directory ${base}; engine ${AE_HOME} (${git('log', '-1', '--format=%h %ad', '--date=short')}) on ${EURL}, data ${engineData}`)
 
 function git (...a) { try { return execFileSync('git', ['-C', AE_HOME, ...a]).toString().trim() } catch { return '?' } }
+const standIn = path.join(process.env.AUDIO_ENGINE_HOME, 'tests', 'AudioEngine.Tests', 'Fixtures', 'fake_chatterbox_worker.py')
+// --first-part-seconds: the stand-in's first part takes that long (a narrator that is still
+// loading its model). A wrapper in the run directory, so the engine's own files stay as they are.
+const slowFirst = path.join(base, 'slow-first-part-worker.py')
+if (FIRST_PART_S) {
+  fs.writeFileSync(slowFirst, `import os, runpy, time
+_sleep = time.sleep
+_first = [True]
+def sleep(seconds):
+    if _first[0] and seconds > 0:
+        _first[0] = False
+        _sleep(float(os.environ['PROBE_FIRST_PART_SECONDS']))
+    else:
+        _sleep(seconds)
+time.sleep = sleep
+runpy.run_path(os.environ['PROBE_STAND_IN_WORKER'], run_name='__main__')
+`)
+}
 const engineEnv = {
   AudioEngine__DataDir: engineData,
   AudioEngine__VoicesDir: engineVoices,
   ...(FAKE_WORKER
-    ? { Chatterbox__UvPath: 'python3', Chatterbox__UvArgs: ' ', Chatterbox__WorkerRelativePath: path.join(process.env.AUDIO_ENGINE_HOME, 'tests', 'AudioEngine.Tests', 'Fixtures', 'fake_chatterbox_worker.py'), FAKE_CB_SLOW_MS: '2500' }
+    ? { Chatterbox__UvPath: 'python3', Chatterbox__UvArgs: ' ', Chatterbox__WorkerRelativePath: FIRST_PART_S ? slowFirst : standIn, FAKE_CB_SLOW_MS: '2500', PROBE_FIRST_PART_SECONDS: FIRST_PART_S || '0', PROBE_STAND_IN_WORKER: standIn }
     : {})
 }
 const http = async (method, p, body) => {
@@ -156,6 +188,9 @@ if (CASE === 'stale-engine' || CASE === 'orphan' || CASE === 'behind') {
   if (CASE === 'stale-engine' && FROM_COMMIT) {
     execFileSync('git', ['-C', AE_HOME, 'checkout', '--quiet', '--force', NEWEST])
     console.log(`[real] its checkout is now at ${git('log', '-1', '--format=%h %ad', '--date=short')} (the process is still the old build)`)
+  } else if (brokenFile) {
+    fs.writeFileSync(brokenFile, '// Written by probe-routine-real.mjs --broken-code: newer code that does not build.\nthis is not C#\n')
+    console.log(`[real] added ${brokenFile}, which does not compile (the process started before that)`)
   } else if (CASE === 'stale-engine' || argv.includes('--stale')) {
     const f = path.join(AE_HOME, 'src', 'AudioEngine.Server', 'Program.cs')
     const now = new Date(); fs.utimesSync(f, now, now)
@@ -372,7 +407,7 @@ try {
     console.log(`   ${String(count(log, needle)).padStart(3)}  × "${needle}"`)
   console.log('===== app log, the run')
   for (const l of log.split('\n')) {
-    if (/Routine run|Scheduler:|Extracted |earlier episode|waits its turn|for its turn|Generating podcast|Starting podcast|Loading http|: (Resolved|Recovered|LoadFailed|Blocked|ZeroMatch|SectionNotFound)|Semantic recovery|Skipping|timed out|Bot challenge|fall|audio-engine|Narration|narrat|[Pp]ublish|Saved|\[WRN\]|\[ERR\]|progress for|awake|sleep|links while|Couldn't load/i.test(l) &&
+    if (/Routine run|Scheduler:|Extracted |earlier episode|waits its turn|for its turn|does not build|Building audio-engine|Generating podcast|Starting podcast|Loading http|: (Resolved|Recovered|LoadFailed|Blocked|ZeroMatch|SectionNotFound)|Semantic recovery|Skipping|timed out|Bot challenge|fall|audio-engine|Narration|narrat|[Pp]ublish|Saved|\[WRN\]|\[ERR\]|progress for|awake|sleep|links while|Couldn't load/i.test(l) &&
         !/^\s+at |No XML encryptor|Successfully loaded page/.test(l)) console.log('   ' + l.slice(0, 330))
   }
   console.log('===== engine: its jobs')
@@ -403,6 +438,7 @@ try {
   env.down()
   if (movedDotnet) { try { fs.renameSync(path.join(AE_HOME, 'dotnet.off'), path.join(AE_HOME, 'dotnet')) } catch {} }
   for (const pid of frozen) { try { process.kill(pid, 'SIGKILL') } catch {} }
+  if (brokenFile) fs.rmSync(brokenFile, { force: true })
   console.log('[real] ' + stopEngine())
   console.log(`[real] run directory left in place: ${base}`)
   process.exit(0)

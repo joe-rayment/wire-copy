@@ -19,6 +19,10 @@ namespace WireCopy.Infrastructure.Scheduling;
 /// next narrated part, a new percentage. The same picture reported again is not progress: the
 /// audio-engine client re-reports an unchanged job every second while it polls.
 /// </para>
+/// <para>
+/// A picture can be reported with a longer time than the window: a narrated part gets the time
+/// audio-engine itself allows its narrator for loading the model and speaking (workspace-wxll0.6).
+/// </para>
 /// </remarks>
 internal sealed class RunStallWatchdog : IDisposable
 {
@@ -40,11 +44,18 @@ internal sealed class RunStallWatchdog : IDisposable
         ArgumentNullException.ThrowIfNull(run);
         _run = run;
         Window = window;
+        Patience = window;
         _timer = new Timer(_ => Fire(), null, window, Timeout.InfiniteTimeSpan);
     }
 
     /// <summary>Gets the window this watchdog was started with.</summary>
     public TimeSpan Window { get; }
+
+    /// <summary>
+    /// Gets how long the picture reported last may stand: <see cref="Window"/>, or the longer time
+    /// that picture was reported with. When the watchdog fired, this is how long the run stood still.
+    /// </summary>
+    public TimeSpan Patience { get; private set; }
 
     /// <summary>Gets a value indicating whether this watchdog is what stopped the run.</summary>
     public bool Fired => _fired;
@@ -90,7 +101,16 @@ internal sealed class RunStallWatchdog : IDisposable
     /// Reports the run's current picture. The clock restarts only when the picture differs from
     /// the last one reported.
     /// </summary>
-    public void Report(string picture)
+    public void Report(string picture) => Report(picture, Window);
+
+    /// <summary>
+    /// Reports the run's current picture together with how long that picture may stand. For the
+    /// one step that is legitimately slower than the rest: a narrated part, before which
+    /// audio-engine may have to load (the first time, download) its model (workspace-wxll0.6).
+    /// </summary>
+    /// <param name="picture">What the run has got to.</param>
+    /// <param name="patience">How long this picture may stay unchanged before the run is stopped.</param>
+    public void Report(string picture, TimeSpan patience)
     {
         lock (_lock)
         {
@@ -100,7 +120,8 @@ internal sealed class RunStallWatchdog : IDisposable
             }
 
             _picture = picture;
-            _timer.Change(Window, Timeout.InfiniteTimeSpan);
+            Patience = patience;
+            _timer.Change(patience, Timeout.InfiniteTimeSpan);
         }
     }
 

@@ -14,6 +14,7 @@ using WireCopy.Domain.Entities.Scheduling;
 using WireCopy.Domain.Enums.Scheduling;
 using WireCopy.Domain.ValueObjects.Scheduling;
 using WireCopy.Infrastructure.Configuration;
+using WireCopy.Infrastructure.Podcast;
 using WireCopy.Infrastructure.Podcast.AudioEngine;
 
 namespace WireCopy.Infrastructure.Scheduling;
@@ -42,6 +43,16 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
     /// <summary>How many times a page that fails for a network reason is tried before its step is given up.</summary>
     private const int LoadAttempts = 3;
+
+    /// <summary>
+    /// workspace-wxll0.6 — how many no-progress windows one narrated part may take (40 minutes by
+    /// default). audio-engine gives its narrator 30 minutes to load the model - the first job
+    /// after the engine or its model changed downloads several GB, and a narrator it restarts
+    /// loads again - plus 10 minutes for the part itself, and fails the part with its own reason
+    /// when that runs out. Stopping the run sooner would cut off an engine that is still within
+    /// its budget, and the next run would start the same download under the same clock.
+    /// </summary>
+    private const int NarrationPatience = 2;
 
     /// <summary>What the narrate tile says while audio-engine narrates another job first (the tile shows about 34 characters).</summary>
     private const string WaitingTurnHint = "another narration first";
@@ -254,7 +265,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             // tear down the scheduler's tick loop. Best-effort persist on a fresh token.
             var userStopped = _tracker?.Get(recipe.Id)?.CancelRequested == true;
             var stalled = !userStopped && stall is { Fired: true };
-            await MarkInterruptedAsync(recipe, run, userStopped, stalled ? StalledMessage(recipe.Id, stall!.Window) : null)
+            await MarkInterruptedAsync(recipe, run, userStopped, stalled ? StalledMessage(recipe.Id, stall!.Patience) : null)
                 .ConfigureAwait(false);
         }
         catch (Exception ex)
@@ -652,11 +663,18 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         using var generationCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
         try
         {
-            var progress = new Progress<PodcastProgress>(p =>
+            // In order, on the reporting thread: Progress<T> hands its callbacks to the thread pool
+            // with no ordering, so an older picture could land after a newer one - the run view
+            // then showed a stale line, and the next (unchanged) report looked like progress and
+            // gave a standing run a fresh window (workspace-wxll0.6).
+            var progress = new SyncProgress<PodcastProgress>(p =>
             {
                 _jobManager.ReportProgress(p);
                 ReportStage(recipe.Id, p);
-                stall.Report(ProgressPicture(p));
+
+                stall.Report(
+                    ProgressPicture(p),
+                    p.Phase == PodcastPhase.GeneratingAudio ? stall.Window * NarrationPatience : stall.Window);
             });
             var generationTask = _orchestrator.GeneratePodcastAsync(collection, progress, generationCts.Token);
 
