@@ -44,6 +44,17 @@ bootMark('electron-main')
 const CDP_PORT = process.env.WIRECOPY_SHELL_CDP_PORT || '9223'
 const PAGE_FRACTION = 0.42 // page pane is a feature, not the focus — never dominant
 
+// Live page zoom (workspace-sez21). The pane is far narrower than a desktop page, and at
+// its own width every responsive site turns into its phone layout: one tall column, a
+// story or two per screen. So the page is laid out at the width the app reads it at (the
+// hidden fetch pages' 1280px) and zoomed out until that fits the pane — the same page,
+// seen from further away, with a whole run of stories in view. Chromium does not zoom
+// below 25%, so a pane under a quarter of the layout width gets the smallest zoom there
+// is and a correspondingly narrower layout. Applied by lens-preload.js.
+// LENS_LAYOUT_W is the width, in the page's own pixels, of the area the page lays out in.
+const LENS_LAYOUT_W = 1280
+const LENS_ZOOM_MIN = 0.25
+
 // Drawer handle (workspace-2dmuu) — the browser sidecar's FRONT EDGE. Shut, it runs the
 // full height of the window down the dock edge; open, the full width of the browser
 // panel across its top. One rail, swung through ninety degrees. It is thick enough to
@@ -277,11 +288,37 @@ function place () {
   // window: with the browser sidecar docked it keeps the left split ("Sidecar out"
   // case of Link Tree.dc.html), full width otherwise.
   if (state.linkView) state.linkView.setBounds(termView.getBounds())
+  syncLensZoom() // the pane's width may have changed with the window
   placeHandle(w, h, pageW)
   // Re-evaluated on every snap, so the flag the overlay reads at arm time is fresh:
   // availability can change asynchronously (a navigation completing, the launcher
   // coming up) in the middle of a transition.
   applyHandleVisibility()
+}
+
+// The zoom that fits LENS_LAYOUT_W into the page pane as it is sized right now. The pane
+// is the same width parked and revealed, so the zoom does not change when it slides.
+// What has to fit is the room the page really gets: the pane less a scrollbar drawn
+// beside the page (lensScrollbarPx — reported by lens-preload.js; 0 where scrollbars
+// float over the page). Fitting the whole pane instead leaves the page a scrollbar's
+// width too wide, and it grows a sideways scrollbar of its own.
+let lensScrollbarPx = 0
+function lensZoom () {
+  const v = state.pageView
+  const w = v ? v.getBounds().width : 0
+  return w > 0 ? Math.min(1, Math.max(LENS_ZOOM_MIN, Math.max(1, w - lensScrollbarPx) / LENS_LAYOUT_W)) : 1
+}
+
+// Tell the page already in the pane about a new zoom. A page that loads later asks for
+// it itself (lens-preload.js), so this only has to cover resizes.
+let lensZoomSent = 0
+function syncLensZoom () {
+  const v = state.pageView
+  if (!v || v.webContents.isDestroyed()) return
+  const factor = lensZoom()
+  if (factor === lensZoomSent) return
+  lensZoomSent = factor
+  v.webContents.send('wclens:zoom', factor)
 }
 
 // The handle's RESTING geometry (workspace-2dmuu). Everything that can end a
@@ -1147,11 +1184,42 @@ app.whenReady().then(() => {
     // without the flag; every other one already sets it.
     webPreferences: { preload: path.join(__dirname, 'preload.js'), backgroundThrottling: false }
   })
+  // Every document in the page pane asks for its zoom before it runs anything else
+  // (lens-preload.js, a synchronous ask) — so the answer has to be on offer before the
+  // pane exists. Anything that is not the pane gets 0, which the preload ignores.
+  ipcMain.on('wclens:zoom', e => {
+    e.returnValue = state.pageView && e.sender === state.pageView.webContents ? lensZoom() : 0
+  })
+  ipcMain.on('wclens:scrollbar', (e, px) => {
+    if (!state.pageView || e.sender !== state.pageView.webContents) return
+    if (!Number.isFinite(px) || px < 0 || px > 64) return
+    lensScrollbarPx = Math.round(px)
+    syncLensZoom()
+  })
   state.pageView = new WebContentsView({
     // backgroundThrottling:false (workspace-tj1z.1): the PARKED pane must keep painting
     // so capturePage returns a real final-size frame at any time — matches the tagged
     // pages below.
-    webPreferences: { partition: 'persist:wirecopy', backgroundThrottling: false }
+    webPreferences: {
+      partition: 'persist:wirecopy',
+      backgroundThrottling: false,
+      preload: path.join(__dirname, 'lens-preload.js')
+    }
+  })
+  // The zoom is applied from inside the page; if that did not happen (the preload did
+  // not load) the pane silently falls back to the phone layout. Say so.
+  state.pageView.webContents.on('did-finish-load', () => {
+    const wc = state.pageView.webContents
+    if (!/^https?:/.test(wc.getURL())) return
+    // A beat for a zoom sent during the load (a resize, the scrollbar report) to land.
+    setTimeout(() => {
+      if (wc.isDestroyed()) return
+      const want = lensZoom()
+      const has = wc.getZoomFactor()
+      if (Math.abs(has - want) > 0.02) {
+        console.error(`[shell] the live page is not zoomed out to fit its pane (zoom ${has.toFixed(2)}, wanted ${want.toFixed(2)}): it shows the phone layout`)
+      }
+    }, 400)
   })
   // Tag the lens pane so the .NET driver can adopt it over CDP by URL.
   state.pageView.webContents.loadURL('about:blank#wc-lens').catch(() => {})
@@ -1522,6 +1590,8 @@ app.whenReady().then(() => {
     contentBounds: state.win.getContentBounds(),
     termBounds: state.termView.getBounds(),
     pageBounds: state.pageView.getBounds(),
+    pageZoom: state.pageView.webContents.getZoomFactor(),
+    pageScrollbarPx: lensScrollbarPx,
     termFocused: state.termView.webContents.isFocused(),
     pageFocused: state.pageView.webContents.isFocused()
   }))

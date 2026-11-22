@@ -4,7 +4,8 @@ namespace WireCopy.Infrastructure.Browser;
 
 /// <summary>
 /// workspace-2cz4 — JavaScript evaluated on the LENS tab to expand content a
-/// site collapsed at the mobile viewport ("read more" regions). The TUI's link
+/// site keeps collapsed ("read more" regions; most common in a narrow layout, and
+/// some papers do it at every width). The TUI's link
 /// extraction sees the full DOM, so collapsed stories appear in the list but
 /// their anchors have no layout — <see cref="SpotlightScript.Sync"/> then skips
 /// them and the visible link between list and page breaks.

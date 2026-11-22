@@ -1575,8 +1575,9 @@ public sealed class BrowserSession : IBrowserSession, IAsyncDisposable
         if (_shell.IsConnected)
         {
             // Single-window shell: docking = revealing the page pane. Geometry, focus and
-            // z-order are the shell's problem (reader-primary by construction), and the lens
-            // renders at the REAL pane width — no phone-viewport emulation.
+            // z-order are the shell's problem (reader-primary by construction), and so is
+            // how the page fits the pane: the shell shows it zoomed out, in its desktop
+            // layout (workspace-sez21, shell/lens-preload.js) — nothing is emulated here.
             if (!await _shell.SetPaneVisibleAsync(true).ConfigureAwait(false))
             {
                 return null;
