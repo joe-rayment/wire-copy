@@ -72,6 +72,8 @@ export class Env {
       ['.', '--no-sandbox', '--disable-dev-shm-usage', ...extraArgv], {
       cwd: SHELL_DIR,
       stdio: ['ignore', 'pipe', 'pipe'],
+      // Its own process group, so down() can end every process the shell starts (workspace-eozo1).
+      detached: true,
       env: {
         ...process.env,
         DISPLAY: this.display,
@@ -85,12 +87,24 @@ export class Env {
     p.stderrText = ''
     p.stderr.on('data', d => { p.stderrText += d.toString('utf8') })
     p.stdout.on('data', () => {})
+    p.ownGroup = true
     this.procs.push(p)
     return p
   }
 
   down () {
-    for (const p of this.procs.reverse()) { try { p.kill() } catch {} }
+    const groups = []
+    for (const p of this.procs.reverse()) {
+      try {
+        if (p.ownGroup && p.pid) { process.kill(-p.pid, 'SIGTERM'); groups.push(p.pid) } else p.kill()
+      } catch {}
+    }
+    // workspace-eozo1: Electron's helpers (gpu process, renderers) outlived its main process once the X
+    // server was gone, and the gpu process then spun a core until someone killed it. End what is left.
+    if (groups.length) {
+      try { execFileSync('sleep', ['0.5']) } catch {}
+      for (const pid of groups) { try { process.kill(-pid, 'SIGKILL') } catch {} }
+    }
   }
 
   // --- OS-level input ---
