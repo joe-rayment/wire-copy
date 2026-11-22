@@ -53,6 +53,9 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <summary>How long a stopped engine may take to stop answering.</summary>
     private static readonly TimeSpan StopTimeout = TimeSpan.FromSeconds(40);
 
+    /// <summary>How long building the engine's current code may take before it is given up (workspace-wxll0.7).</summary>
+    private static readonly TimeSpan BuildTimeout = TimeSpan.FromMinutes(10);
+
     private readonly IUserSettingsStore _store;
     private readonly AudioEngineConfiguration _config;
     private readonly IHttpClientFactory _httpClientFactory;
@@ -269,15 +272,31 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
                 return false;
             }
 
+            lock (_gate)
+            {
+                _replacedFor[url] = codeChanged;
+            }
+
+            // workspace-wxll0.7: a checkout that does not build would leave no engine at all once
+            // the running one is stopped. Build it first; the running engine is untouched by a
+            // build that fails (the program is only written when the compiler succeeds).
+            var (builds, firstError) = await BuildsAsync(wanted, ct).ConfigureAwait(false);
+            if (!builds)
+            {
+                _logger.LogWarning(
+                    "audio-engine at {Url} is older than its code (started {Started:u}, code changed {Changed:u}), but that code does not build ({Error:l}) - keeping the running audio-engine",
+                    url,
+                    running.StartedUtc,
+                    codeChanged,
+                    firstError);
+                return false;
+            }
+
             _logger.LogInformation(
                 "audio-engine at {Url} was started {Started:u}, before its code last changed ({Changed:u}) - restarting it so this run uses the current build",
                 url,
                 running.StartedUtc,
                 codeChanged);
-            lock (_gate)
-            {
-                _replacedFor[url] = codeChanged;
-            }
 
             if (!await StopAsync(client, baseUrl, running, ct).ConfigureAwait(false))
             {
@@ -989,6 +1008,97 @@ public sealed class AudioEngineLauncher : IAudioEngineLauncher
     /// <param name="workingDirectory">The checkout folder.</param>
     /// <param name="ct">Stops waiting.</param>
     /// <returns>True when the script reported success.</returns>
+    /// <summary>
+    /// Builds an engine that is run from source (<c>dotnet run --project X -c C</c>) the way that
+    /// command would, without starting it. A program that is not run from source has nothing to build.
+    /// </summary>
+    /// <param name="program">The program as discovery describes it.</param>
+    /// <param name="ct">Cancels the build.</param>
+    /// <returns>Whether it builds, and the compiler's first error when it does not.</returns>
+    private async Task<(bool Ok, string? FirstError)> BuildsAsync(AudioEngineProgram program, CancellationToken ct)
+    {
+        var args = program.Arguments;
+        var projectAt = -1;
+        for (var i = 0; i < args.Count - 1; i++)
+        {
+            if (string.Equals(args[i], "--project", StringComparison.Ordinal))
+            {
+                projectAt = i;
+            }
+        }
+
+        if (args.Count == 0 || !string.Equals(args[0], "run", StringComparison.Ordinal) || projectAt < 0)
+        {
+            return (true, null);
+        }
+
+        try
+        {
+            var psi = new ProcessStartInfo(program.Executable)
+            {
+                UseShellExecute = false,
+                RedirectStandardOutput = true,
+                RedirectStandardError = true,
+                WorkingDirectory = program.WorkingDirectory,
+            };
+            psi.ArgumentList.Add("build");
+            psi.ArgumentList.Add(args[projectAt + 1]);
+            for (var i = 1; i < args.Count; i++)
+            {
+                // Everything else "dotnet run" was given (the configuration) applies to the build too.
+                if (i != projectAt && i != projectAt + 1)
+                {
+                    psi.ArgumentList.Add(args[i]);
+                }
+            }
+
+            psi.ArgumentList.Add("--nologo");
+            _logger.LogInformation("Building audio-engine's current code before replacing the running one ({Folder:l})", program.WorkingDirectory);
+            using var process = Process.Start(psi);
+            if (process is null)
+            {
+                return (false, "the build could not be started");
+            }
+
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(BuildTimeout);
+            try
+            {
+                var output = process.StandardOutput.ReadToEndAsync(cts.Token);
+                var error = process.StandardError.ReadToEndAsync(cts.Token);
+                await process.WaitForExitAsync(cts.Token).ConfigureAwait(false);
+                if (process.ExitCode == 0)
+                {
+                    return (true, null);
+                }
+
+                var lines = ((await output.ConfigureAwait(false)) + "\n" + (await error.ConfigureAwait(false)))
+                    .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+                var first = lines.FirstOrDefault(l => l.Contains(": error ", StringComparison.Ordinal))
+                    ?? lines.LastOrDefault()
+                    ?? $"exit code {process.ExitCode}";
+                return (false, first.Length > 300 ? first[..300] : first);
+            }
+            catch (OperationCanceledException) when (!ct.IsCancellationRequested)
+            {
+                try
+                {
+                    process.Kill(entireProcessTree: true);
+                }
+                catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception)
+                {
+                    // Already gone.
+                }
+
+                return (false, $"the build took longer than {BuildTimeout.TotalMinutes:F0} minutes");
+            }
+        }
+        catch (Exception ex) when (ex is InvalidOperationException or System.ComponentModel.Win32Exception or IOException)
+        {
+            return (false, ex.Message);
+        }
+    }
+
     private async Task<bool> RunStopScriptAsync(string script, int port, string workingDirectory, CancellationToken ct)
     {
         try
