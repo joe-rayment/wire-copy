@@ -28,6 +28,12 @@ public sealed record RunStepOutcome
 
     public string? Diagnostic { get; init; }
 
+    /// <summary>
+    /// The heading the section was printed under that day when it was not its own name
+    /// ("Sunday Business" for Business Day). Null on an ordinary day and in older records.
+    /// </summary>
+    public string? TodaysHeading { get; init; }
+
     /// <summary>URLs this step contributed to the collection, in order.</summary>
     public IReadOnlyList<string> ItemUrls { get; init; } = Array.Empty<string>();
 }

@@ -198,7 +198,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 }
 
                 stall.Report(stageKey + " loading");
-                var (status, matchCount, diagnostic) =
+                var (status, matchCount, diagnostic, todaysHeading) =
                     await ResolveStepAsync(step, assembled, seen, pages, stall, ct).ConfigureAwait(false);
                 stall.Report(stageKey + " " + status);
                 _logger.LogInformation(
@@ -210,7 +210,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 var contributed = assembled.Count - before;
                 if (contributed > 0)
                 {
-                    _tracker?.SetStage(recipe.Id, stageKey, RoutineRunStageState.Done, $"{contributed} stories · {HostOf(step.SourceUrl)}");
+                    // A section printed under a day's own heading says so: "8 stories · “Sunday Business” today".
+                    var where = todaysHeading is null ? HostOf(step.SourceUrl) : $"“{todaysHeading}” today";
+                    var stories = contributed == 1 ? "story" : "stories";
+                    _tracker?.SetStage(recipe.Id, stageKey, RoutineRunStageState.Done, $"{contributed} {stories} · {where}");
                 }
                 else
                 {
@@ -226,6 +229,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                     MatchCount = matchCount,
                     ItemsContributed = assembled.Count - before,
                     Diagnostic = diagnostic,
+                    TodaysHeading = todaysHeading,
                     ItemUrls = assembled.Skip(before).Select(a => a.Url).ToList(),
                 });
             }
@@ -550,9 +554,10 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
 
     /// <summary>
     /// Loads + resolves one step, appending its (deduped) items to <paramref name="assembled"/>.
-    /// Returns the run-time status string, the section match count, and a diagnostic.
+    /// Returns the run-time status string, the section match count, a diagnostic, and the heading
+    /// the section is printed under today when that is not its own name.
     /// </summary>
-    private async Task<(string Status, int MatchCount, string? Diagnostic)> ResolveStepAsync(
+    private async Task<(string Status, int MatchCount, string? Diagnostic, string? TodaysHeading)> ResolveStepAsync(
         RecipeStep step,
         List<(string Url, string Title)> assembled,
         HashSet<string> seen,
@@ -582,7 +587,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 diagnostic = $"Couldn't load {HostOf(step.SourceUrl)}: {load.FailureReason}";
             }
 
-            return (load.Outcome.ToString(), 0, diagnostic);
+            return (load.Outcome.ToString(), 0, diagnostic, null);
         }
 
         // workspace-42q8.1: resolve the config by the step's DURABLE key
@@ -600,7 +605,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
                 ? $"The saved layout for {HostOf(step.SourceUrl)} (covers {ScheduleConfigResolution.DescribeSitePatterns(lookup.SiteConfigs)}) " +
                   $"no longer matches {step.SourceUrl} — re-add this step in :routines to re-pin it"
                 : $"No saved layout for {HostOf(step.SourceUrl)} yet — set the site up once (g l) so routine runs can resolve sections";
-            return (ResolutionStatus.SectionNotFound.ToString(), 0, diagnostic);
+            return (ResolutionStatus.SectionNotFound.ToString(), 0, diagnostic, null);
         }
 
         var resolution = _resolver.Resolve(config, load.Links, step);
@@ -625,7 +630,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
         // carry items; any other status contributed nothing this occurrence.
         if (resolution.Status is not (ResolutionStatus.Resolved or ResolutionStatus.Recovered))
         {
-            return (resolution.Status.ToString(), resolution.MatchCount, resolution.Diagnostic);
+            return (resolution.Status.ToString(), resolution.MatchCount, resolution.Diagnostic, null);
         }
 
         // first-wins cross-step URL dedup (seen.Add is the side-effecting filter).
@@ -634,7 +639,7 @@ internal sealed class RecipeRunPipeline : IRecipeRunPipeline
             assembled.Add(item);
         }
 
-        return (resolution.Status.ToString(), resolution.MatchCount, resolution.Diagnostic);
+        return (resolution.Status.ToString(), resolution.MatchCount, resolution.Diagnostic, resolution.TodaysHeading);
     }
 
     private async Task GenerateAndFinalizeAsync(

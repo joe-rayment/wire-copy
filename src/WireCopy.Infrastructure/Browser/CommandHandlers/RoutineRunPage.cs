@@ -292,11 +292,14 @@ internal static class RoutineRunPage
 
         var host = Uri.TryCreate(step.SourceUrl, UriKind.Absolute, out var u) ? u.Host : step.SourceUrl;
         var stories = step.ItemsContributed == 1 ? "story" : "stories";
+
+        // As the run view said it while running: a section printed under a day's own heading names it.
+        var where = ok && !string.IsNullOrWhiteSpace(step.TodaysHeading) ? $"“{step.TodaysHeading}” today" : host;
         return new Tile
         {
             Id = $"step:{index}",
             Title = step.SectionName.ToUpperInvariant(),
-            Hint = $"{glyph} {step.ItemsContributed} {stories} · {host}",
+            Hint = $"{glyph} {step.ItemsContributed} {stories} · {where}",
             Detail = string.IsNullOrWhiteSpace(step.Diagnostic) ? null : step.Diagnostic,
         };
     }

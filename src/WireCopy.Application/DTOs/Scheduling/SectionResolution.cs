@@ -50,5 +50,11 @@ public sealed record SectionResolution
 
     public SectionMatchTier? Tier { get; init; }
 
+    /// <summary>
+    /// The heading the stories sit under today when it is not the section's own name: a paper
+    /// prints "Business Day" as "Sunday Business" on Sundays. Null on an ordinary day.
+    /// </summary>
+    public string? TodaysHeading { get; init; }
+
     public string? Diagnostic { get; init; }
 }

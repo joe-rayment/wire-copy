@@ -86,6 +86,23 @@ internal sealed class SectionResolver : ISectionResolver
             }
         }
 
+        // workspace-98qqi.1: the paper prints this section under a day's own heading today
+        // ("Business Day" is "Sunday Business" on Sundays). Exactly one heading on the page
+        // that is the wanted name once day words are set aside is the section; two are a
+        // guess, so then nothing is taken here.
+        string? todaysHeading = null;
+        if (matched.Count == 0)
+        {
+            todaysHeading = TodaysHeadingFor(section, step, content);
+            if (todaysHeading != null)
+            {
+                matched = content
+                    .Where(l => string.Equals(l.SectionTitle, todaysHeading, StringComparison.OrdinalIgnoreCase))
+                    .ToList();
+                tier = SectionMatchTier.HeadingAlias;
+            }
+        }
+
         // workspace-frpl.9 (B9a) Tier-1 RECOVERY: the saved selectors are over-specific
         // (a hashed CSS class rotated, so the full saved selector no longer substring-
         // matches), but one of their stable discriminating TOKENS still does. Generalize
@@ -129,17 +146,26 @@ internal sealed class SectionResolver : ISectionResolver
         };
 
         var items = taken.Select(l => (l.Url, Title: string.IsNullOrWhiteSpace(l.DisplayText) ? l.Url : l.DisplayText)).ToList();
+        string? note = null;
+        if (recovered)
+        {
+            note = $"Recovered '{section.Name}' on {config.Domain} via re-derived selector(s) " +
+                         $"[{string.Join(", ", recoveredSelectors)}] after the saved selector matched 0 today — " +
+                         "ratify the layout in Routines (the recovery is not saved).";
+        }
+        else if (todaysHeading != null)
+        {
+            note = $"{config.Domain} prints '{section.Name}' as '{todaysHeading}' today.";
+        }
+
         return new SectionResolution
         {
             Status = recovered ? ResolutionStatus.Recovered : ResolutionStatus.Resolved,
             Items = items,
             MatchCount = matched.Count,
             Tier = recovered ? SectionMatchTier.Selector : tier,
-            Diagnostic = recovered
-                ? $"Recovered '{section.Name}' on {config.Domain} via re-derived selector(s) " +
-                  $"[{string.Join(", ", recoveredSelectors)}] after the saved selector matched 0 today — " +
-                  "ratify the layout in Routines (the recovery is not saved)."
-                : null,
+            TodaysHeading = todaysHeading,
+            Diagnostic = note,
         };
     }
 
@@ -217,6 +243,31 @@ internal sealed class SectionResolver : ISectionResolver
     /// failed yields nothing here (the token equals the full selector), so a clean
     /// ZeroMatch never spuriously "recovers".
     /// </summary>
+    /// <summary>
+    /// workspace-98qqi.1 — the one heading on today's page that names the wanted section once day
+    /// words are set aside (see <see cref="DayHeading"/>); null when there is none, or more than one.
+    /// </summary>
+    private static string? TodaysHeadingFor(HierarchySection section, RecipeStep step, IReadOnlyList<LinkInfo> content)
+    {
+        var wanted = new[] { section.Name, step.SectionName }
+            .Concat(step.HeadingAliases)
+            .Select(DayHeading.Key)
+            .Where(key => key.Length > 0)
+            .ToHashSet(StringComparer.Ordinal);
+        if (wanted.Count == 0)
+        {
+            return null;
+        }
+
+        var headings = content
+            .Select(l => l.SectionTitle)
+            .Where(title => !string.IsNullOrWhiteSpace(title) && wanted.Contains(DayHeading.Key(title)))
+            .Select(title => title!)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        return headings.Count == 1 ? headings[0] : null;
+    }
+
     private static List<string> LiveSelectorTokens(HierarchySection section, IReadOnlyList<LinkInfo> content) =>
         section.ParentSelectors
             .SelectMany(SelectorDerivation.DiscriminatingTokens)
@@ -295,6 +346,7 @@ internal sealed class SectionResolver : ISectionResolver
             Items = picked,
             MatchCount = list.MatchCount,
             Tier = list.Tier,
+            TodaysHeading = list.TodaysHeading,
             Diagnostic = diagnostic,
         };
     }
